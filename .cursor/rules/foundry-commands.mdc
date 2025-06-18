@@ -1,0 +1,294 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# Foundry Commands & Development Workflows
+
+## Essential Foundry Commands
+
+### Build & Compile
+```bash
+# Standard build
+forge build
+
+# Build with specific contracts
+forge build --contracts src/Feed.sol
+
+# Build with size information
+forge build --sizes
+
+# Clean build artifacts
+forge clean
+```
+
+### Testing Commands
+```bash
+# Run all tests
+forge test
+
+# Run tests with verbose output
+forge test -vvv
+
+# Run specific test file
+forge test --match-path test/Feed.t.sol
+
+# Run specific test function
+forge test --match-test testPublishAnswer
+
+# Run tests with gas reporting
+forge test --gas-report
+
+# Generate coverage report
+forge coverage
+
+# Run fuzz tests with more runs
+forge test --fuzz-runs 10000
+```
+
+### Code Quality
+```bash
+# Format code
+forge fmt
+
+# Generate documentation
+forge doc
+
+# Check code formatting
+forge fmt --check
+```
+
+### Dependency Management
+Based on [foundry.toml](mdc:foundry.toml) configuration:
+
+```bash
+# Install dependencies
+forge install
+
+# Install specific dependency
+forge install OpenZeppelin/openzeppelin-contracts
+
+# Update dependencies
+forge update
+
+# Remove dependency
+forge remove openzeppelin-contracts
+
+# List dependencies
+forge tree
+```
+
+### Local Development
+```bash
+# Start local blockchain
+anvil
+
+# Start with specific accounts
+anvil --accounts 10 --balance 1000
+
+# Start with mnemonic
+anvil --mnemonic "test test test test test test test test test test test junk"
+```
+
+### Deployment Commands
+
+#### Local Deployment
+```bash
+# Deploy to local network (anvil)
+forge script script/Deploy.s.sol \
+    --rpc-url http://localhost:8545 \
+    --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 \
+    --broadcast
+```
+
+#### Testnet Deployment
+```bash
+# Deploy to Sepolia testnet
+forge script script/Deploy.s.sol \
+    --rpc-url $SEPOLIA_RPC_URL \
+    --private-key $PRIVATE_KEY \
+    --broadcast \
+    --verify \
+    --etherscan-api-key $ETHERSCAN_API_KEY
+```
+
+### Contract Interaction (Cast)
+```bash
+# Call view function
+cast call <CONTRACT_ADDRESS> "getLatest()" --rpc-url $RPC_URL
+
+# Send transaction
+cast send <CONTRACT_ADDRESS> "setSubscriptionPrice(address,uint128)" <FEED_ADDRESS> 1000000 \
+    --rpc-url $RPC_URL \
+    --private-key $PRIVATE_KEY
+
+# Check balance
+cast balance <ADDRESS> --rpc-url $RPC_URL
+
+# Get transaction receipt
+cast receipt <TX_HASH> --rpc-url $RPC_URL
+```
+
+## Project-Specific Workflows
+
+### Setting up New Contract
+
+1. **Create Interface**
+   ```bash
+   # Create interface file in src/interfaces/
+   touch src/interfaces/INewContract.sol
+   ```
+
+2. **Implement Contract**
+   ```bash
+   # Create implementation file
+   touch src/NewContract.sol
+   ```
+
+3. **Create Tests**
+   ```bash
+   # Create test file
+   touch test/NewContract.t.sol
+   ```
+
+4. **Build and Test**
+   ```bash
+   forge build
+   forge test --match-path test/NewContract.t.sol -vvv
+   ```
+
+### Testing Workflow for Existing Contracts
+
+#### Feed Contract Testing ([Feed.sol](mdc:src/Feed.sol))
+```bash
+# Test feed operations
+forge test --match-path test/Feed.t.sol -vvv
+
+# Test with gas reporting
+forge test --match-path test/Feed.t.sol --gas-report
+
+# Fuzz test feed functions
+forge test --match-test testFuzzPublishAnswer --fuzz-runs 1000
+```
+
+#### Registry Testing ([FeedsRegistry.sol](mdc:src/FeedsRegistry.sol))
+```bash
+# Test registry functions
+forge test --match-path test/FeedsRegistry.t.sol -vvv
+
+# Test access control
+forge test --match-test testOnlyFeedsManager -vvv
+```
+
+### Security Analysis Workflow
+```bash
+# Install security tools (if not already installed)
+pip install slither-analyzer mythril
+
+# Run Slither analysis
+slither .
+
+# Run Mythril analysis
+myth analyze src/Feed.sol
+
+# Run comprehensive test suite
+forge test -vvv
+
+# Generate gas snapshot
+forge snapshot
+```
+
+### Pre-Deployment Checklist
+```bash
+# 1. Build contracts
+forge build
+
+# 2. Run all tests
+forge test
+
+# 3. Check test coverage
+forge coverage
+
+# 4. Security analysis
+slither .
+
+# 5. Gas optimization check
+forge test --gas-report
+
+# 6. Format code
+forge fmt
+
+# 7. Generate documentation
+forge doc
+```
+
+## Environment Configuration
+
+### Environment Variables
+Create `.env` file with:
+```bash
+# RPC URLs
+MAINNET_RPC_URL=https://eth-mainnet.g.alchemy.com/v2/your-api-key
+SEPOLIA_RPC_URL=https://eth-sepolia.g.alchemy.com/v2/your-api-key
+ANVIL_RPC_URL=http://127.0.0.1:8545
+
+# Private Keys (TESTING ONLY)
+PRIVATE_KEY=0x...
+
+# API Keys
+ETHERSCAN_API_KEY=your-etherscan-api-key
+```
+
+### Load Environment
+```bash
+# Source environment variables
+source .env
+
+# Or use with commands
+forge script script/Deploy.s.sol --rpc-url $SEPOLIA_RPC_URL --private-key $PRIVATE_KEY
+```
+
+## Debugging Commands
+
+### Debug Failed Transactions
+```bash
+# Get detailed error information
+cast run <TX_HASH> --rpc-url $RPC_URL --debug
+
+# Trace transaction
+cast run <TX_HASH> --rpc-url $RPC_URL --trace
+```
+
+### Debug Test Failures
+```bash
+# Run with maximum verbosity
+forge test --match-test testFailingFunction -vvvv
+
+# Debug with traces
+forge test --match-test testFailingFunction --debug
+```
+
+## Performance Optimization
+
+### Gas Optimization
+```bash
+# Generate gas snapshot
+forge snapshot
+
+# Compare gas usage
+forge snapshot --diff
+
+# Gas reporting for specific test
+forge test --match-test testExpensiveFunction --gas-report
+```
+
+### Build Optimization
+```bash
+# Enable optimizations in foundry.toml
+# [profile.default]
+# optimizer = true
+# optimizer_runs = 200
+
+# Build with optimizations
+forge build --optimize
+```

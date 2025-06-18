@@ -1,0 +1,76 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# Core Contracts Guide
+
+## Primary Contracts
+
+### 1. Feed.sol - Data Storage Layer
+**File**: [Feed.sol](mdc:src/Feed.sol)  
+**Interface**: [IFeed.sol](mdc:src/interfaces/IFeed.sol)
+
+**Purpose**: Stores oracle data with timestamp validation
+**Key Features**:
+- Answer history with `Answer[]` array
+- Subscription-based access control
+- Schnorr signature verification for updates
+- ERC165 interface support
+
+**Critical Functions**:
+```solidity
+function publishAnswer(Answer calldata answer, INodesAggregator.SchnorrSignature calldata schnorrData) external
+function getLatest() external view returns (bytes memory value, uint256 timestamp)
+function getEntry(uint256 index) external view returns (bytes memory value, uint256 timestamp)
+```
+
+### 2. FeedsRegistry.sol - Feed Management
+**File**: [FeedsRegistry.sol](mdc:src/FeedsRegistry.sol)  
+**Interface**: [IFeedsRegistry.sol](mdc:src/interfaces/IFeedsRegistry.sol)
+
+**Purpose**: Factory pattern for creating and managing feeds
+**Key Features**:
+- Feed creation with metadata hashes
+- Subscription price management
+- Access control integration
+- Feed validation and tracking
+
+**Critical Functions**:
+```solidity
+function createFeed(bytes32 metadataHash, uint256 rewardForAnswer, uint128 subscriptionPrice, uint256 minSignaturesThreshold) external returns (address feed)
+function setSubscriptionPrice(address feed, uint128 price) external
+function isFeed(address feed) external view returns (bool)
+```
+
+### 3. NodeAggregator.sol - Oracle Node Verification
+**File**: [NodeAggregator.sol](mdc:src/NodeAggregator.sol)  
+**Interface**: [INodesAggregator.sol](mdc:src/interfaces/INodesAggregator.sol)
+
+**Purpose**: Manages oracle nodes and verifies their collective signatures
+**Key Features**:
+- Node registration and management
+- Schnorr signature aggregation
+- Bitmap-based participation tracking
+- Threshold signature verification
+
+### 4. SubscriptionRegistry.sol - Access Control
+**File**: [SubscriptionRegistry.sol](mdc:src/SubscriptionRegistry.sol)  
+**Interface**: [ISubscriptionsRegistry.sol](mdc:src/interfaces/ISubscriptionsRegistry.sol)
+
+**Purpose**: Manages consumer subscriptions and payments
+**Key Features**:
+- USDC-based subscription payments
+- Time-based access expiration
+- Feed-specific subscription tracking
+
+## Supporting Interfaces
+- [IAccessControlManager.sol](mdc:src/interfaces/IAccessControlManager.sol) - Role-based access control
+- [IFeedsFactory.sol](mdc:src/interfaces/IFeedsFactory.sol) - Feed factory interface
+- [ICommonErrors.sol](mdc:src/interfaces/ICommonErrors.sol) - Shared error definitions
+
+## Utility Libraries
+- [ERC165Checker.sol](mdc:src/libs/ERC165Checker.sol) - Interface verification
+- [LibSchnorr.sol](mdc:src/libs/LibSchnorr.sol) - Schnorr signature verification
+- [LibSecp256k1.sol](mdc:src/libs/LibSecp256k1.sol) - Elliptic curve operations
+- [SchnorrSetVerifierLib.sol](mdc:src/libs/SchnorrSetVerifierLib.sol) - Set verification utilities
