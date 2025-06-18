@@ -4,8 +4,9 @@ pragma solidity ^0.8.20;
 import {Test} from "forge-std/Test.sol";
 import {console2} from "forge-std/console2.sol";
 
-import {Feed, IFeed} from "../src/Feed.sol";
-import {INodesAggregator} from "../src/interfaces/INodesAggregator.sol";
+import {Feed} from "../src/Feed.sol";
+import {IFeed, IFeedStructs} from "../src/interfaces/IFeed.sol";
+import {INodesAggregator, INodesAggregatorStructs} from "../src/interfaces/INodesAggregator.sol";
 import {MessageHashUtils} from "openzeppelin-contracts/contracts/utils/cryptography/MessageHashUtils.sol";
 import {MockAccessControlManager} from "./mocks/MockAccessControlManager.sol";
 import {MockNodesAggregator} from "./mocks/MockNodesAggregator.sol";
@@ -33,13 +34,13 @@ contract FeedTest is Test {
         // Subscribe the test contract first
         subRegistry.subscribe(address(this), address(feed), 100);
         
-        IFeed.Answer memory ans = IFeed.Answer("data", uint64(block.timestamp));
+        IFeedStructs.Answer memory ans = IFeedStructs.Answer("data", uint64(block.timestamp));
         
         // Set the expected message in the mock
         bytes32 expectedMessage = keccak256(abi.encodePacked(address(feed), ans.value, ans.timestamp)).toEthSignedMessageHash();
         aggregator.setLastMessage(expectedMessage);
         
-        feed.publishAnswer(ans, INodesAggregator.SchnorrSignature(bytes32(uint256(1)), address(1), new uint256[](1)));
+        feed.publishAnswer(ans, INodesAggregatorStructs.SchnorrSignature(bytes32(uint256(1)), address(1), new uint256[](1)));
         
         (bytes memory value, uint256 ts) = feed.getLatest();
         

@@ -13,7 +13,6 @@ import {ISubscriptionsRegistry} from "./interfaces/ISubscriptionsRegistry.sol";
 import {INodesAggregator} from "./interfaces/INodesAggregator.sol";
 import {IFeed} from "./interfaces/IFeed.sol";
 
-
 // TODO: think about aggregator deactivation flow
 contract Feed is IFeed, ERC165 {
     using ERC165Checker for address;

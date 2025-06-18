@@ -24,13 +24,13 @@ contract MockNodesAggregator is INodesAggregator, ERC165 {
     ) external view {
     }
 
-    function registerNode(LibSecp256k1.Point memory pubkey) external {
+    function addNode(LibSecp256k1.Point memory pubkey) external {
         address node = pubkey.toAddress();
         nodes[node] = true;
         total += 1;
     }
 
-    function unregisterNode(address node) external {
+    function removeNode(address node) external {
         require(nodes[node], "not node");
         nodes[node] = false;
         total -= 1;
@@ -40,11 +40,11 @@ contract MockNodesAggregator is INodesAggregator, ERC165 {
         return nodes[node];
     }
 
-    function getTotalSigners() external view returns (uint256) {
+    function getTotalNodes() external view returns (uint256) {
         return total;
     }
 
-    function getSignerSetHash() external pure returns (bytes32) {
+    function getNodesSetHash() external pure returns (bytes32) {
         return bytes32(0);
     }
 
