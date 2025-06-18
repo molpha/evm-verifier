@@ -65,10 +65,8 @@ contract Feed is IFeed, ERC165 {
         // address(subsciptionsRegistry).shouldSupport(type(ISubscriptionsRegistry).interfaceId);
         // address(treasury).shouldSupport(type(ITreasury).interfaceId);
 
-        // _accessControlManager = accessControlManager;
-        // _nodesRegistry = nodesRegistry;
-        // _subsciptionsRegistry = subsciptionsRegistry;
-        // _treasury = treasury;
+        _accessControlManager = accessControlManager;
+        _subsciptionsRegistry = subsciptionsRegistry;
         _nodesAggregator = nodesAggregator;
     }
 
