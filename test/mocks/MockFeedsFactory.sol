@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {IFeedsFactory} from "../../src/interfaces/IFeedsFactory.sol";
+import {ERC165} from "openzeppelin-contracts/contracts/utils/introspection/ERC165.sol";
 
-contract MockFeedsFactory is IFeedsFactory {
+import {IFeedsFactory} from "../../src/interfaces/IFeedsFactory.sol";
+contract MockFeedsFactory is IFeedsFactory, ERC165 {
     address public implementation;
 
     function build() external returns (address) {
@@ -18,5 +19,9 @@ contract MockFeedsFactory is IFeedsFactory {
 
     function getAggregatorImpl() external view returns (address) {
         return implementation;
+    }
+
+    function supportsInterface(bytes4 interfaceId) public view override returns (bool) {
+        return interfaceId == type(IFeedsFactory).interfaceId || super.supportsInterface(interfaceId);
     }
 }

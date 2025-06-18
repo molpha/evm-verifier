@@ -14,9 +14,10 @@ contract FeedsRegistryTest is Test {
     MockSubscriptionsRegistry subRegistry;
     MockAccessControlManager acl;
 
-    address manager = address(1);
+    address manager;
 
     function setUp() public {
+        manager = address(this); // Use the test contract as manager
         acl = new MockAccessControlManager(manager);
         registry = new FeedsRegistry(acl);
         factory = new MockFeedsFactory();
@@ -25,18 +26,15 @@ contract FeedsRegistryTest is Test {
     }
 
     function test_createFeed_AddsFeed() public {
-        vm.prank(manager);
         factory.setAggregatorImpl(address(new DummyFeed()));
         address feed = registry.createFeed(bytes32(0), 0, 1, 0);
         assertTrue(registry.isFeed(feed));
     }
 
     function test_setSubscriptionPrice_Works() public {
-        vm.prank(manager);
         factory.setAggregatorImpl(address(new DummyFeed()));
         address feed = registry.createFeed(bytes32(0), 0, 1, 0);
 
-        vm.prank(manager);
         registry.setSubscriptionPrice(feed, 10);
         assertEq(subRegistry.price(), 10);
     }

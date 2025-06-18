@@ -2,19 +2,22 @@
 pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
-import {NodeAggregator} from "../src/NodeAggregator.sol";
+import {NodesAggregator} from "../src/NodesAggregator.sol";
+import {INodesAggregator} from "../src/interfaces/INodesAggregator.sol";
 import {LibSecp256k1} from "../src/libs/LibSecp256k1.sol";
 
 contract NodeAggregatorTest is Test {
-    NodeAggregator agg;
+    using LibSecp256k1 for LibSecp256k1.Point;
+
+    NodesAggregator agg;
 
     function setUp() public {
-        agg = new NodeAggregator(address(this));
+        agg = new NodesAggregator(address(this));
     }
 
     function test_registerNode_InvalidKey_Revert() public {
         LibSecp256k1.Point memory zero = LibSecp256k1.ZERO_POINT();
-        vm.expectRevert(NodeAggregator.InvalidPublicKey.selector);
+        vm.expectRevert(INodesAggregator.InvalidPublicKey.selector);
         agg.registerNode(zero);
     }
 
@@ -35,13 +38,13 @@ contract NodeAggregatorTest is Test {
         uint256[] memory signers = new uint256[](2);
         signers[0] = 1;
         signers[1] = 1; // not strictly increasing
-        NodeAggregator.SchnorrSignature memory s = NodeAggregator.SchnorrSignature({
+        INodesAggregator.SchnorrSignature memory s = INodesAggregator.SchnorrSignature({
             signature: bytes32(uint256(1)),
             commitment: address(1),
             signers: signers
         });
         bytes32 msgHash = keccak256(abi.encodePacked(a, b));
-        vm.expectRevert(NodeAggregator.InvalidSignersOrder.selector);
+        vm.expectRevert(INodesAggregator.InvalidSignersOrder.selector);
         agg.verifySignature(msgHash, s, 1);
     }
 }

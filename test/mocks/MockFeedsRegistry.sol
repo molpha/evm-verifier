@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+import {ERC165} from "openzeppelin-contracts/contracts/utils/introspection/ERC165.sol";
+
 import {IFeedsRegistry} from "../../src/interfaces/IFeedsRegistry.sol";
 import {IFeedsFactory} from "../../src/interfaces/IFeedsFactory.sol";
 
-contract MockFeedsRegistry is IFeedsRegistry {
+contract MockFeedsRegistry is IFeedsRegistry, ERC165 {
     mapping(address => bool) public feeds;
     IFeedsFactory public factory;
 
@@ -24,5 +26,9 @@ contract MockFeedsRegistry is IFeedsRegistry {
 
     function addFeed(address feed) external {
         feeds[feed] = true;
+    }
+
+    function supportsInterface(bytes4 interfaceId) public view override returns (bool) {
+        return interfaceId == type(IFeedsRegistry).interfaceId || super.supportsInterface(interfaceId);
     }
 }

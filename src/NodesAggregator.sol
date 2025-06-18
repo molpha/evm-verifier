@@ -10,7 +10,7 @@ import {SSTORE2} from "solmate/utils/SSTORE2.sol";
 import {Ownable2Step} from "openzeppelin-contracts/contracts/access/Ownable2Step.sol";
 import {Ownable} from "openzeppelin-contracts/contracts/access/Ownable.sol";
 
-contract NodeAggregator is INodesAggregator, Ownable2Step {
+contract NodesAggregator is INodesAggregator, Ownable2Step {
     using LibSchnorr for LibSecp256k1.Point;
     using LibSecp256k1 for LibSecp256k1.Point;
     using LibSecp256k1 for LibSecp256k1.JacobianPoint;
