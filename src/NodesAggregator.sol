@@ -10,7 +10,7 @@ import {SSTORE2} from "solmate/utils/SSTORE2.sol";
 import {Ownable2Step} from "openzeppelin-contracts/contracts/access/Ownable2Step.sol";
 import {Ownable} from "openzeppelin-contracts/contracts/access/Ownable.sol";
 
-contract NodeAggregator is INodesAggregator, Ownable2Step {
+contract NodesAggregator is INodesAggregator, Ownable2Step {
     using LibSchnorr for LibSecp256k1.Point;
     using LibSecp256k1 for LibSecp256k1.Point;
     using LibSecp256k1 for LibSecp256k1.JacobianPoint;
@@ -36,10 +36,6 @@ contract NodeAggregator is INodesAggregator, Ownable2Step {
             START_INDEX
         );
         pointer = SSTORE2.write(abi.encode(pubKeys));
-    }
-
-    function submit(uint256 feedId, uint256 value, uint256 timestamp, bytes calldata signature, uint256 bitmap) external {
-        // TODO: implement
     }
 
     function verifySignature(
@@ -86,7 +82,7 @@ contract NodeAggregator is INodesAggregator, Ownable2Step {
     }
 
 
-    function registerNode(LibSecp256k1.Point memory pubkey) external {
+    function addNode(LibSecp256k1.Point memory pubkey) external {
         if (pubkey.isZeroPoint()) revert InvalidPublicKey();
         if (pubkey.toAddress() == address(0)) revert ZeroAddress();
 
@@ -110,7 +106,7 @@ contract NodeAggregator is INodesAggregator, Ownable2Step {
         emit LogNodeAdded(node, nodesAmount, newPointer);
     }
 
-    function unregisterNode(address node) external {
+    function removeNode(address node) external {
         uint256 index = nodeIndexes[node];
         if (index == 0) revert NotNode(node);
 
@@ -136,7 +132,7 @@ contract NodeAggregator is INodesAggregator, Ownable2Step {
         isActive = nodeIndexes[node] != 0;
     }
 
-    function getTotalSigners()
+    function getTotalNodes()
         external
         view
         override
@@ -146,7 +142,7 @@ contract NodeAggregator is INodesAggregator, Ownable2Step {
         totalSigners = pubKeys.getNodesLength() - START_INDEX;
     }
 
-    function getSignerSetHash() external view override returns (bytes32 hash) {
+    function getNodesSetHash() external view override returns (bytes32 hash) {
         hash = keccak256(SSTORE2.read(pointer));
     }
 
