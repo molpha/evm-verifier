@@ -1,0 +1,171 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# AI Productivity Prompts & Workflows
+
+## Context for AI Assistants
+
+When working with this codebase, provide this context to AI assistants:
+
+```
+This is an Ethereum oracle protocol (NOT Solana) built with Foundry. Key concepts:
+
+1. FEEDS: Store oracle data with timestamp validation in [Feed.sol](mdc:src/Feed.sol)
+2. NODES: Off-chain oracle providers that sign data via [NodeAggregator.sol](mdc:src/NodeAggregator.sol)
+3. AGGREGATION: Schnorr signature verification for data integrity
+4. SUBSCRIPTIONS: USDC-based access control via [SubscriptionRegistry.sol](mdc:src/SubscriptionRegistry.sol)
+5. REGISTRY: Factory pattern for feed creation in [FeedsRegistry.sol](mdc:src/FeedsRegistry.sol)
+
+Technology stack:
+- Foundry for development and testing
+- OpenZeppelin for standard implementations
+- Custom cryptographic libraries for Schnorr signatures
+- ERC165 for interface detection
+- Role-based access control patterns
+```
+
+## Recommended AI Prompts by Task
+
+### Code Review & Analysis
+```
+"Review this Solidity contract for security vulnerabilities, gas optimizations, and best practices. Focus on:
+1. Reentrancy protection
+2. Access control validation (using patterns from [IAccessControlManager.sol](mdc:src/interfaces/IAccessControlManager.sol))
+3. Input validation and edge cases
+4. Gas optimization opportunities
+5. Integration with existing Molpha protocol patterns from [development-patterns.mdc](mdc:.cursor/rules/development-patterns.mdc)"
+```
+
+### Testing Strategy
+```
+"Generate comprehensive Foundry tests for this contract including:
+1. Happy path scenarios
+2. Edge cases and error conditions
+3. Access control validation
+4. Gas usage benchmarks
+5. Integration tests with other protocol contracts
+6. Fuzz testing for input validation
+Follow naming convention: test_MethodName_Condition_ExpectedResult"
+```
+
+### Documentation Generation
+```
+"Generate comprehensive NatSpec documentation for this contract following Ethereum documentation standards. Include:
+1. Contract purpose and architecture
+2. Function descriptions with parameters and return values
+3. Event documentation
+4. Error conditions and custom errors
+5. Usage examples and integration patterns
+Reference existing patterns from [core-contracts.mdc](mdc:.cursor/rules/core-contracts.mdc)"
+```
+
+### Deployment Scripts
+```
+"Create Foundry deployment scripts for this contract that:
+1. Handle proper initialization order
+2. Verify contract interfaces using ERC165 patterns
+3. Set up proper access controls
+4. Include deployment verification
+5. Generate deployment documentation
+See [foundry.toml](mdc:foundry.toml) for configuration"
+```
+
+### Security Analysis
+```
+"Analyze this contract for oracle-specific security vulnerabilities:
+1. Schnorr signature verification integrity (see [LibSchnorr.sol](mdc:src/libs/LibSchnorr.sol))
+2. Timestamp manipulation and replay attacks
+3. Node collusion protection
+4. Subscription bypass attempts
+5. Access control bypass vulnerabilities
+Check against security guidelines in [testing-security.mdc](mdc:.cursor/rules/testing-security.mdc)"
+```
+
+## AI-Assisted Development Workflow
+
+### 1. Interface-First Development
+```
+"Help me design the interface for [new functionality]. Consider:
+- Integration with existing interfaces in [src/interfaces/](mdc:src/interfaces/)
+- ERC165 interface support
+- Error definitions following [ICommonErrors.sol](mdc:src/interfaces/ICommonErrors.sol)
+- Event definitions with Log* prefix"
+```
+
+### 2. Implementation Guidance
+```
+"Implement this functionality following Molpha protocol patterns:
+- Use access control patterns from [FeedsRegistry.sol](mdc:src/FeedsRegistry.sol)
+- Follow interface validation patterns
+- Implement proper error handling
+- Include comprehensive input validation"
+```
+
+### 3. Test Generation
+```
+"Generate comprehensive tests for this implementation:
+- Unit tests for all functions
+- Integration tests with [Feed.sol](mdc:src/Feed.sol), [FeedsRegistry.sol](mdc:src/FeedsRegistry.sol)
+- Fuzz tests for input validation
+- Gas optimization tests
+- Security vulnerability tests"
+```
+
+### 4. Code Review
+```
+"Review this implementation against Molpha protocol standards:
+- Security best practices from [testing-security.mdc](mdc:.cursor/rules/testing-security.mdc)
+- Development patterns from [development-patterns.mdc](mdc:.cursor/rules/development-patterns.mdc)
+- Gas optimization opportunities
+- Integration compatibility"
+```
+
+## Quick Development Commands
+
+### Build & Test
+```bash
+forge build
+forge test -vvv
+forge coverage
+```
+
+### Security Analysis
+```bash
+slither .
+forge test --gas-report
+```
+
+### Code Quality
+```bash
+forge fmt
+forge doc
+```
+
+## Project-Specific AI Guidelines
+
+### When Working with Feeds
+- Always consider subscription validation patterns
+- Include timestamp validation logic
+- Verify Schnorr signature requirements
+- Check access control modifiers
+
+### When Working with Registries
+- Follow factory pattern conventions
+- Include interface validation
+- Implement proper event emission
+- Validate created contract addresses
+
+### When Working with Cryptography
+- Reference [LibSchnorr.sol](mdc:src/libs/LibSchnorr.sol) for signature patterns
+- Include threshold validation
+- Implement replay attack protection
+- Test with edge cases
+
+### When Adding New Features
+1. Design interface first in [src/interfaces/](mdc:src/interfaces/)
+2. Implement following existing patterns
+3. Add comprehensive tests
+4. Update relevant documentation
+5. Security review before integration

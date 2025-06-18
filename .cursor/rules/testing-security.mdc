@@ -1,0 +1,146 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# Testing & Security Guidelines
+
+## Testing Structure
+**Test Directory**: [test/](mdc:test/) (currently empty - needs implementation)
+**Framework**: Foundry testing with forge-std
+
+### Test Organization
+- Follow `test_MethodName_Condition_ExpectedResult` naming convention
+- Group tests by contract in separate files
+- Use fuzzing for input validation testing
+- Create integration tests for cross-contract interactions
+
+### Key Test Scenarios Required
+
+#### 1. Feed Operations ([Feed.sol](mdc:src/Feed.sol))
+- Data publishing with valid Schnorr signatures
+- Data retrieval with subscription validation
+- Timestamp validation (past/future timestamp rejection)
+- Access control for consumers
+
+#### 2. Access Control ([FeedsRegistry.sol](mdc:src/FeedsRegistry.sol))
+- Role-based permissions testing
+- Unauthorized access attempts
+- Manager role verification
+
+#### 3. Cryptography ([LibSchnorr.sol](mdc:src/libs/LibSchnorr.sol))
+- Schnorr signature verification
+- Invalid signature handling
+- Threshold signature validation
+- Replay attack prevention
+
+#### 4. Economic Logic ([SubscriptionRegistry.sol](mdc:src/SubscriptionRegistry.sol))
+- USDC subscription payments
+- Subscription expiration logic
+- Fee calculation accuracy
+
+#### 5. Integration Tests
+- Factory pattern functionality
+- Cross-contract communication
+- Interface validation patterns
+
+## Security Considerations
+
+### Critical Security Areas
+
+#### 1. Signature Verification
+**Files**: [LibSchnorr.sol](mdc:src/libs/LibSchnorr.sol), [LibSecp256k1.sol](mdc:src/libs/LibSecp256k1.sol)
+- Schnorr signature validation must be bulletproof
+- Prevent signature malleability attacks
+- Verify threshold requirements
+
+#### 2. Timestamp Validation
+**Files**: [Feed.sol](mdc:src/Feed.sol)
+- Prevent replay attacks via timestamp validation
+- Reject future timestamps
+- Ensure monotonic timestamp ordering
+
+#### 3. Access Control
+**Files**: [FeedsRegistry.sol](mdc:src/FeedsRegistry.sol), [IAccessControlManager.sol](mdc:src/interfaces/IAccessControlManager.sol)
+- Verify role-based permissions throughout
+- Check modifier implementations
+- Validate manager role assignments
+
+#### 4. Subscription Logic
+**Files**: [SubscriptionRegistry.sol](mdc:src/SubscriptionRegistry.sol)
+- Validate payment and expiration logic
+- Prevent subscription bypass
+- Check USDC payment handling
+
+#### 5. Oracle Manipulation
+**Files**: [NodeAggregator.sol](mdc:src/NodeAggregator.sol)
+- Prevent invalid signature acceptance
+- Verify node participation tracking
+- Check bitmap validation
+
+### Common Vulnerabilities to Check
+
+#### Smart Contract Security
+- Reentrancy in state-changing functions
+- Integer overflow/underflow (Solidity 0.8+ has built-in protection)
+- Improper access control validation
+- Front-running in fee/subscription updates
+- Uninitialized storage pointers
+
+#### Oracle-Specific Security
+- Signature replay attacks
+- Timestamp manipulation
+- Node collusion protection
+- Data feed manipulation
+- Subscription bypass attempts
+
+## Security Review Checklist
+
+### Pre-Deployment Security Review
+- [ ] All functions have proper access control
+- [ ] Input validation is comprehensive
+- [ ] Signature verification is secure
+- [ ] Timestamp validation prevents replays
+- [ ] Economic logic is sound
+- [ ] Integration tests pass
+- [ ] Static analysis tools (Slither, Mythril) pass
+- [ ] Gas optimization review completed
+
+### Code Quality Standards
+- [ ] All functions have NatSpec documentation
+- [ ] Events emitted for state changes
+- [ ] Custom errors with descriptive messages
+- [ ] Interfaces properly defined
+- [ ] ERC165 support implemented correctly
+
+## Recommended Security Tools
+
+### Static Analysis
+- **Slither**: Automated vulnerability detection
+- **Mythril**: Symbolic execution analysis
+- **Foundry**: Built-in fuzzing capabilities
+
+### Testing Tools
+- **forge test**: Comprehensive test execution
+- **forge coverage**: Code coverage analysis
+- **anvil**: Local blockchain for testing
+
+### Deployment Security
+- **forge verify**: Contract verification on Etherscan
+- **Multi-signature wallets**: For admin functions
+- **Timelock contracts**: For critical parameter changes
+
+## Gas Optimization Guidelines
+
+### Optimization Areas
+- Pack structs efficiently
+- Use immutable for constants
+- Minimize storage operations
+- Batch operations where possible
+- Use events instead of storage for historical data
+
+### Gas Testing
+```bash
+forge test --gas-report
+forge snapshot
+```
