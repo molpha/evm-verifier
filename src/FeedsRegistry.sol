@@ -5,6 +5,7 @@ import {ERC165} from "openzeppelin-contracts/contracts/utils/introspection/ERC16
 
 import {ERC165Checker} from "./libs/ERC165Checker.sol";
 import {IAccessControlManager} from "./interfaces/IAccessControlManager.sol";
+import {IFeed} from "./interfaces/IFeed.sol";
 import {IFeedsFactory} from "./interfaces/IFeedsFactory.sol";
 import {IFeedsRegistry} from "./interfaces/IFeedsRegistry.sol";
 import {ISubscriptionsRegistry} from "./interfaces/ISubscriptionsRegistry.sol";
@@ -71,6 +72,7 @@ contract FeedsRegistry is IFeedsRegistry, ERC165 {
         feed = _feedsFactory.build();
         _feeds.push(feed);
         _isFeed[feed] = true;
+        IFeed(feed).initialize(metadataHash, minSignaturesThreshold);
 
         emit LogFeedCreated(feed);
 

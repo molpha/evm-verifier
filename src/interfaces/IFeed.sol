@@ -11,6 +11,10 @@ import {IFeedErrors} from "./IFeedErrors.sol";
 /// @notice Handles feed metadata, update logic, and on-chain value access
 /// @dev Implemented by specific feed contracts
 interface IFeed is IFeedStructs, IFeedEvents, IFeedErrors {
+    /// @notice Initialize the feed
+    /// @param metadataHash The hash of the feed metadata
+    /// @param minSignaturesThreshold The minimum number of signatures required
+    function initialize(bytes32 metadataHash, uint256 minSignaturesThreshold) external;
 
     /// @notice Publish an answer
     /// @param answer The answer to publish
@@ -38,4 +42,12 @@ interface IFeed is IFeedStructs, IFeedEvents, IFeedErrors {
     /// @return value The value of the entry
     /// @return timestamp The timestamp of the entry
     function getEntry(uint256 index) external view returns (bytes memory value, uint256 timestamp);
+
+    /// @notice Returns the metadata hash
+    /// @return metadataHash The metadata hash
+    function getMetadataHash() external view returns (bytes32 metadataHash);
+
+    /// @notice Returns the minimum number of signatures required
+    /// @return minSignaturesThreshold The minimum number of signatures required
+    function getMinSignaturesThreshold() external view returns (uint256 minSignaturesThreshold);
 }

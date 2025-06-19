@@ -28,7 +28,8 @@ contract Feed is IFeed, ERC165 {
 
     Answer[] internal _answers;
 
-    uint256 public minSignaturesThreshold;
+    uint256 _minSignaturesThreshold;
+    bytes32 _metadataHash;
 
     // pointer to Nodes[] in SSTORE2, nodes[0] is empty cause we use 1-based indexing
     address internal _pointer;
@@ -69,9 +70,14 @@ contract Feed is IFeed, ERC165 {
         _nodesAggregator = nodesAggregator;
     }
 
+    function initialize(bytes32 metadataHash, uint256 minSignaturesThreshold) external {
+        _metadataHash = metadataHash;
+        _minSignaturesThreshold = minSignaturesThreshold;
+    }
+
     /// @inheritdoc IFeed
     function publishAnswer(Answer calldata answer, INodesAggregator.SchnorrSignature calldata schnorrData) external {
-        _nodesAggregator.verifySignature(_constructMessage(answer), schnorrData, minSignaturesThreshold);
+        _nodesAggregator.verifySignature(_constructMessage(answer), schnorrData, _minSignaturesThreshold);
 
         _answers.push(answer);
         emit LogAnswerPublished(answer.value, answer.timestamp);
@@ -112,6 +118,16 @@ contract Feed is IFeed, ERC165 {
     /// @inheritdoc IFeed
     function getSubscriptionsRegistry() external view override returns (ISubscriptionsRegistry subscriptionsRegistry) {
         return _subsciptionsRegistry;
+    }
+
+    /// @inheritdoc IFeed
+    function getMetadataHash() external view override returns (bytes32 metadataHash) {
+        return _metadataHash;
+    }
+
+    /// @inheritdoc IFeed
+    function getMinSignaturesThreshold() external view override returns (uint256 minSignaturesThreshold) {
+        return _minSignaturesThreshold;
     }
 
     // /// @inheritdoc IFeed

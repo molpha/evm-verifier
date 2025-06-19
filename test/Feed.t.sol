@@ -27,7 +27,7 @@ contract FeedTest is Test {
         subRegistry = new MockSubscriptionsRegistry();
         acl = new MockAccessControlManager(address(this));
         feed = new Feed(acl, aggregator, subRegistry);
-        feed.minSignaturesThreshold(); // read to silence warnings
+        feed.getMinSignaturesThreshold(); // read to silence warnings
     }
 
     function test_publishAnswer_StoresData() public {

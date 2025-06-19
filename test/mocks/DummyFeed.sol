@@ -8,6 +8,8 @@ import {INodesAggregator} from "../../src/interfaces/INodesAggregator.sol";
 contract DummyFeed is IFeed {
     Answer[] internal answers;
 
+    function initialize(bytes32 metadataHash, uint256 minSignaturesThreshold) external {}
+
     function publishAnswer(Answer calldata, INodesAggregator.SchnorrSignature calldata) external {}
 
     function getLatest() external view returns (bytes memory value, uint256 timestamp) {
@@ -28,5 +30,13 @@ contract DummyFeed is IFeed {
     function getEntry(uint256 index) external view returns (bytes memory, uint256) {
         Answer memory a = answers[index];
         return (a.value, a.timestamp);
+    }
+
+    function getMetadataHash() external view returns (bytes32) {
+        return bytes32(0);
+    }
+
+    function getMinSignaturesThreshold() external view returns (uint256) {
+        return 0;
     }
 }
