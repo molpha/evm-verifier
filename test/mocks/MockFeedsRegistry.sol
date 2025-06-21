@@ -10,11 +10,9 @@ contract MockFeedsRegistry is IFeedsRegistry, ERC165 {
     mapping(address => bool) public feeds;
     IFeedsFactory public factory;
 
-    function createFeed(bytes32, uint256, uint128, uint256) external returns (address feed) {
+    function createFeed(bytes32, uint256) external returns (address feed) {
         feed = address(0);
     }
-
-    function setSubscriptionPrice(address, uint128) external {}
 
     function isFeed(address addr) external view returns (bool) {
         return feeds[addr];

@@ -58,8 +58,6 @@ contract FeedsRegistry is IFeedsRegistry, ERC165 {
     /// @inheritdoc IFeedsRegistry
     function createFeed(
         bytes32 metadataHash, 
-        uint256 rewardForAnswer, 
-        uint128 subscriptionPrice, 
         uint256 minSignaturesThreshold
     )
         external
@@ -77,7 +75,7 @@ contract FeedsRegistry is IFeedsRegistry, ERC165 {
         emit LogFeedCreated(feed);
 
         // _treasury.setRewardForAnswer(feed, rewardForAnswer);
-        _subscriptionsRegistry.setSubscriptionPrice(feed, subscriptionPrice);
+        // _subscriptionsRegistry.setSubscriptionPrice(feed, subscriptionPrice);/
     }
 
     // /// @inheritdoc IFeedsRegistry
@@ -88,16 +86,16 @@ contract FeedsRegistry is IFeedsRegistry, ERC165 {
     //     _treasury.setRewardForAnswer(aggregator, reward);
     // }
 
-    function setSubscriptionPrice(address feed, uint128 price)
-        external
-        override
-        onlyFeedsManager
-    {
-        _validateFeed(feed);
+    // function setSubscriptionPrice(address feed, uint128 price)
+    //     external
+    //     override
+    //     onlyFeedsManager
+    // {
+    //     _validateFeed(feed);
 
-        _subscriptionsRegistry.setSubscriptionPrice(feed, price);
-        emit LogSubscriptionPriceChanged(feed, price);
-    }
+    //     _subscriptionsRegistry.setSubscriptionPrice(feed, price);
+    //     emit LogSubscriptionPriceChanged(feed, price);
+    // }
 
     /// @inheritdoc IFeedsRegistry
     function isFeed(address feed) external view override returns (bool) {

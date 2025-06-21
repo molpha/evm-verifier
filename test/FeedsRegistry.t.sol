@@ -27,15 +27,15 @@ contract FeedsRegistryTest is Test {
 
     function test_createFeed_AddsFeed() public {
         factory.setAggregatorImpl(address(new DummyFeed()));
-        address feed = registry.createFeed(bytes32(0), 0, 1, 0);
+        address feed = registry.createFeed(bytes32(0), 0);
         assertTrue(registry.isFeed(feed));
     }
 
-    function test_setSubscriptionPrice_Works() public {
-        factory.setAggregatorImpl(address(new DummyFeed()));
-        address feed = registry.createFeed(bytes32(0), 0, 1, 0);
+    // function test_setSubscriptionPrice_Works() public {
+    //     factory.setAggregatorImpl(address(new DummyFeed()));
+    //     address feed = registry.createFeed(bytes32(0), 0, 1, 0);
 
-        registry.setSubscriptionPrice(feed, 10);
-        assertEq(subRegistry.price(), 10);
-    }
+    //     registry.setSubscriptionPrice(feed, 10);
+    //     assertEq(subRegistry.price(), 10);
+    // }
 }

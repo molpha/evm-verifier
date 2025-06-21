@@ -14,6 +14,9 @@ interface IAccessControlManager is IAccessControl {
     /// @notice nodes manager role
     function NODES_MANAGER() external view returns (bytes32);
 
+    /// @notice price manager role
+    function PRICE_MANAGER() external view returns (bytes32);
+
     /// @notice verify if account has protocol admin role, and revert otherwise
     /// @param account account to verify
     function verifyProtocolAdmin(address account) external view;
@@ -25,4 +28,8 @@ interface IAccessControlManager is IAccessControl {
     /// @notice verify if account has nodes manager role, and revert otherwise
     /// @param account account to verify
     function verifyNodesManager(address account) external view;
+
+    /// @notice verify if account has price manager role, and revert otherwise
+    /// @param account account to verify
+    function verifyPriceManager(address account) external view;
 }

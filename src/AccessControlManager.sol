@@ -9,6 +9,7 @@ import {IAccessControlManager} from "./interfaces/IAccessControlManager.sol";
 contract AccessControlManager is AccessControl, IAccessControlManager, Initializable {
     bytes32 public constant override FEEDS_MANAGER = keccak256("FEEDS_MANAGER");
     bytes32 public constant override NODES_MANAGER = keccak256("NODES_MANAGER");
+    bytes32 public constant override PRICE_MANAGER = keccak256("PRICE_MANAGER");
 
     function initialize(address _protocolAdmin) external initializer {
         _grantRole(DEFAULT_ADMIN_ROLE, _protocolAdmin);
@@ -27,6 +28,11 @@ contract AccessControlManager is AccessControl, IAccessControlManager, Initializ
     /// @inheritdoc IAccessControlManager
     function verifyNodesManager(address account) external view override {
         _checkRole(NODES_MANAGER, account);
+    }
+
+    /// @inheritdoc IAccessControlManager
+    function verifyPriceManager(address account) external view override {
+        _checkRole(PRICE_MANAGER, account);
     }
 
     function ADMIN_ROLE() public pure override returns (bytes32) {
