@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: BSL-1.1
 pragma solidity ^0.8.29;
 
-/// @title ISubscriptionsRegistryEvents
-/// @notice Events for the SubscriptionsRegistry
-interface ISubscriptionsRegistryEvents {
+/// @title ISubscriptionRegistryEvents
+/// @notice Events for the SubscriptionRegistry
+interface ISubscriptionRegistryEvents {
     /// @notice emitted when new subscription is made
     /// @param subscriber subscriber address
     /// @param aggregator aggregator address

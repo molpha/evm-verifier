@@ -8,10 +8,10 @@ import {SafeERC20} from "openzeppelin-contracts/contracts/token/ERC20/utils/Safe
 
 import {ERC165Checker} from "./libs/ERC165Checker.sol";
 import {IAccessControlManager} from "./interfaces/IAccessControlManager.sol";
-import {IFeedsRegistry} from "./interfaces/IFeedsRegistry.sol";
-import {ISubscriptionsRegistry} from "./interfaces/ISubscriptionsRegistry.sol";
+import {IFeedRegistry} from "./interfaces/IFeedRegistry.sol";
+import {ISubscriptionRegistry} from "./interfaces/ISubscriptionRegistry.sol";
 
-contract SubscriptionsRegistry is ISubscriptionsRegistry, ERC165, ReentrancyGuard {
+contract SubscriptionRegistry is ISubscriptionRegistry, ERC165, ReentrancyGuard {
     using ERC165Checker for address;
     using SafeERC20 for IERC20;
 
@@ -29,7 +29,7 @@ contract SubscriptionsRegistry is ISubscriptionsRegistry, ERC165, ReentrancyGuar
     IAccessControlManager internal immutable _accessControlManager;
     IERC20 internal immutable _underlying;
 
-    IFeedsRegistry internal _feedsRegistry;
+    IFeedRegistry internal _feedRegistry;
     // ITreasury internal _treasury;
 
     uint256 internal _subscriptionFee; // 100% = 1e18; 1% = 1e16; 0.1% = 1e15; 0.01% = 1e14; 0.001% = 1e13;
@@ -42,9 +42,9 @@ contract SubscriptionsRegistry is ISubscriptionsRegistry, ERC165, ReentrancyGuar
         _;
     }
 
-    modifier onlyFeedsRegistry() {
-        if (msg.sender != address(_feedsRegistry)) {
-            revert NotFeedsRegistry(msg.sender);
+    modifier onlyFeedRegistry() {
+        if (msg.sender != address(_feedRegistry)) {
+            revert NotFeedRegistry(msg.sender);
         }
         _;
     }
@@ -58,23 +58,23 @@ contract SubscriptionsRegistry is ISubscriptionsRegistry, ERC165, ReentrancyGuar
     }
 
     function initialize(
-        IFeedsRegistry feedsRegistry,
+        IFeedRegistry feedRegistry,
         // ITreasury treasury,
         uint256 subscriptionFee
     ) external {
         if (_subscriptionFee != 0) {
             revert("AlreadyInitialized()");
         }
-        address(feedsRegistry).shouldSupport(type(IFeedsRegistry).interfaceId);
+        address(feedRegistry).shouldSupport(type(IFeedRegistry).interfaceId);
         // address(treasury).shouldSupport(type(ITreasury).interfaceId);
         _validateSubscriptionFee(subscriptionFee);
 
-        _feedsRegistry = feedsRegistry;
+        _feedRegistry = feedRegistry;
         // _treasury = treasury;
         _subscriptionFee = subscriptionFee;
     }
 
-    /// @inheritdoc ISubscriptionsRegistry
+    /// @inheritdoc ISubscriptionRegistry
     function subscribe(address consumer, address aggregator, uint256 timespan) external override nonReentrant {
         if (timespan < MIN_SUBSCRIPTION_TIME || timespan > MAX_SUBSCRIPTION_TIME) {
             revert WrongSubscriptionTime(timespan);
@@ -104,7 +104,7 @@ contract SubscriptionsRegistry is ISubscriptionsRegistry, ERC165, ReentrancyGuar
         emit LogSubscribed(consumer, aggregator, dueTime);
     }
 
-    /// @inheritdoc ISubscriptionsRegistry
+    /// @inheritdoc ISubscriptionRegistry
     function unsubscribe(address feed) external override nonReentrant {
         address consumer = msg.sender;
         Subscription memory subscription = _subscriptions[consumer][feed];
@@ -132,12 +132,12 @@ contract SubscriptionsRegistry is ISubscriptionsRegistry, ERC165, ReentrancyGuar
         emit LogSubscriptionFeeSet(fee);
     }
 
-    /// @inheritdoc ISubscriptionsRegistry
-    function setSubscriptionPrice(address aggregator, uint128 price) external override onlyFeedsRegistry {
+    /// @inheritdoc ISubscriptionRegistry
+    function setSubscriptionPrice(address aggregator, uint128 price) external override onlyFeedRegistry {
         if (price < MIN_SUBSCRIPTION_PRICE || price > MAX_SUBSCRIPTION_PRICE) {
             revert WrongSubscriptionPrice(price);
         }
-        if (!_feedsRegistry.isFeed(aggregator)) {
+        if (!_feedRegistry.isFeed(aggregator)) {
             revert NotAggregator(aggregator);
         }
 
@@ -145,33 +145,33 @@ contract SubscriptionsRegistry is ISubscriptionsRegistry, ERC165, ReentrancyGuar
         emit LogSubscriptionPriceSet(aggregator, price);
     }
 
-    /// @inheritdoc ISubscriptionsRegistry
+    /// @inheritdoc ISubscriptionRegistry
     function isSubscribed(address consumer, address aggregator) external view returns (bool) {
         return _subscriptions[consumer][aggregator].dueTime > block.timestamp;
     }
 
-    /// @inheritdoc ISubscriptionsRegistry
+    /// @inheritdoc ISubscriptionRegistry
     function getSubscriptionDueTime(address consumer, address aggregator) external view override returns (uint256) {
         return _subscriptions[consumer][aggregator].dueTime;
     }
 
-    /// @inheritdoc ISubscriptionsRegistry
+    /// @inheritdoc ISubscriptionRegistry
     function getSubscriptionPrice(address feed) external view override returns (uint256) {
         return _prices[feed];
     }
 
-    /// @inheritdoc ISubscriptionsRegistry
+    /// @inheritdoc ISubscriptionRegistry
     function getSubscriptionFee() external view override returns (uint256) {
         return _subscriptionFee;
     }
 
-    // /// @inheritdoc ISubscriptionsRegistry
+    // /// @inheritdoc ISubscriptionRegistry
     // function getTreasury() external view override returns (ITreasury) {
     //     return _treasury;
     // }
 
     function supportsInterface(bytes4 interfaceId) public view override returns (bool) {
-        return interfaceId == type(ISubscriptionsRegistry).interfaceId || super.supportsInterface(interfaceId);
+        return interfaceId == type(ISubscriptionRegistry).interfaceId || super.supportsInterface(interfaceId);
     }
 
     function _validateSubscriptionFee(uint256 fee) internal pure {

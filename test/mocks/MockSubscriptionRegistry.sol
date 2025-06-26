@@ -3,9 +3,9 @@ pragma solidity ^0.8.20;
 
 import {ERC165} from "openzeppelin-contracts/contracts/utils/introspection/ERC165.sol";
 
-import {ISubscriptionsRegistry} from "../../src/interfaces/ISubscriptionsRegistry.sol";
+import {ISubscriptionRegistry} from "../../src/interfaces/ISubscriptionRegistry.sol";
 
-contract MockSubscriptionsRegistry is ISubscriptionsRegistry, ERC165 {
+contract MockSubscriptionRegistry is ISubscriptionRegistry, ERC165 {
     mapping(address => bool) public subscribed;
     uint256 public price;
     uint256 public fee;
@@ -43,6 +43,6 @@ contract MockSubscriptionsRegistry is ISubscriptionsRegistry, ERC165 {
     }
 
     function supportsInterface(bytes4 interfaceId) public view override returns (bool) {
-        return interfaceId == type(ISubscriptionsRegistry).interfaceId || super.supportsInterface(interfaceId);
+        return interfaceId == type(ISubscriptionRegistry).interfaceId || super.supportsInterface(interfaceId);
     }
 }

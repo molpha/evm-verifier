@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: BSL-1.1
 pragma solidity ^0.8.29;
 
-import {ISubscriptionsRegistryStructs} from "./ISubscriptionsRegistryStructs.sol";
-import {ISubscriptionsRegistryEvents} from "./ISubscriptionsRegistryEvents.sol";
-import {ISubscriptionsRegistryErrors} from "./ISubscriptionsRegistryErrors.sol";
+import {ISubscriptionRegistryStructs} from "./ISubscriptionRegistryStructs.sol";
+import {ISubscriptionRegistryEvents} from "./ISubscriptionRegistryEvents.sol";
+import {ISubscriptionRegistryErrors} from "./ISubscriptionRegistryErrors.sol";
 
 /// @title ISubscriptionRegistry - Manages feed subscriptions
 /// @notice Tracks which consumers are subscribed to which feeds
-interface ISubscriptionsRegistry is ISubscriptionsRegistryStructs, ISubscriptionsRegistryEvents, ISubscriptionsRegistryErrors {
+interface ISubscriptionRegistry is ISubscriptionRegistryStructs, ISubscriptionRegistryEvents, ISubscriptionRegistryErrors {
     /// @notice Subscribe to a feed
     /// @param consumer The consumer address
     /// @param feed The feed address

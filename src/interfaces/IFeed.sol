@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: BSL-1.1
 pragma solidity ^0.8.29;
 
-import {INodesAggregator} from "./INodesAggregator.sol";
-import {ISubscriptionsRegistry} from "./ISubscriptionsRegistry.sol";
+import {INodeAggregator} from "./INodeAggregator.sol";
+import {ISubscriptionRegistry} from "./ISubscriptionRegistry.sol";
 import {IFeedStructs} from "./IFeedStructs.sol";
 import {IFeedEvents} from "./IFeedEvents.sol";
 import {IFeedErrors} from "./IFeedErrors.sol";
@@ -19,7 +19,7 @@ interface IFeed is IFeedStructs, IFeedEvents, IFeedErrors {
     /// @notice Publish an answer
     /// @param answer The answer to publish
     /// @param schnorrData The Schnorr signature data
-    function publishAnswer(Answer calldata answer, INodesAggregator.SchnorrSignature calldata schnorrData) external;
+    function publishAnswer(Answer calldata answer, INodeAggregator.SchnorrSignature calldata schnorrData) external;
 
     /// @notice Returns the latest feed data
     /// @return value The latest value
@@ -33,9 +33,9 @@ interface IFeed is IFeedStructs, IFeedEvents, IFeedErrors {
     /// @return timestamp UNIX timestamp of last update
     function getLastUpdated() external view returns (uint256 timestamp);
 
-    /// @notice Returns the subscriptions registry
-    /// @return subscriptionsRegistry The subscriptions registry
-    function getSubscriptionsRegistry() external view returns (ISubscriptionsRegistry subscriptionsRegistry);
+    /// @notice Returns the subscription registry
+    /// @return subscriptionRegistry The subscription registry
+    function getSubscriptionRegistry() external view returns (ISubscriptionRegistry subscriptionRegistry);
 
     /// @notice Returns the entry at a specific index
     /// @param index The index of the entry

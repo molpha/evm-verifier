@@ -4,13 +4,13 @@ pragma solidity ^0.8.29;
 import {LibSecp256k1} from "./libs/LibSecp256k1.sol";
 import {LibSchnorr} from "./libs/LibSchnorr.sol";
 import {SchnorrSetVerifierLib} from "./libs/SchnorrSetVerifierLib.sol";
-import {INodesAggregator} from "./interfaces/INodesAggregator.sol";
+import {INodeAggregator} from "./interfaces/INodeAggregator.sol";
 
 import {SSTORE2} from "solmate/utils/SSTORE2.sol";
 import {Ownable2Step} from "openzeppelin-contracts/contracts/access/Ownable2Step.sol";
 import {Ownable} from "openzeppelin-contracts/contracts/access/Ownable.sol";
 
-contract NodesAggregator is INodesAggregator, Ownable2Step {
+contract NodeAggregator is INodeAggregator, Ownable2Step {
     using LibSchnorr for LibSecp256k1.Point;
     using LibSecp256k1 for LibSecp256k1.Point;
     using LibSecp256k1 for LibSecp256k1.JacobianPoint;

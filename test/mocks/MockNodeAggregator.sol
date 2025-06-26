@@ -3,10 +3,10 @@ pragma solidity ^0.8.20;
 
 import {ERC165} from "openzeppelin-contracts/contracts/utils/introspection/ERC165.sol";
 
-import {INodesAggregator} from "../../src/interfaces/INodesAggregator.sol";
+import {INodeAggregator} from "../../src/interfaces/INodeAggregator.sol";
 import {LibSecp256k1} from "../../src/libs/LibSecp256k1.sol";
 
-contract MockNodesAggregator is INodesAggregator, ERC165 {
+contract MockNodeAggregator is INodeAggregator, ERC165 {
     using LibSecp256k1 for LibSecp256k1.Point;
 
     mapping(address => bool) public nodes;
@@ -49,6 +49,6 @@ contract MockNodesAggregator is INodesAggregator, ERC165 {
     }
 
     function supportsInterface(bytes4 interfaceId) public view override returns (bool) {
-        return interfaceId == type(INodesAggregator).interfaceId || super.supportsInterface(interfaceId);
+        return interfaceId == type(INodeAggregator).interfaceId || super.supportsInterface(interfaceId);
     }
 }

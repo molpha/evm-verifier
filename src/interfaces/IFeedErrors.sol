@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: BSL-1.1
 pragma solidity ^0.8.29;
 
-import {INodesAggregator} from "./INodesAggregator.sol";
-import {ISubscriptionsRegistry} from "./ISubscriptionsRegistry.sol";
+import {INodeAggregator} from "./INodeAggregator.sol";
+import {ISubscriptionRegistry} from "./ISubscriptionRegistry.sol";
 
 /// @title IFeedErrors
 /// @notice Errors for the Feed contract
@@ -24,5 +24,5 @@ interface IFeedErrors {
     /// @notice reverts when msg sender is not a nodes registry
     /// only a nodes registry can add or remove nodes
     /// @param sender sender address
-    error NotNodesRegistry(address sender);
+    error NotNodeRegistry(address sender);
 }

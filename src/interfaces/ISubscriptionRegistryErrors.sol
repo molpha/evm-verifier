@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: BSL-1.1
 pragma solidity ^0.8.29;
 
-/// @title ISubscriptionsRegistryErrors
-/// @notice Errors for the SubscriptionsRegistry
-interface ISubscriptionsRegistryErrors {
+/// @title ISubscriptionRegistryErrors
+/// @notice Errors for the SubscriptionRegistry
+interface ISubscriptionRegistryErrors {
      /// @notice thrown on unsubscribe call if remaining subscription time is less than minimum
     /// @param dueTime remaining subscription time
     error CannotUnsubscribe(uint256 dueTime);
@@ -24,10 +24,10 @@ interface ISubscriptionsRegistryErrors {
     /// @dev in this case user extend subscription only when due time is less than minimum subscription time
     error CannotExtendSubscription();
 
-    /// @notice thrown when sender is not feeds registry
-    /// only feeds registry can set price for feed
+    /// @notice thrown when sender is not feed registry
+    /// only feed registry can set price for feed
     /// @param sender sender address
-    error NotFeedsRegistry(address sender);
+    error NotFeedRegistry(address sender);
 
     /// @notice thrown when admin tries to set invalid subscription fee
     /// @param fee subscription fee

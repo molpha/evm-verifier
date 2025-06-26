@@ -9,10 +9,10 @@ interface IAccessControlManager is IAccessControl {
     function ADMIN_ROLE() external view returns (bytes32);
 
     /// @notice feeds manager role
-    function FEEDS_MANAGER() external view returns (bytes32);
+    function FEED_MANAGER() external view returns (bytes32);
 
     /// @notice nodes manager role
-    function NODES_MANAGER() external view returns (bytes32);
+    function NODE_MANAGER() external view returns (bytes32);
 
     /// @notice price manager role
     function PRICE_MANAGER() external view returns (bytes32);
@@ -23,11 +23,11 @@ interface IAccessControlManager is IAccessControl {
 
     /// @notice verify if account has feeds manager role, and revert otherwise
     /// @param account account to verify
-    function verifyFeedsManager(address account) external view;
+    function verifyFeedManager(address account) external view;
 
-    /// @notice verify if account has nodes manager role, and revert otherwise
+    /// @notice verify if account has node manager role, and revert otherwise
     /// @param account account to verify
-    function verifyNodesManager(address account) external view;
+    function verifyNodeManager(address account) external view;
 
     /// @notice verify if account has price manager role, and revert otherwise
     /// @param account account to verify

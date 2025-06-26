@@ -7,8 +7,8 @@ import {Initializable} from "openzeppelin-contracts/contracts/proxy/utils/Initia
 import {IAccessControlManager} from "./interfaces/IAccessControlManager.sol";
 
 contract AccessControlManager is AccessControl, IAccessControlManager, Initializable {
-    bytes32 public constant override FEEDS_MANAGER = keccak256("FEEDS_MANAGER");
-    bytes32 public constant override NODES_MANAGER = keccak256("NODES_MANAGER");
+    bytes32 public constant override FEED_MANAGER = keccak256("FEED_MANAGER");
+    bytes32 public constant override NODE_MANAGER = keccak256("NODE_MANAGER");
     bytes32 public constant override PRICE_MANAGER = keccak256("PRICE_MANAGER");
 
     function initialize(address _protocolAdmin) external initializer {
@@ -21,13 +21,13 @@ contract AccessControlManager is AccessControl, IAccessControlManager, Initializ
     }
 
     /// @inheritdoc IAccessControlManager
-    function verifyFeedsManager(address account) external view override {
-        _checkRole(FEEDS_MANAGER, account);
+    function verifyFeedManager(address account) external view override {
+        _checkRole(FEED_MANAGER, account);
     }
 
     /// @inheritdoc IAccessControlManager
-    function verifyNodesManager(address account) external view override {
-        _checkRole(NODES_MANAGER, account);
+    function verifyNodeManager(address account) external view override {
+        _checkRole(NODE_MANAGER, account);
     }
 
     /// @inheritdoc IAccessControlManager

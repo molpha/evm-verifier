@@ -8,9 +8,9 @@ import {ERC165Checker} from "./libs/ERC165Checker.sol";
 import {IAccessControlManager} from "./interfaces/IAccessControlManager.sol";
 import {IFeed} from "./interfaces/IFeed.sol";
 // import {INodesRegistry} from "./interfaces/INodesRegistry.sol";
-import {ISubscriptionsRegistry} from "./interfaces/ISubscriptionsRegistry.sol";
+import {ISubscriptionRegistry} from "./interfaces/ISubscriptionRegistry.sol";
 // import {ITreasury} from "./interfaces/ITreasury.sol";
-import {INodesAggregator} from "./interfaces/INodesAggregator.sol";
+import {INodeAggregator} from "./interfaces/INodeAggregator.sol";
 import {IFeed} from "./interfaces/IFeed.sol";
 
 // TODO: think about aggregator deactivation flow
@@ -22,9 +22,9 @@ contract Feed is IFeed, ERC165 {
 
     IAccessControlManager internal immutable _accessControlManager;
     // INodesRegistry internal immutable _nodesRegistry;
-    ISubscriptionsRegistry internal immutable _subsciptionsRegistry;
+    ISubscriptionRegistry internal immutable _subscriptionRegistry;
     // ITreasury internal immutable _treasury;
-    INodesAggregator internal immutable _nodesAggregator;
+    INodeAggregator internal immutable _nodeAggregator;
 
     Answer[] internal _answers;
 
@@ -39,7 +39,7 @@ contract Feed is IFeed, ERC165 {
         // we allow calls from EOA cause data is accessible externally anyway
         // we allow calls from nodes cause they may need to check data
         if (
-            !_subsciptionsRegistry.isSubscribed(msg.sender, address(this)) && tx.origin != msg.sender
+            !_subscriptionRegistry.isSubscribed(msg.sender, address(this)) && tx.origin != msg.sender
                 // && _pubKeys[msg.sender].isZeroPoint()
         ) {
             revert NotSubscribed(msg.sender);
@@ -56,8 +56,8 @@ contract Feed is IFeed, ERC165 {
 
     constructor(
         IAccessControlManager accessControlManager,
-        INodesAggregator nodesAggregator,
-        ISubscriptionsRegistry subsciptionsRegistry
+        INodeAggregator nodeAggregator,
+        ISubscriptionRegistry subscriptionRegistry
         // ITreasury treasury
     ) {
         // address(accessControlManager).shouldSupport(type(IAccessControlManager).interfaceId);
@@ -66,8 +66,8 @@ contract Feed is IFeed, ERC165 {
         // address(treasury).shouldSupport(type(ITreasury).interfaceId);
 
         _accessControlManager = accessControlManager;
-        _subsciptionsRegistry = subsciptionsRegistry;
-        _nodesAggregator = nodesAggregator;
+        _subscriptionRegistry = subscriptionRegistry;
+        _nodeAggregator = nodeAggregator;
     }
 
     function initialize(bytes32 metadataHash, uint256 minSignaturesThreshold) external {
@@ -76,8 +76,8 @@ contract Feed is IFeed, ERC165 {
     }
 
     /// @inheritdoc IFeed
-    function publishAnswer(Answer calldata answer, INodesAggregator.SchnorrSignature calldata schnorrData) external {
-        _nodesAggregator.verifySignature(_constructMessage(answer), schnorrData, _minSignaturesThreshold);
+    function publishAnswer(Answer calldata answer, INodeAggregator.SchnorrSignature calldata schnorrData) external {
+        _nodeAggregator.verifySignature(_constructMessage(answer), schnorrData, _minSignaturesThreshold);
 
         _answers.push(answer);
         emit LogAnswerPublished(answer.value, answer.timestamp);
@@ -116,8 +116,8 @@ contract Feed is IFeed, ERC165 {
     }
 
     /// @inheritdoc IFeed
-    function getSubscriptionsRegistry() external view override returns (ISubscriptionsRegistry subscriptionsRegistry) {
-        return _subsciptionsRegistry;
+    function getSubscriptionRegistry() external view override returns (ISubscriptionRegistry subscriptionRegistry) {
+        return _subscriptionRegistry;
     }
 
     /// @inheritdoc IFeed

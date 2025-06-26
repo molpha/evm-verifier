@@ -2,16 +2,16 @@
 pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
-import {FeedsRegistry} from "../src/FeedsRegistry.sol";
+import {FeedRegistry} from "../src/FeedRegistry.sol";
 import {MockAccessControlManager} from "./mocks/MockAccessControlManager.sol";
-import {MockFeedsFactory} from "./mocks/MockFeedsFactory.sol";
-import {MockSubscriptionsRegistry} from "./mocks/MockSubscriptionsRegistry.sol";
+import {MockFeedFactory} from "./mocks/MockFeedFactory.sol";
+import {MockSubscriptionRegistry} from "./mocks/MockSubscriptionRegistry.sol";
 import {DummyFeed} from "./mocks/DummyFeed.sol";
 
-contract FeedsRegistryTest is Test {
-    FeedsRegistry registry;
-    MockFeedsFactory factory;
-    MockSubscriptionsRegistry subRegistry;
+contract FeedRegistryTest is Test {
+    FeedRegistry registry;
+    MockFeedFactory factory;
+    MockSubscriptionRegistry subRegistry;
     MockAccessControlManager acl;
 
     address manager;
@@ -19,9 +19,9 @@ contract FeedsRegistryTest is Test {
     function setUp() public {
         manager = address(this); // Use the test contract as manager
         acl = new MockAccessControlManager(manager);
-        registry = new FeedsRegistry(acl);
-        factory = new MockFeedsFactory();
-        subRegistry = new MockSubscriptionsRegistry();
+        registry = new FeedRegistry(acl);
+        factory = new MockFeedFactory();
+        subRegistry = new MockSubscriptionRegistry();
         registry.initialize(factory, subRegistry);
     }
 

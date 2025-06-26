@@ -7,17 +7,16 @@ import {ReentrancyGuard} from "openzeppelin-contracts/contracts/utils/Reentrancy
 import {LibSecp256k1} from "./libs/LibSecp256k1.sol";
 import {LibSchnorr} from "./libs/LibSchnorr.sol";
 import {SchnorrSetVerifierLib} from "./libs/SchnorrSetVerifierLib.sol";
-import {INodesAggregator} from "./interfaces/INodesAggregator.sol";
+import {INodeAggregator} from "./interfaces/INodeAggregator.sol";
 import {IAccessControlManager} from "./interfaces/IAccessControlManager.sol";
-import {FeedPricingManager} from "./FeedPricingManager.sol";
 import {SSTORE2} from "solmate/utils/SSTORE2.sol";
 
 /**
- * @title NodesAggregatorRewardTracker
+ * @title NodeAggregatorRewardTracker
  * @notice Combined contract for node management, Schnorr signature verification, and reward tracking
  * @dev Supports up to 256 nodes with efficient SSTORE2 storage and bitmap-based participation tracking
  */
-contract NodesAggregatorRewardTracker is INodesAggregator, ReentrancyGuard {
+contract NodeAggregatorRewardTracker is INodeAggregator, ReentrancyGuard {
     using LibSchnorr for LibSecp256k1.Point;
     using LibSecp256k1 for LibSecp256k1.Point;
     using LibSecp256k1 for LibSecp256k1.JacobianPoint;
@@ -32,9 +31,6 @@ contract NodesAggregatorRewardTracker is INodesAggregator, ReentrancyGuard {
 
     /// @notice Access control manager for role verification
     IAccessControlManager public immutable accessControlManager;
-
-    /// @notice Feed pricing manager for reward calculations
-    FeedPricingManager public immutable feedPricingManager;
 
     /// @notice Reward token (USDC)
     IERC20 public immutable rewardToken;
@@ -51,39 +47,27 @@ contract NodesAggregatorRewardTracker is INodesAggregator, ReentrancyGuard {
     /// @notice Tracks unpaid rewards for each node
     mapping(address => uint256) public pendingRewards;
 
-    /// @notice Tracks total earned rewards for each node
-    mapping(address => uint256) public totalEarnedRewards;
-
-    /// @notice Tracks participation count for each node
-    mapping(address => uint256) public participationCount;
-
     /// @notice Feed participation bitmaps - feed address maps to array of bitmaps
     mapping(address => uint256[]) public feedParticipation;
 
     /// @notice Track last distributed index for each node per feed
-    mapping(address feed => mapping(address node => uint256 lastDistributedIndex)) public nodeLastDistributedIndex;
-
-    // Events from NodesAggregator
-    event LogNodeAdded(address indexed node, uint256 indexed index, address indexed newPointer);
-    event LogNodeRemoved(address indexed node, uint256 indexed index, address indexed newPointer);
+    mapping(address feed => mapping(address node => uint256 lastDistributedIndex))
+        public nodeLastDistributedIndex;
 
     // Events for new reward flow
-    event FeedParticipationRecorded(address indexed feed, uint256 index, uint256 bitmap, uint256 signaturesCount);
-    event RewardDistributed(address indexed feed, address indexed node, uint256 fromIndex, uint256 toIndex, uint256 amount);
+    event FeedParticipationRecorded(
+        address indexed feed,
+        uint256 bitmap
+    );
+    event RewardDistributed(
+        address indexed feed,
+        address indexed node,
+        uint256 fromIndex,
+        uint256 toIndex,
+        uint256 amount
+    );
     event RewardsClaimed(address indexed node, uint256 amount);
     event PricePerResponseUpdated(uint256 oldPrice, uint256 newPrice);
-
-    // Errors from NodesAggregator
-    error InvalidPublicKey();
-    error ZeroAddress();
-    error MaxNodesReached();
-    error NodeAlreadyAdded(address node);
-    error NotNode(address node);
-    error InvalidSignature();
-    error InvalidSignersOrder();
-    error InvalidCommitment();
-    error NotEnoughSignatures(uint256 provided, uint256 required);
-    error InvalidIndex(uint256 index);
 
     // Errors for new reward flow
     error InvalidBitmap();
@@ -91,53 +75,49 @@ contract NodesAggregatorRewardTracker is INodesAggregator, ReentrancyGuard {
     error InvalidPricePerResponse();
     error InvalidFeed();
     error NodeNotInFeed();
-    error InvalidIndex();
     error NoNewParticipations();
 
     constructor(
         address initialOwner,
         IAccessControlManager _accessControlManager,
-        FeedPricingManager _feedPricingManager,
         IERC20 _rewardToken,
         uint256 _initialPricePerResponse
     ) {
         // Initialize SSTORE2 with empty array (index 0 reserved)
-        LibSecp256k1.Point[] memory pubKeys = new LibSecp256k1.Point[](START_INDEX);
+        LibSecp256k1.Point[] memory pubKeys = new LibSecp256k1.Point[](
+            START_INDEX
+        );
         pointer = SSTORE2.write(abi.encode(pubKeys));
 
         // Initialize reward tracking
         accessControlManager = _accessControlManager;
-        feedPricingManager = _feedPricingManager;
         rewardToken = _rewardToken;
         pricePerResponse = _initialPricePerResponse;
     }
 
-    modifier onlyNodesManager() {
-        accessControlManager.verifyNodesManager(msg.sender);
+    modifier onlyNodeManager() {
+        accessControlManager.verifyNodeManager(msg.sender);
         _;
     }
 
-    modifier onlyPriceManager() {
-        accessControlManager.verifyPriceManager(msg.sender);
-        _;
-    }
-
-    modifier onlyFeedsManager() {
-        accessControlManager.verifyFeedsManager(msg.sender);
+    modifier onlyFeedManager() {
+        accessControlManager.verifyFeedManager(msg.sender);
         _;
     }
 
     /// @notice Add a new node to the aggregator group
     /// @param pubkey Public key of the node
-    function addNode(LibSecp256k1.Point memory pubkey) external override onlyNodesManager {
+    function addNode(
+        LibSecp256k1.Point memory pubkey
+    ) external override onlyNodeManager {
         if (pubkey.isZeroPoint()) revert InvalidPublicKey();
-        
+
         address node = pubkey.toAddress();
         if (node == address(0)) revert ZeroAddress();
 
         bytes memory pubKeys = SSTORE2.read(pointer);
         uint256 nodesAmount = pubKeys.getNodesLength();
-        
+
         if (nodesAmount == MAX_NODES) revert MaxNodesReached();
         if (nodeIndexes[node] != 0) revert NodeAlreadyAdded(node);
 
@@ -153,7 +133,7 @@ contract NodesAggregatorRewardTracker is INodesAggregator, ReentrancyGuard {
 
     /// @notice Remove a node from the aggregator group
     /// @param node Address of the node to remove
-    function removeNode(address node) external override onlyNodesManager {
+    function removeNode(address node) external override onlyNodeManager {
         uint256 index = nodeIndexes[node];
         if (index == 0) revert NotNode(node);
 
@@ -177,13 +157,20 @@ contract NodesAggregatorRewardTracker is INodesAggregator, ReentrancyGuard {
     /// @notice Check if a node is currently registered
     /// @param node Address of the node
     /// @return isActive Whether the node is active
-    function isNode(address node) external view override returns (bool isActive) {
+    function isNode(
+        address node
+    ) external view override returns (bool isActive) {
         return nodeIndexes[node] != 0;
     }
 
     /// @notice Get the total number of nodes in the aggregator group
     /// @return totalNodes The total number of nodes
-    function getTotalNodes() external view override returns (uint256 totalNodes) {
+    function getTotalNodes()
+        external
+        view
+        override
+        returns (uint256 totalNodes)
+    {
         bytes memory pubKeys = SSTORE2.read(pointer);
         totalNodes = pubKeys.getNodesLength() - START_INDEX;
     }
@@ -215,12 +202,13 @@ contract NodesAggregatorRewardTracker is INodesAggregator, ReentrancyGuard {
         LibSecp256k1.Point[] memory pubKeys = _getPubKeys();
         uint256 signerSetLength = pubKeys.length;
         uint256 firstIndex = schnorrData.signers[0];
-        
+
         if (firstIndex == 0 || firstIndex >= signerSetLength) {
             revert InvalidIndex(firstIndex);
         }
 
-        LibSecp256k1.JacobianPoint memory aggPubKey = pubKeys[firstIndex].toJacobian();
+        LibSecp256k1.JacobianPoint memory aggPubKey = pubKeys[firstIndex]
+            .toJacobian();
 
         for (uint256 i = START_INDEX; i < numberSigners; i++) {
             uint256 signerIndex = schnorrData.signers[i];
@@ -248,27 +236,29 @@ contract NodesAggregatorRewardTracker is INodesAggregator, ReentrancyGuard {
     /// @param signersBitmap Bitmap representing which nodes participated (0-based positions)
     /// @return index The index in the feed's bitmap array where this participation was stored
     /// @dev Just stores the bitmap, rewards are distributed separately
-    function recordParticipation(address feed, uint256 signersBitmap) external onlyFeedsManager returns (uint256 index) {
+    function recordParticipation(
+        address feed,
+        uint256 signersBitmap
+    ) external onlyFeedManager returns (uint256 index) {
         if (signersBitmap == 0) revert InvalidBitmap();
         if (feed == address(0)) revert InvalidFeed();
 
         // Add bitmap to the feed's array
         feedParticipation[feed].push(signersBitmap);
-        index = feedParticipation[feed].length - 1;
-        
-        // Count signatures using bit manipulation
-        uint256 signaturesCount = _popcount(signersBitmap);
 
-        emit FeedParticipationRecorded(feed, index, signersBitmap, signaturesCount);
+        emit FeedParticipationRecorded(
+            feed,
+            signersBitmap
+        );
     }
 
     /// @notice Distribute rewards for a node from new participations in a feed
     /// @param feed Feed address to distribute rewards for
     /// @param node Node address to distribute rewards to
     /// @dev Distributes rewards from lastDistributedIndex + 1 to latest participation
-    function distributeReward(address feed, address node) external onlyFeedsManager {
+    function distributeReward(address feed, address node, uint256 toIndex) external {
         if (feed == address(0)) revert InvalidFeed();
-        
+
         uint256 nodeIndex = nodeIndexes[node];
         if (nodeIndex == 0) revert NotNode(node);
 
@@ -276,88 +266,39 @@ contract NodesAggregatorRewardTracker is INodesAggregator, ReentrancyGuard {
         if (participations.length == 0) revert InvalidFeed();
 
         uint256 lastDistributed = nodeLastDistributedIndex[feed][node];
-        uint256 latestIndex = participations.length - 1;
-        
+
         // Check if there are new participations to distribute
-        if (lastDistributed >= latestIndex) revert NoNewParticipations();
+        require(toIndex > lastDistributed || toIndex < participations.length, InvalidIndex(toIndex));
 
         uint256 bitmapPosition = nodeIndex - 1; // Convert 1-based index to 0-based bitmap position
-        uint256 totalReward = 0;
         uint256 participationsCount = 0;
 
         // Iterate through new participations
-        for (uint256 i = lastDistributed + 1; i <= latestIndex; i++) {
+        for (uint256 i = lastDistributed + 1; i <= toIndex; i++) {
             uint256 bitmap = participations[i];
-            
+
             // Check if node participated in this bitmap
             if ((bitmap >> bitmapPosition) & 1 == 1) {
-                uint256 signaturesCount = _popcount(bitmap);
-                totalReward += signaturesCount * pricePerResponse;
                 participationsCount++;
             }
         }
 
+        uint256 totalReward = participationsCount * pricePerResponse;
+
         if (totalReward > 0) {
-            // Add to pending rewards
-            pendingRewards[node] += totalReward;
-            totalEarnedRewards[node] += totalReward;
-            participationCount[node] += participationsCount;
+            pendingRewards[node] += participationsCount * pricePerResponse;
         }
-        
+
         // Update last distributed index
-        nodeLastDistributedIndex[feed][node] = latestIndex;
+        nodeLastDistributedIndex[feed][node] = toIndex;
 
-        emit RewardDistributed(feed, node, lastDistributed + 1, latestIndex, totalReward);
-    }
-
-    /// @notice Batch distribute rewards for multiple feed-node pairs
-    /// @param feeds Array of feed addresses
-    /// @param nodes Array of node addresses (must match feeds length)
-    function batchDistributeRewards(address[] calldata feeds, address[] calldata nodes) external onlyFeedsManager {
-        if (feeds.length != nodes.length) revert InvalidIndex();
-        
-        for (uint256 i = 0; i < feeds.length; i++) {
-            // Skip if invalid feed or node
-            if (feeds[i] == address(0) || nodeIndexes[nodes[i]] == 0) continue;
-            
-            uint256[] storage participations = feedParticipation[feeds[i]];
-            if (participations.length == 0) continue;
-
-            uint256 lastDistributed = nodeLastDistributedIndex[feeds[i]][nodes[i]];
-            uint256 latestIndex = participations.length - 1;
-            
-            // Skip if no new participations
-            if (lastDistributed >= latestIndex) continue;
-
-            uint256 nodeIndex = nodeIndexes[nodes[i]];
-            uint256 bitmapPosition = nodeIndex - 1;
-            uint256 totalReward = 0;
-            uint256 participationsCount = 0;
-
-            // Iterate through new participations
-            for (uint256 j = lastDistributed + 1; j <= latestIndex; j++) {
-                uint256 bitmap = participations[j];
-                
-                // Check if node participated in this bitmap
-                if ((bitmap >> bitmapPosition) & 1 == 1) {
-                    uint256 signaturesCount = _popcount(bitmap);
-                    totalReward += signaturesCount * pricePerResponse;
-                    participationsCount++;
-                }
-            }
-
-            if (totalReward > 0) {
-                // Add to pending rewards
-                pendingRewards[nodes[i]] += totalReward;
-                totalEarnedRewards[nodes[i]] += totalReward;
-                participationCount[nodes[i]] += participationsCount;
-            }
-            
-            // Update last distributed index
-            nodeLastDistributedIndex[feeds[i]][nodes[i]] = latestIndex;
-
-            emit RewardDistributed(feeds[i], nodes[i], lastDistributed + 1, latestIndex, totalReward);
-        }
+        emit RewardDistributed(
+            feed,
+            node,
+            lastDistributed + 1,
+            toIndex,
+            totalReward
+        );
     }
 
     /// @notice Claim pending rewards for the calling node
@@ -368,7 +309,9 @@ contract NodesAggregatorRewardTracker is INodesAggregator, ReentrancyGuard {
 
     /// @notice Claim rewards for a specific node (only by feeds manager)
     /// @param node Node address to claim rewards for
-    function claimRewardsFor(address node) external onlyFeedsManager nonReentrant {
+    function claimRewardsFor(
+        address node
+    ) external onlyFeedManager nonReentrant {
         _claimRewards(node);
     }
 
@@ -386,7 +329,7 @@ contract NodesAggregatorRewardTracker is INodesAggregator, ReentrancyGuard {
 
     /// @notice Update the price per response
     /// @param newPrice New price per response in reward tokens
-    function setPricePerResponse(uint256 newPrice) external onlyPriceManager {
+    function setPricePerResponse(uint256 newPrice) external {
         if (newPrice == 0) revert InvalidPricePerResponse();
 
         uint256 oldPrice = pricePerResponse;
@@ -398,11 +341,9 @@ contract NodesAggregatorRewardTracker is INodesAggregator, ReentrancyGuard {
     /// @notice Get feed participation data
     /// @param feed Feed address to get data for
     /// @return bitmaps Array of participation bitmaps for the feed
-    function getFeedParticipation(address feed) 
-        external 
-        view 
-        returns (uint256[] memory bitmaps) 
-    {
+    function getFeedParticipation(
+        address feed
+    ) external view returns (uint256[] memory bitmaps) {
         return feedParticipation[feed];
     }
 
@@ -410,36 +351,23 @@ contract NodesAggregatorRewardTracker is INodesAggregator, ReentrancyGuard {
     /// @param feed Feed address
     /// @param index Index in the feed's bitmap array
     /// @return bitmap Participation bitmap at the specified index
-    function getFeedParticipationAtIndex(address feed, uint256 index) 
-        external 
-        view 
-        returns (uint256 bitmap) 
-    {
+    function getFeedParticipationAtIndex(
+        address feed,
+        uint256 index
+    ) external view returns (uint256 bitmap) {
         uint256[] storage participations = feedParticipation[feed];
-        if (index >= participations.length) revert InvalidIndex();
+        if (index >= participations.length) revert InvalidIndex(index);
         return participations[index];
-    }
-
-    /// @notice Get the number of participations recorded for a feed
-    /// @param feed Feed address
-    /// @return count Number of participations
-    function getFeedParticipationCount(address feed) 
-        external 
-        view 
-        returns (uint256 count) 
-    {
-        return feedParticipation[feed].length;
     }
 
     /// @notice Get the last distributed index for a node in a feed
     /// @param feed Feed address
     /// @param node Node address
     /// @return lastIndex Last distributed index (0 means no distributions yet)
-    function getNodeLastDistributedIndex(address feed, address node) 
-        external 
-        view 
-        returns (uint256 lastIndex) 
-    {
+    function getNodeLastDistributedIndex(
+        address feed,
+        address node
+    ) external view returns (uint256 lastIndex) {
         return nodeLastDistributedIndex[feed][node];
     }
 
@@ -447,23 +375,19 @@ contract NodesAggregatorRewardTracker is INodesAggregator, ReentrancyGuard {
     /// @param node Address of the node
     /// @return nodeIndex Index of the node (1-based)
     /// @return pending Pending rewards
-    /// @return totalEarned Total earned rewards
-    /// @return participations Number of participations
-    function getNodeInfo(address node) 
-        external 
-        view 
+    function getNodeInfo(
+        address node
+    )
+        external
+        view
         returns (
             uint256 nodeIndex,
-            uint256 pending,
-            uint256 totalEarned,
-            uint256 participations
-        ) 
+            uint256 pending
+        )
     {
         return (
             nodeIndexes[node],
-            pendingRewards[node],
-            totalEarnedRewards[node],
-            participationCount[node]
+            pendingRewards[node]
         );
     }
 
@@ -472,11 +396,11 @@ contract NodesAggregatorRewardTracker is INodesAggregator, ReentrancyGuard {
     function getAllNodes() external view returns (address[] memory nodes) {
         bytes memory pubKeysData = SSTORE2.read(pointer);
         uint256 totalNodes = pubKeysData.getNodesLength();
-        
+
         if (totalNodes <= START_INDEX) {
             return new address[](0);
         }
-        
+
         nodes = new address[](totalNodes - START_INDEX);
         for (uint256 i = START_INDEX; i < totalNodes; i++) {
             nodes[i - START_INDEX] = pubKeysData.getNode(i).toAddress();
@@ -486,10 +410,12 @@ contract NodesAggregatorRewardTracker is INodesAggregator, ReentrancyGuard {
     /// @notice Get public key for a node
     /// @param node Address of the node
     /// @return pubkey Public key of the node
-    function getNodePublicKey(address node) external view returns (LibSecp256k1.Point memory pubkey) {
+    function getNodePublicKey(
+        address node
+    ) external view returns (LibSecp256k1.Point memory pubkey) {
         uint256 index = nodeIndexes[node];
         if (index == 0) revert NotNode(node);
-        
+
         bytes memory pubKeysData = SSTORE2.read(pointer);
         return pubKeysData.getNode(index);
     }
@@ -498,14 +424,22 @@ contract NodesAggregatorRewardTracker is INodesAggregator, ReentrancyGuard {
     /// @param token Token to withdraw
     /// @param amount Amount to withdraw
     /// @param to Recipient address
-    function emergencyWithdraw(IERC20 token, uint256 amount, address to) external {
+    function emergencyWithdraw(
+        IERC20 token,
+        uint256 amount,
+        address to
+    ) external {
         accessControlManager.verifyProtocolAdmin(msg.sender);
         token.safeTransfer(to, amount);
     }
 
     /// @notice Internal function to get public keys array
     /// @return pubKeys Array of public keys
-    function _getPubKeys() internal view returns (LibSecp256k1.Point[] memory pubKeys) {
+    function _getPubKeys()
+        internal
+        view
+        returns (LibSecp256k1.Point[] memory pubKeys)
+    {
         pubKeys = abi.decode(SSTORE2.read(pointer), (LibSecp256k1.Point[]));
     }
 
@@ -519,12 +453,4 @@ contract NodesAggregatorRewardTracker is INodesAggregator, ReentrancyGuard {
             count++;
         }
     }
-
-    /// @notice Check if rewards have been distributed for a feed-node pair
-    /// @param node Node address
-    /// @param feedId Feed ID
-    /// @return distributed Whether rewards have been distributed
-    function isRewardDistributed(address node, uint256 feedId) external view returns (bool distributed) {
-        return nodeRewardDistributed[node][feedId];
-    }
-} 
+}

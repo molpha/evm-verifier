@@ -3,12 +3,12 @@ pragma solidity ^0.8.20;
 
 import {ERC165} from "openzeppelin-contracts/contracts/utils/introspection/ERC165.sol";
 
-import {IFeedsRegistry} from "../../src/interfaces/IFeedsRegistry.sol";
-import {IFeedsFactory} from "../../src/interfaces/IFeedsFactory.sol";
+import {IFeedRegistry} from "../../src/interfaces/IFeedRegistry.sol";
+import {IFeedFactory} from "../../src/interfaces/IFeedFactory.sol";
 
-contract MockFeedsRegistry is IFeedsRegistry, ERC165 {
+contract MockFeedRegistry is IFeedRegistry, ERC165 {
     mapping(address => bool) public feeds;
-    IFeedsFactory public factory;
+    IFeedFactory public factory;
 
     function createFeed(bytes32, uint256) external returns (address feed) {
         feed = address(0);
@@ -18,7 +18,7 @@ contract MockFeedsRegistry is IFeedsRegistry, ERC165 {
         return feeds[addr];
     }
 
-    function getFeedsFactory() external view returns (IFeedsFactory) {
+    function getFeedFactory() external view returns (IFeedFactory) {
         return factory;
     }
 
@@ -27,6 +27,6 @@ contract MockFeedsRegistry is IFeedsRegistry, ERC165 {
     }
 
     function supportsInterface(bytes4 interfaceId) public view override returns (bool) {
-        return interfaceId == type(IFeedsRegistry).interfaceId || super.supportsInterface(interfaceId);
+        return interfaceId == type(IFeedRegistry).interfaceId || super.supportsInterface(interfaceId);
     }
 }

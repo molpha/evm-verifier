@@ -3,8 +3,8 @@ pragma solidity ^0.8.20;
 
 import {ERC165} from "openzeppelin-contracts/contracts/utils/introspection/ERC165.sol";
 
-import {IFeedsFactory} from "../../src/interfaces/IFeedsFactory.sol";
-contract MockFeedsFactory is IFeedsFactory, ERC165 {
+import {IFeedFactory} from "../../src/interfaces/IFeedFactory.sol";
+contract MockFeedFactory is IFeedFactory, ERC165 {
     address public implementation;
 
     function build() external returns (address) {
@@ -22,6 +22,6 @@ contract MockFeedsFactory is IFeedsFactory, ERC165 {
     }
 
     function supportsInterface(bytes4 interfaceId) public view override returns (bool) {
-        return interfaceId == type(IFeedsFactory).interfaceId || super.supportsInterface(interfaceId);
+        return interfaceId == type(IFeedFactory).interfaceId || super.supportsInterface(interfaceId);
     }
 }

@@ -3,9 +3,9 @@ pragma solidity ^0.8.29;
 
 import {ICommonErrors} from "./ICommonErrors.sol";
 
-/// @title INodesAggregatorErrors
-/// @notice Errors for the NodesAggregator
-interface INodesAggregatorErrors is ICommonErrors {
+/// @title INodeAggregatorErrors
+/// @notice Errors for the NodeAggregator
+interface INodeAggregatorErrors is ICommonErrors {
     /// @notice Thrown when an address is not a registered node
     /// @param addr The address that is not a node
     error NotNode(address addr);

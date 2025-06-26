@@ -6,26 +6,26 @@ import {IAccessControlManager} from "../..//src/interfaces/IAccessControlManager
 
 contract MockAccessControlManager is IAccessControlManager, ERC165 {
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
-    bytes32 public constant FEEDS_MANAGER = keccak256("FEEDS_MANAGER");
-    bytes32 public constant NODES_MANAGER = keccak256("NODES_MANAGER");
+    bytes32 public constant FEED_MANAGER = keccak256("FEED_MANAGER");
+    bytes32 public constant NODE_MANAGER = keccak256("NODE_MANAGER");
     bytes32 public constant PRICE_MANAGER = keccak256("PRICE_MANAGER");
 
     address public admin;
-    address public feedsManager;
-    address public nodesManager;
+    address public feedManager;
+    address public nodeManager;
     address public priceManager;
 
     constructor(address _admin) {
         admin = _admin;
-        feedsManager = _admin;
-        nodesManager = _admin;
+        feedManager = _admin;
+        nodeManager = _admin;
         priceManager = _admin;
     }
 
     function hasRole(bytes32 role, address account) external view override returns (bool) {
         if (role == ADMIN_ROLE) return account == admin;
-        if (role == FEEDS_MANAGER) return account == feedsManager;
-        if (role == NODES_MANAGER) return account == nodesManager;
+        if (role == FEED_MANAGER) return account == feedManager;
+        if (role == NODE_MANAGER) return account == nodeManager;
         if (role == PRICE_MANAGER) return account == priceManager;
         return false;
     }
@@ -42,12 +42,32 @@ contract MockAccessControlManager is IAccessControlManager, ERC165 {
         if (account != admin) revert AccessControlUnauthorizedAccount(account, ADMIN_ROLE);
     }
 
-    function verifyFeedsManager(address account) external view override {
-        if (account != feedsManager) revert AccessControlUnauthorizedAccount(account, FEEDS_MANAGER);
+    function verifyFeedManager(address account) external view override {
+        if (account != feedManager) revert AccessControlUnauthorizedAccount(account, FEED_MANAGER);
     }
 
-    function verifyNodesManager(address account) external view override {
-        if (account != nodesManager) revert AccessControlUnauthorizedAccount(account, NODES_MANAGER);
+    function verifyNodeManager(address account) external view override {
+        if (account != nodeManager) revert AccessControlUnauthorizedAccount(account, NODE_MANAGER);
+    }
+
+    function verifyPriceManager(address account) external view override {
+        if (account != priceManager) revert AccessControlUnauthorizedAccount(account, PRICE_MANAGER);
+    }
+
+    function setFeedManager(address account) external {
+        feedManager = account;
+    }
+
+    function setNodeManager(address account) external {
+        nodeManager = account;
+    }
+
+    function setProtocolAdmin(address account) external {
+        admin = account;
+    }
+
+    function setPriceManager(address account) external {
+        priceManager = account;
     }
 
     function supportsInterface(bytes4 interfaceId) public view override returns (bool) {

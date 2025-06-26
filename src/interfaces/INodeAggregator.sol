@@ -2,13 +2,13 @@
 pragma solidity ^0.8.29;
 
 import {LibSecp256k1} from "../libs/LibSecp256k1.sol";
-import {INodesAggregatorStructs} from "./INodesAggregatorStructs.sol";
-import {INodesAggregatorEvents} from "./INodesAggregatorEvents.sol";
-import {INodesAggregatorErrors} from "./INodesAggregatorErrors.sol";
+import {INodeAggregatorStructs} from "./INodeAggregatorStructs.sol";
+import {INodeAggregatorEvents} from "./INodeAggregatorEvents.sol";
+import {INodeAggregatorErrors} from "./INodeAggregatorErrors.sol";
 
-/// @title INodesAggregator
-/// @notice Interface for the NodesAggregator
-interface INodesAggregator is INodesAggregatorStructs, INodesAggregatorEvents, INodesAggregatorErrors {
+/// @title INodeAggregator
+/// @notice Interface for the NodeAggregator
+interface INodeAggregator is INodeAggregatorStructs, INodeAggregatorEvents, INodeAggregatorErrors {
     /// @notice Add a new node in the aggregator group
     /// @param pubkey Public key of the node
     function addNode(LibSecp256k1.Point memory pubkey) external;

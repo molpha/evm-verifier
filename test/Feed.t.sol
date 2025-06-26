@@ -6,25 +6,25 @@ import {console2} from "forge-std/console2.sol";
 
 import {Feed} from "../src/Feed.sol";
 import {IFeed, IFeedStructs} from "../src/interfaces/IFeed.sol";
-import {INodesAggregator, INodesAggregatorStructs} from "../src/interfaces/INodesAggregator.sol";
+import {INodeAggregator, INodeAggregatorStructs} from "../src/interfaces/INodeAggregator.sol";
 import {MessageHashUtils} from "openzeppelin-contracts/contracts/utils/cryptography/MessageHashUtils.sol";
 import {MockAccessControlManager} from "./mocks/MockAccessControlManager.sol";
-import {MockNodesAggregator} from "./mocks/MockNodesAggregator.sol";
-import {MockSubscriptionsRegistry} from "./mocks/MockSubscriptionsRegistry.sol";
+import {MockNodeAggregator} from "./mocks/MockNodeAggregator.sol";
+import {MockSubscriptionRegistry} from "./mocks/MockSubscriptionRegistry.sol";
 
 using MessageHashUtils for bytes32;
 
 contract FeedTest is Test {
     Feed feed;
-    MockNodesAggregator aggregator;
-    MockSubscriptionsRegistry subRegistry;
+    MockNodeAggregator aggregator;
+    MockSubscriptionRegistry subRegistry;
     MockAccessControlManager acl;
 
     address consumer = address(1);
 
     function setUp() public {
-        aggregator = new MockNodesAggregator();
-        subRegistry = new MockSubscriptionsRegistry();
+        aggregator = new MockNodeAggregator();
+        subRegistry = new MockSubscriptionRegistry();
         acl = new MockAccessControlManager(address(this));
         feed = new Feed(acl, aggregator, subRegistry);
         feed.getMinSignaturesThreshold(); // read to silence warnings
@@ -40,7 +40,7 @@ contract FeedTest is Test {
         bytes32 expectedMessage = keccak256(abi.encodePacked(address(feed), ans.value, ans.timestamp)).toEthSignedMessageHash();
         aggregator.setLastMessage(expectedMessage);
         
-        feed.publishAnswer(ans, INodesAggregatorStructs.SchnorrSignature(bytes32(uint256(1)), address(1), new uint256[](1)));
+        feed.publishAnswer(ans, INodeAggregatorStructs.SchnorrSignature(bytes32(uint256(1)), address(1), new uint256[](1)));
         
         (bytes memory value, uint256 ts) = feed.getLatest();
         
