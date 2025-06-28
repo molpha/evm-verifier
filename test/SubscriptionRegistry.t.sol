@@ -2,23 +2,23 @@
 pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
-import {SubscriptionsRegistry} from "../src/SubscriptionRegistry.sol";
+import {SubscriptionRegistry} from "../src/SubscriptionRegistry.sol";
 import {MockAccessControlManager} from "./mocks/MockAccessControlManager.sol";
-import {MockFeedsRegistry} from "./mocks/MockFeedsRegistry.sol";
+import {MockFeedRegistry} from "./mocks/MockFeedRegistry.sol";
 import {TestToken} from "./mocks/TestToken.sol";
 
 contract SubscriptionRegistryTest is Test {
-    SubscriptionsRegistry reg;
+    SubscriptionRegistry reg;
     MockAccessControlManager acl;
-    MockFeedsRegistry feeds;
+    MockFeedRegistry feeds;
     TestToken token;
     address user = address(1);
 
     function setUp() public {
         token = new TestToken();
         acl = new MockAccessControlManager(address(this));
-        reg = new SubscriptionsRegistry(acl, token);
-        feeds = new MockFeedsRegistry();
+        reg = new SubscriptionRegistry(acl, token);
+        feeds = new MockFeedRegistry();
         reg.initialize(feeds, 1e14); // fee 0.01%
         feeds.addFeed(address(100));
         reg.setSubscriptionPrice.selector; // silence warnings

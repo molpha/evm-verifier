@@ -3,10 +3,10 @@ pragma solidity ^0.8.20;
 
 import {ERC165} from "openzeppelin-contracts/contracts/utils/introspection/ERC165.sol";
 
-import {INodesAggregator} from "../../src/interfaces/INodesAggregator.sol";
+import {INodeAggregator} from "../../src/interfaces/INodeAggregator.sol";
 import {LibSecp256k1} from "../../src/libs/LibSecp256k1.sol";
 
-contract MockNodesAggregator is INodesAggregator, ERC165 {
+contract MockNodeAggregator is INodeAggregator, ERC165 {
     using LibSecp256k1 for LibSecp256k1.Point;
 
     mapping(address => bool) public nodes;
@@ -24,13 +24,13 @@ contract MockNodesAggregator is INodesAggregator, ERC165 {
     ) external view {
     }
 
-    function registerNode(LibSecp256k1.Point memory pubkey) external {
+    function addNode(LibSecp256k1.Point memory pubkey) external {
         address node = pubkey.toAddress();
         nodes[node] = true;
         total += 1;
     }
 
-    function unregisterNode(address node) external {
+    function removeNode(address node) external {
         require(nodes[node], "not node");
         nodes[node] = false;
         total -= 1;
@@ -40,15 +40,15 @@ contract MockNodesAggregator is INodesAggregator, ERC165 {
         return nodes[node];
     }
 
-    function getTotalSigners() external view returns (uint256) {
+    function getTotalNodes() external view returns (uint256) {
         return total;
     }
 
-    function getSignerSetHash() external pure returns (bytes32) {
+    function getNodesSetHash() external pure returns (bytes32) {
         return bytes32(0);
     }
 
     function supportsInterface(bytes4 interfaceId) public view override returns (bool) {
-        return interfaceId == type(INodesAggregator).interfaceId || super.supportsInterface(interfaceId);
+        return interfaceId == type(INodeAggregator).interfaceId || super.supportsInterface(interfaceId);
     }
 }

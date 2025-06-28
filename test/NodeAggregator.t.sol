@@ -2,49 +2,49 @@
 pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
-import {NodesAggregator} from "../src/NodesAggregator.sol";
-import {INodesAggregator} from "../src/interfaces/INodesAggregator.sol";
+import {NodeAggregator} from "../src/NodeAggregator.sol";
+import {INodeAggregator, INodeAggregatorErrors, INodeAggregatorStructs} from "../src/interfaces/INodeAggregator.sol";
 import {LibSecp256k1} from "../src/libs/LibSecp256k1.sol";
 
 contract NodeAggregatorTest is Test {
     using LibSecp256k1 for LibSecp256k1.Point;
 
-    NodesAggregator agg;
+    NodeAggregator agg;
 
     function setUp() public {
-        agg = new NodesAggregator(address(this));
+        agg = new NodeAggregator(address(this));
     }
 
     function test_registerNode_InvalidKey_Revert() public {
         LibSecp256k1.Point memory zero = LibSecp256k1.ZERO_POINT();
-        vm.expectRevert(INodesAggregator.InvalidPublicKey.selector);
-        agg.registerNode(zero);
+        vm.expectRevert(INodeAggregatorErrors.InvalidPublicKey.selector);
+        agg.addNode(zero);
     }
 
     function test_registerAndUnregisterNode_Works() public {
         LibSecp256k1.Point memory g = LibSecp256k1.G();
-        agg.registerNode(g);
+        agg.addNode(g);
         assertTrue(agg.isNode(g.toAddress()));
-        assertEq(agg.getTotalSigners(), 1);
+        assertEq(agg.getTotalNodes(), 1);
 
-        agg.unregisterNode(g.toAddress());
+        agg.removeNode(g.toAddress());
         assertFalse(agg.isNode(g.toAddress()));
-        assertEq(agg.getTotalSigners(), 0);
+        assertEq(agg.getTotalNodes(), 0);
     }
 
     function testFuzz_verifySignature_InvalidOrder(uint256 a, uint256 b) public {
         LibSecp256k1.Point memory g = LibSecp256k1.G();
-        agg.registerNode(g);
+        agg.addNode(g);
         uint256[] memory signers = new uint256[](2);
         signers[0] = 1;
         signers[1] = 1; // not strictly increasing
-        INodesAggregator.SchnorrSignature memory s = INodesAggregator.SchnorrSignature({
+        INodeAggregatorStructs.SchnorrSignature memory s = INodeAggregatorStructs.SchnorrSignature({
             signature: bytes32(uint256(1)),
             commitment: address(1),
             signers: signers
         });
         bytes32 msgHash = keccak256(abi.encodePacked(a, b));
-        vm.expectRevert(INodesAggregator.InvalidSignersOrder.selector);
+        vm.expectRevert(INodeAggregatorErrors.InvalidSignersOrder.selector);
         agg.verifySignature(msgHash, s, 1);
     }
 }

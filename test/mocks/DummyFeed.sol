@@ -2,13 +2,15 @@
 pragma solidity ^0.8.20;
 
 import {IFeed} from "../../src/interfaces/IFeed.sol";
-import {ISubscriptionsRegistry} from "../../src/interfaces/ISubscriptionsRegistry.sol";
-import {INodesAggregator} from "../../src/interfaces/INodesAggregator.sol";
+import {ISubscriptionRegistry} from "../../src/interfaces/ISubscriptionRegistry.sol";
+import {INodeAggregator} from "../../src/interfaces/INodeAggregator.sol";
 
 contract DummyFeed is IFeed {
     Answer[] internal answers;
 
-    function publishAnswer(Answer calldata, INodesAggregator.SchnorrSignature calldata) external {}
+    function initialize(bytes32 metadataHash, uint256 minSignaturesThreshold) external {}
+
+    function publishAnswer(Answer calldata, INodeAggregator.SchnorrSignature calldata) external {}
 
     function getLatest() external view returns (bytes memory value, uint256 timestamp) {
         if (answers.length == 0) return ("", 0);
@@ -21,12 +23,20 @@ contract DummyFeed is IFeed {
         return answers[answers.length - 1].timestamp;
     }
 
-    function getSubscriptionsRegistry() external view returns (ISubscriptionsRegistry) {
-        return ISubscriptionsRegistry(address(0));
+    function getSubscriptionRegistry() external view returns (ISubscriptionRegistry) {
+        return ISubscriptionRegistry(address(0));
     }
 
     function getEntry(uint256 index) external view returns (bytes memory, uint256) {
         Answer memory a = answers[index];
         return (a.value, a.timestamp);
+    }
+
+    function getMetadataHash() external view returns (bytes32) {
+        return bytes32(0);
+    }
+
+    function getMinSignaturesThreshold() external view returns (uint256) {
+        return 0;
     }
 }

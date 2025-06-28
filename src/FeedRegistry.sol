@@ -5,12 +5,13 @@ import {ERC165} from "openzeppelin-contracts/contracts/utils/introspection/ERC16
 
 import {ERC165Checker} from "./libs/ERC165Checker.sol";
 import {IAccessControlManager} from "./interfaces/IAccessControlManager.sol";
-import {IFeedsFactory} from "./interfaces/IFeedsFactory.sol";
-import {IFeedsRegistry} from "./interfaces/IFeedsRegistry.sol";
-import {ISubscriptionsRegistry} from "./interfaces/ISubscriptionsRegistry.sol";
+import {IFeed} from "./interfaces/IFeed.sol";
+import {IFeedFactory} from "./interfaces/IFeedFactory.sol";
+import {IFeedRegistry} from "./interfaces/IFeedRegistry.sol";
+import {ISubscriptionRegistry} from "./interfaces/ISubscriptionRegistry.sol";
 // import {ITreasury} from "./interfaces/ITreasury.sol";
 
-contract FeedsRegistry is IFeedsRegistry, ERC165 {
+contract FeedRegistry is IFeedRegistry, ERC165 {
     using ERC165Checker for address;
 
     // TODO: reconsider min and max reward
@@ -19,8 +20,8 @@ contract FeedsRegistry is IFeedsRegistry, ERC165 {
 
     IAccessControlManager internal immutable _accessControlManager;
 
-    IFeedsFactory internal _feedsFactory;
-    ISubscriptionsRegistry internal _subscriptionsRegistry;
+    IFeedFactory internal _feedFactory;
+    ISubscriptionRegistry internal _subscriptionRegistry;
     // ITreasury internal _treasury;
 
     address[] internal _feeds; // do we need this? the only use case is getFeeds()
@@ -33,52 +34,51 @@ contract FeedsRegistry is IFeedsRegistry, ERC165 {
     }
 
     function initialize(
-        IFeedsFactory feedsFactory,
-        ISubscriptionsRegistry subscriptionsRegistry
+        IFeedFactory feedsFactory,
+        ISubscriptionRegistry subscriptionRegistry
         // ITreasury treasury
     ) external {
-        if (address(_feedsFactory) != address(0)) {
+        if (address(_feedFactory) != address(0)) {
             revert("AlreadyInitialized()");
         }
-        address(feedsFactory).shouldSupport(type(IFeedsFactory).interfaceId);
-        address(subscriptionsRegistry).shouldSupport(type(ISubscriptionsRegistry).interfaceId);
+        address(feedsFactory).shouldSupport(type(IFeedFactory).interfaceId);
+        address(subscriptionRegistry).shouldSupport(type(ISubscriptionRegistry).interfaceId);
         // address(treasury).shouldSupport(type(ITreasury).interfaceId);
 
-        _feedsFactory = feedsFactory;
-        _subscriptionsRegistry = subscriptionsRegistry;
+        _feedFactory = feedsFactory;
+        _subscriptionRegistry = subscriptionRegistry;
         // _treasury = treasury;
     }
 
-    modifier onlyFeedsManager() {
-       _accessControlManager.verifyFeedsManager(msg.sender);
+    modifier onlyFeedManager() {
+       _accessControlManager.verifyFeedManager(msg.sender);
         _;
     }
 
-    /// @inheritdoc IFeedsRegistry
+    /// @inheritdoc IFeedRegistry
     function createFeed(
         bytes32 metadataHash, 
-        uint256 rewardForAnswer, 
-        uint128 subscriptionPrice, 
         uint256 minSignaturesThreshold
     )
         external
         override
-        onlyFeedsManager
+        onlyFeedManager
         returns (address feed)
     {
         // _validateReward(rewardForAnswer);
 
-        feed = _feedsFactory.build();
+        feed = _feedFactory.build();
         _feeds.push(feed);
         _isFeed[feed] = true;
+        IFeed(feed).initialize(metadataHash, minSignaturesThreshold);
 
         emit LogFeedCreated(feed);
 
         // _treasury.setRewardForAnswer(feed, rewardForAnswer);
-        _subscriptionsRegistry.setSubscriptionPrice(feed, subscriptionPrice);
+        // _subscriptionRegistry.setSubscriptionPrice(feed, subscriptionPrice);/
     }
 
-    // /// @inheritdoc IFeedsRegistry
+    // /// @inheritdoc IFeedRegistry
     // function setAggregatorReward(address aggregator, uint256 reward) external override onlyAggregatorsManager {
     //     _validateAggregator(aggregator);
     //     _validateReward(reward);
@@ -86,39 +86,39 @@ contract FeedsRegistry is IFeedsRegistry, ERC165 {
     //     _treasury.setRewardForAnswer(aggregator, reward);
     // }
 
-    function setSubscriptionPrice(address feed, uint128 price)
-        external
-        override
-        onlyFeedsManager
-    {
-        _validateFeed(feed);
+    // function setSubscriptionPrice(address feed, uint128 price)
+    //     external
+    //     override
+    //     onlyFeedManager
+    // {
+    //     _validateFeed(feed);
 
-        _subscriptionsRegistry.setSubscriptionPrice(feed, price);
-        emit LogSubscriptionPriceChanged(feed, price);
-    }
+    //     _subscriptionRegistry.setSubscriptionPrice(feed, price);
+    //     emit LogSubscriptionPriceChanged(feed, price);
+    // }
 
-    /// @inheritdoc IFeedsRegistry
+    /// @inheritdoc IFeedRegistry
     function isFeed(address feed) external view override returns (bool) {
         return _isFeed[feed];
     }
 
-    // /// @inheritdoc IFeedsRegistry
+    // /// @inheritdoc IFeedRegistry
     // function getAggregators() external view override returns (address[] memory) {
     //     return _aggregators;
     // }
 
-    /// @inheritdoc IFeedsRegistry
-    function getFeedsFactory() external view override returns (IFeedsFactory) {
-        return _feedsFactory;
+    /// @inheritdoc IFeedRegistry
+    function getFeedFactory() external view override returns (IFeedFactory) {
+        return _feedFactory;
     }
 
-    // /// @inheritdoc IFeedsRegistry
+    // /// @inheritdoc IFeedRegistry
     // function getTreasury() external view override returns (ITreasury) {
     //     return _treasury;
     // }
 
     function supportsInterface(bytes4 interfaceId) public view override returns (bool) {
-        return interfaceId == type(IFeedsRegistry).interfaceId || super.supportsInterface(interfaceId);
+        return interfaceId == type(IFeedRegistry).interfaceId || super.supportsInterface(interfaceId);
     }
 
     // function _validateReward(uint256 reward) internal pure {
