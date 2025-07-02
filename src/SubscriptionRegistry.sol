@@ -10,6 +10,7 @@ import {ERC165Checker} from "./libs/ERC165Checker.sol";
 import {IAccessControlManager} from "./interfaces/IAccessControlManager.sol";
 import {IFeedRegistry} from "./interfaces/IFeedRegistry.sol";
 import {ISubscriptionRegistry} from "./interfaces/ISubscriptionRegistry.sol";
+import {PricingHelper} from "./libs/PricingHelper.sol";
 
 contract SubscriptionRegistry is ISubscriptionRegistry, ERC165, ReentrancyGuard {
     using ERC165Checker for address;
@@ -17,25 +18,20 @@ contract SubscriptionRegistry is ISubscriptionRegistry, ERC165, ReentrancyGuard 
 
     // TODO: reconsider min and max values
     uint256 internal constant MIN_SUBSCRIPTION_TIME = 1 days;
-    uint256 internal constant MAX_SUBSCRIPTION_TIME = 365 days;
+    uint256 internal constant MAX_SUBSCRIPTION_TIME = 1095 days; // 3 years 
 
-    uint256 internal constant MIN_SUBSCRIPTION_PRICE = 1e13; // 0.00001 FXD // per second -> 0.864 FXD per day -> 315.36 FXD per year
-    uint256 internal constant MAX_SUBSCRIPTION_PRICE = 2e14; // 0.0002 FXD // per second -> 17.28 FXD per day -> 6307.2 FXD per year
-    
-    uint256 internal constant WAD = 1e18; // 100%
-    uint256 internal constant MIN_SUBSCRIPTION_FEE = 1e14; // 0.01%
-    uint256 internal constant MAX_SUBSCRIPTION_FEE = 1e17; // 10%
+    uint256 internal constant MAX_BPS = 10000; // 100%
+    uint256 internal constant REFUND_FEE = 2000; // 20% refund fee
+
+    uint256 internal constant BASE_PRICE = 1e5; // 0.1 USDC // ??????
 
     IAccessControlManager internal immutable _accessControlManager;
     IERC20 internal immutable _underlying;
 
     IFeedRegistry internal _feedRegistry;
-    // ITreasury internal _treasury;
 
-    uint256 internal _subscriptionFee; // 100% = 1e18; 1% = 1e16; 0.1% = 1e15; 0.01% = 1e14; 0.001% = 1e13;
-
-    mapping(address => uint128) internal _prices; // aggregator => price per second
-    mapping(address => mapping(address => Subscription)) internal _subscriptions; // consumer => aggregator => dueTime
+    mapping(address => uint128) internal _prices; // feed => price per second
+    mapping(address => mapping(address => Subscription)) internal _subscriptions; // consumer => feed => dueTime
 
     modifier onlyProtocolAdmin() {
         _accessControlManager.verifyProtocolAdmin(msg.sender);
@@ -58,34 +54,22 @@ contract SubscriptionRegistry is ISubscriptionRegistry, ERC165, ReentrancyGuard 
     }
 
     function initialize(
-        IFeedRegistry feedRegistry,
-        // ITreasury treasury,
-        uint256 subscriptionFee
+        IFeedRegistry feedRegistry
     ) external {
-        if (_subscriptionFee != 0) {
-            revert("AlreadyInitialized()");
-        }
         address(feedRegistry).shouldSupport(type(IFeedRegistry).interfaceId);
-        // address(treasury).shouldSupport(type(ITreasury).interfaceId);
-        _validateSubscriptionFee(subscriptionFee);
 
         _feedRegistry = feedRegistry;
-        // _treasury = treasury;
-        _subscriptionFee = subscriptionFee;
     }
 
     /// @inheritdoc ISubscriptionRegistry
-    function subscribe(address consumer, address aggregator, uint256 timespan) external override nonReentrant {
-        if (timespan < MIN_SUBSCRIPTION_TIME || timespan > MAX_SUBSCRIPTION_TIME) {
-            revert WrongSubscriptionTime(timespan);
-        }
+    function subscribe(address consumer, address feed, uint256 timespan) external override nonReentrant {
+        require(timespan > MIN_SUBSCRIPTION_TIME && timespan <= MAX_SUBSCRIPTION_TIME, WrongSubscriptionTime(timespan));
+        require(consumer != address(0) && feed != address(0), ZeroAddress());
 
-        uint256 price = _prices[aggregator];
-        if (price == 0) {
-            revert NotAggregator(aggregator);
-        }
+        uint256 price = PricingHelper.getPriceForTimespan(_feedRegistry.getFeedPrice(feed), timespan);
+        require(price > 0, NotAggregator(feed));
 
-        Subscription memory subscription = _subscriptions[consumer][aggregator];
+        Subscription memory subscription = _subscriptions[consumer][feed];
 
         // we cannot extend subscription if subscription price changed
         // in this case we can extend only if due time is less than minimum subscription time
@@ -100,14 +84,15 @@ contract SubscriptionRegistry is ISubscriptionRegistry, ERC165, ReentrancyGuard 
 
         uint256 dueTime = subscription.dueTime > block.timestamp ? subscription.dueTime + timespan : block.timestamp + timespan;
 
-        _subscriptions[consumer][aggregator] = Subscription(uint64(dueTime), uint128(price));
-        emit LogSubscribed(consumer, aggregator, dueTime);
+        _subscriptions[consumer][feed] = Subscription(uint64(dueTime), uint128(price), msg.sender);
+        emit LogSubscribed(consumer, feed, dueTime);
     }
 
     /// @inheritdoc ISubscriptionRegistry
-    function unsubscribe(address feed) external override nonReentrant {
-        address consumer = msg.sender;
+    function unsubscribe(address feed, address consumer) external override nonReentrant {
         Subscription memory subscription = _subscriptions[consumer][feed];
+        require(subscription.owner == msg.sender, NotSubscriptionOwner(consumer));
+
         // we don't want to refund less than min subscription time
         // it will prevent from spamming (subscribe => read => unsubscribe in one tx)
         uint256 minSubscriptionEnd = block.timestamp + MIN_SUBSCRIPTION_TIME;
@@ -116,8 +101,7 @@ contract SubscriptionRegistry is ISubscriptionRegistry, ERC165, ReentrancyGuard 
         }
 
         uint256 unusedAmount = subscription.price * (subscription.dueTime - minSubscriptionEnd);
-        // we won't refund subscription fee
-        uint256 refundAmount = unusedAmount * (WAD - _subscriptionFee) / WAD;
+        uint256 refundAmount = unusedAmount * REFUND_FEE / MAX_BPS;
 
         delete _subscriptions[consumer][feed];
 
@@ -126,43 +110,19 @@ contract SubscriptionRegistry is ISubscriptionRegistry, ERC165, ReentrancyGuard 
         emit LogUnsubscribed(consumer, feed);
     }
 
-    function setSubscriptionFee(uint256 fee) external override onlyProtocolAdmin {
-        _validateSubscriptionFee(fee);
-        _subscriptionFee = fee;
-        emit LogSubscriptionFeeSet(fee);
+    /// @inheritdoc ISubscriptionRegistry
+    function isSubscribed(address consumer, address feed) external view returns (bool) {
+        return _subscriptions[consumer][feed].dueTime > block.timestamp;
     }
 
     /// @inheritdoc ISubscriptionRegistry
-    function setSubscriptionPrice(address aggregator, uint128 price) external override onlyFeedRegistry {
-        if (price < MIN_SUBSCRIPTION_PRICE || price > MAX_SUBSCRIPTION_PRICE) {
-            revert WrongSubscriptionPrice(price);
-        }
-        if (!_feedRegistry.isFeed(aggregator)) {
-            revert NotAggregator(aggregator);
-        }
-
-        _prices[aggregator] = price;
-        emit LogSubscriptionPriceSet(aggregator, price);
-    }
-
-    /// @inheritdoc ISubscriptionRegistry
-    function isSubscribed(address consumer, address aggregator) external view returns (bool) {
-        return _subscriptions[consumer][aggregator].dueTime > block.timestamp;
-    }
-
-    /// @inheritdoc ISubscriptionRegistry
-    function getSubscriptionDueTime(address consumer, address aggregator) external view override returns (uint256) {
-        return _subscriptions[consumer][aggregator].dueTime;
+    function getSubscriptionDueTime(address consumer, address feed) external view override returns (uint256) {
+        return _subscriptions[consumer][feed].dueTime;
     }
 
     /// @inheritdoc ISubscriptionRegistry
     function getSubscriptionPrice(address feed) external view override returns (uint256) {
         return _prices[feed];
-    }
-
-    /// @inheritdoc ISubscriptionRegistry
-    function getSubscriptionFee() external view override returns (uint256) {
-        return _subscriptionFee;
     }
 
     // /// @inheritdoc ISubscriptionRegistry
@@ -174,9 +134,9 @@ contract SubscriptionRegistry is ISubscriptionRegistry, ERC165, ReentrancyGuard 
         return interfaceId == type(ISubscriptionRegistry).interfaceId || super.supportsInterface(interfaceId);
     }
 
-    function _validateSubscriptionFee(uint256 fee) internal pure {
-        if (fee < MIN_SUBSCRIPTION_FEE || fee > MAX_SUBSCRIPTION_FEE) {
-            revert WrongSubscriptionFee(fee);
-        }
-    }
+    // function _validateSubscriptionFee(uint256 fee) internal pure {
+    //     if (fee < MIN_SUBSCRIPTION_FEE || fee > MAX_SUBSCRIPTION_FEE) {
+    //         revert WrongSubscriptionFee(fee);
+    //     }
+    // }
 }

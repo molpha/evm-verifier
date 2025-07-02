@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: BSL-1.1
 pragma solidity ^0.8.29;
 
-import {INodeAggregator} from "./INodeAggregator.sol";
-import {ISubscriptionRegistry} from "./ISubscriptionRegistry.sol";
+import {ICommonErrors} from "./ICommonErrors.sol";
 
 /// @title IFeedErrors
 /// @notice Errors for the Feed contract
-interface IFeedErrors {
+interface IFeedErrors is ICommonErrors {
     /// @notice reverts in publishAnswer() when timestamp is <= last published timestamp
     /// @param timestamp new answer timestamp
     /// @param lastTimestamp last published answer timestamp
@@ -25,4 +24,8 @@ interface IFeedErrors {
     /// only a nodes registry can add or remove nodes
     /// @param sender sender address
     error NotNodeRegistry(address sender);
+
+    /// @notice reverts when min signatures threshold is immutable
+    /// @dev This error is thrown when trying to set the min signatures threshold for a public feed
+    error ImmutableThreshold();
 }

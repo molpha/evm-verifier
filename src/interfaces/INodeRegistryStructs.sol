@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: BSL-1.1
 pragma solidity ^0.8.29;
 
-/// @title INodeAggregatorStructs
-/// @notice Structs for the NodeAggregator
-interface INodeAggregatorStructs {
+/// @title INodeRegistryStructs
+/// @notice Structs for the NodeRegistry
+interface INodeRegistryStructs {
     /// @notice Schnorr signature data struct containing aggregated signature information
     /// @dev signers indexes array must be sorted in ascending order to prevent replay attacks
     /// @param signature The aggregated Schnorr signature

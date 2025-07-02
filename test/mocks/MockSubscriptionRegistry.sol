@@ -1,48 +1,47 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {ERC165} from "openzeppelin-contracts/contracts/utils/introspection/ERC165.sol";
-
 import {ISubscriptionRegistry} from "../../src/interfaces/ISubscriptionRegistry.sol";
 
-contract MockSubscriptionRegistry is ISubscriptionRegistry, ERC165 {
-    mapping(address => bool) public subscribed;
-    uint256 public price;
+contract MockSubscriptionRegistry is ISubscriptionRegistry {
+    mapping(address => mapping(address => bool)) public subscribed;
+    mapping(address => uint256) public prices;
     uint256 public fee;
 
-    function subscribe(address consumer, address, uint256) external {
-        subscribed[consumer] = true;
+    function subscribe(address consumer, address feed, uint256) external {
+        subscribed[consumer][feed] = true;
     }
 
-    function unsubscribe(address) external {
-        subscribed[msg.sender] = false;
+    function unsubscribe(address feed, address consumer) external {
+        subscribed[consumer][feed] = false;
     }
 
-    function setSubscriptionPrice(address, uint128 newPrice) external {
-        price = newPrice;
+    function setSubscriptionPrice(address feed, uint128 newPrice) external {
+        prices[feed] = newPrice;
     }
 
     function setSubscriptionFee(uint256 newFee) external {
         fee = newFee;
     }
 
-    function isSubscribed(address user, address) external view returns (bool) {
-        return subscribed[user];
+    function isSubscribed(address user, address feed) external view returns (bool) {
+        return subscribed[user][feed];
     }
 
-    function getSubscriptionPrice(address) external view returns (uint256) {
-        return price;
+    function getSubscriptionPrice(address feed) external view returns (uint256) {
+        return prices[feed];
     }
 
     function getSubscriptionFee() external view returns (uint256) {
         return fee;
     }
 
-    function getSubscriptionDueTime(address, address) external pure returns (uint256) {
-        return 0;
+    function getSubscriptionDueTime(address consumer, address feed) external view returns (uint256) {
+        return block.timestamp + 30 days;
     }
 
-    function supportsInterface(bytes4 interfaceId) public view override returns (bool) {
-        return interfaceId == type(ISubscriptionRegistry).interfaceId || super.supportsInterface(interfaceId);
+    function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
+        return interfaceId == type(ISubscriptionRegistry).interfaceId ||
+               interfaceId == 0x01ffc9a7; // ERC165 interface ID
     }
 }

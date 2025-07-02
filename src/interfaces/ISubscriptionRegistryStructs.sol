@@ -10,5 +10,6 @@ interface ISubscriptionRegistryStructs {
     struct Subscription {
         uint64 dueTime;
         uint128 price;
+        address owner;
     }
 }

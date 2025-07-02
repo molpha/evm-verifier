@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: BSL-1.1
 pragma solidity ^0.8.29;
 
+import {ICommonErrors} from "./ICommonErrors.sol";
+
 /// @title ISubscriptionRegistryErrors
 /// @notice Errors for the SubscriptionRegistry
-interface ISubscriptionRegistryErrors {
+interface ISubscriptionRegistryErrors is ICommonErrors {
      /// @notice thrown on unsubscribe call if remaining subscription time is less than minimum
     /// @param dueTime remaining subscription time
     error CannotUnsubscribe(uint256 dueTime);
@@ -32,4 +34,8 @@ interface ISubscriptionRegistryErrors {
     /// @notice thrown when admin tries to set invalid subscription fee
     /// @param fee subscription fee
     error WrongSubscriptionFee(uint256 fee);
+
+    /// @notice thrown when sender is not subscription owner
+    /// @param sender sender address
+    error NotSubscriptionOwner(address sender);
 }

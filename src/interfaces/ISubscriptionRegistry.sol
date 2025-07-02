@@ -16,16 +16,8 @@ interface ISubscriptionRegistry is ISubscriptionRegistryStructs, ISubscriptionRe
 
     /// @notice Unsubscribe from a feed
     /// @param feed The feed address
-    function unsubscribe(address feed) external;
-
-    /// @notice Set subscription price for a feed
-    /// @param feed The feed address
-    /// @param price The new subscription price
-    function setSubscriptionPrice(address feed, uint128 price) external;
-    
-    /// @notice Set subscription fee
-    /// @param fee The new subscription fee
-    function setSubscriptionFee(uint256 fee) external;
+    /// @param consumer The consumer address
+    function unsubscribe(address feed, address consumer) external;
 
     /// @notice Check if a user is currently subscribed
     /// @param user The address to check
@@ -37,10 +29,6 @@ interface ISubscriptionRegistry is ISubscriptionRegistryStructs, ISubscriptionRe
     /// @param feed The feed address
     /// @return price subscription price
     function getSubscriptionPrice(address feed) external view returns (uint256 price);
-
-    /// @notice Get subscription fee
-    /// @return fee subscription fee
-    function getSubscriptionFee() external view returns (uint256 fee);
 
     /// @notice Get subscription due time
     /// @param consumer The address of the subscriber
