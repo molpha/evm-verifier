@@ -6,10 +6,17 @@ import {ISubscriptionRegistry} from "../../src/interfaces/ISubscriptionRegistry.
 contract MockSubscriptionRegistry is ISubscriptionRegistry {
     mapping(address => mapping(address => bool)) public subscribed;
     mapping(address => uint256) public prices;
+    mapping(address => mapping(address => bool)) public personalFeedAccess;
     uint256 public fee;
 
     function subscribe(address consumer, address feed, uint256) external {
         subscribed[consumer][feed] = true;
+    }
+
+    function batchSubscribe(address[] calldata consumers, address feed, uint256) external {
+        for (uint256 i = 0; i < consumers.length; i++) {
+            subscribed[consumers[i]][feed] = true;
+        }
     }
 
     function unsubscribe(address feed, address consumer) external {
@@ -38,6 +45,18 @@ contract MockSubscriptionRegistry is ISubscriptionRegistry {
 
     function getSubscriptionDueTime(address consumer, address feed) external view returns (uint256) {
         return block.timestamp + 30 days;
+    }
+
+    function grantPersonalFeedAccess(address consumer, address feed) external {
+        personalFeedAccess[feed][consumer] = true;
+    }
+
+    function revokePersonalFeedAccess(address consumer, address feed) external {
+        personalFeedAccess[feed][consumer] = false;
+    }
+
+    function hasPersonalFeedAccess(address consumer, address feed) external view returns (bool hasAccess) {
+        return personalFeedAccess[feed][consumer];
     }
 
     function supportsInterface(bytes4 interfaceId) external pure returns (bool) {

@@ -14,6 +14,12 @@ interface ISubscriptionRegistry is ISubscriptionRegistryStructs, ISubscriptionRe
     /// @param timespan The timespan to subscribe for
     function subscribe(address consumer, address feed, uint256 timespan) external;
 
+    /// @notice Batch subscribe multiple consumers to a feed
+    /// @param consumers Array of consumer addresses
+    /// @param feed The feed address
+    /// @param timespan The timespan to subscribe for
+    function batchSubscribe(address[] calldata consumers, address feed, uint256 timespan) external;
+
     /// @notice Unsubscribe from a feed
     /// @param feed The feed address
     /// @param consumer The consumer address
@@ -36,4 +42,19 @@ interface ISubscriptionRegistry is ISubscriptionRegistryStructs, ISubscriptionRe
     /// @return dueTime subscription due time
     function getSubscriptionDueTime(address consumer, address aggregator) external view returns (uint256 dueTime);
 
+    /// @notice Grant access to a consumer for a personal feed (only feed owner can call)
+    /// @param consumer The consumer address
+    /// @param feed The personal feed address
+    function grantPersonalFeedAccess(address consumer, address feed) external;
+
+    /// @notice Revoke access from a consumer for a personal feed (only feed owner can call)
+    /// @param consumer The consumer address
+    /// @param feed The personal feed address
+    function revokePersonalFeedAccess(address consumer, address feed) external;
+
+    /// @notice Check if a consumer has access to a personal feed
+    /// @param consumer The consumer address
+    /// @param feed The personal feed address
+    /// @return hasAccess True if the consumer has access
+    function hasPersonalFeedAccess(address consumer, address feed) external view returns (bool hasAccess);
 }

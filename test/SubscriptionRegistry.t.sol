@@ -11,6 +11,7 @@ import {MockAccessControlManager} from "./mocks/MockAccessControlManager.sol";
 import {MockFeedRegistry} from "./mocks/MockFeedRegistry.sol";
 import {MockNodeRegistry} from "./mocks/MockNodeRegistry.sol";
 import {TestToken} from "./mocks/TestToken.sol";
+import {MockZeroSupplyToken} from "./mocks/MockZeroSupplyToken.sol";
 
 contract SubscriptionRegistryTest is Test {
     SubscriptionRegistry reg;
@@ -252,7 +253,10 @@ contract SubscriptionRegistryTest is Test {
         vm.prank(user);
         token.approve(address(reg), 1e18);
         vm.prank(user);
-        reg.subscribe(user, feed, 30 days); // Exactly minimum time
+        reg.subscribe(user, feed, 2 days); // Subscribe for 2 days
+        
+        // Warp forward so that less than MIN_SUBSCRIPTION_TIME (1 day) remains
+        vm.warp(block.timestamp + 1 days + 1 hours); // 1 day 1 hour forward, leaving < 1 day
         
         uint256 dueTime = reg.getSubscriptionDueTime(user, feed);
         
@@ -337,10 +341,11 @@ contract SubscriptionRegistryTest is Test {
     }
 
     function test_constructor_InvalidToken() public {
-        // Since we can't easily create a token with 0 total supply,
-        // we'll test with a mock zero address
-        vm.expectRevert();
-        new SubscriptionRegistry(acl, token); // This should work normally
+        // Create a mock token with zero total supply
+        MockZeroSupplyToken zeroToken = new MockZeroSupplyToken();
+        
+        vm.expectRevert("wrong underlying");
+        new SubscriptionRegistry(acl, zeroToken);
     }
 
     function test_subscribe_MultipleUsers() public {

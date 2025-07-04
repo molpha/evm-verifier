@@ -38,4 +38,21 @@ interface ISubscriptionRegistryErrors is ICommonErrors {
     /// @notice thrown when sender is not subscription owner
     /// @param sender sender address
     error NotSubscriptionOwner(address sender);
+
+    /// @notice thrown when batch subscribe array is empty
+    error EmptyBatchSubscribe();
+
+    /// @notice thrown when trying to access personal feed without permission
+    /// @param consumer consumer address
+    /// @param feed feed address
+    error NoPersonalFeedAccess(address consumer, address feed);
+
+    /// @notice thrown when sender is not the feed owner
+    /// @param sender sender address
+    /// @param feed feed address
+    error NotFeedOwner(address sender, address feed);
+
+    /// @notice thrown when personal feed main subscription is expired
+    /// @param feed feed address
+    error PersonalFeedMainSubscriptionExpired(address feed);
 }

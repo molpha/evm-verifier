@@ -23,4 +23,22 @@ interface ISubscriptionRegistryEvents {
     /// @param aggregator aggregator address
     /// @param subscriptionPrice subscription price
     event LogSubscriptionPriceSet(address indexed aggregator, uint256 subscriptionPrice);
+
+    /// @notice emitted when batch subscription is made
+    /// @param subscribers array of subscriber addresses
+    /// @param feed feed address
+    /// @param dueTime subscription due time
+    event LogBatchSubscribed(address[] indexed subscribers, address indexed feed, uint256 dueTime);
+
+    /// @notice emitted when access is granted to a consumer for a personal feed
+    /// @param consumer consumer address
+    /// @param feed feed address
+    /// @param owner feed owner address
+    event LogPersonalFeedAccessGranted(address indexed consumer, address indexed feed, address indexed owner);
+
+    /// @notice emitted when access is revoked from a consumer for a personal feed
+    /// @param consumer consumer address
+    /// @param feed feed address
+    /// @param owner feed owner address
+    event LogPersonalFeedAccessRevoked(address indexed consumer, address indexed feed, address indexed owner);
 }
