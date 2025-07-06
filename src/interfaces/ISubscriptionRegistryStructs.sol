@@ -10,18 +10,8 @@ interface ISubscriptionRegistryStructs {
     /// @param owner subscription owner
     struct Subscription {
         uint64 dueTime;
-        uint128 price;
+        // uint128 price;
         address owner;
-    }
-
-    /// @notice Personal feed subscription struct
-    /// @dev For personal feeds, the feed owner maintains the main subscription
-    /// and grants access to multiple consumers
-    /// @param mainSubscription The main subscription owned by the feed owner
-    /// @param consumerAccess Mapping of consumer addresses to their access status
-    struct PersonalFeedSubscription {
-        Subscription mainSubscription;
-        mapping(address => bool) consumerAccess;
     }
 
     /// @notice Batch subscribe parameters

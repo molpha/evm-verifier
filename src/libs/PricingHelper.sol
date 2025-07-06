@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSL-1.1
 pragma solidity ^0.8.29;
 
-import {IFeedRegistryStructs} from "../interfaces/IFeedRegistryStructs.sol";
+import {IFeed} from "../interfaces/IFeed.sol";
 
 /**
  * @title PricingHelper
@@ -11,14 +11,12 @@ library PricingHelper {
     uint256 public constant BASE_PRICE_PER_SECOND_SCALED = 11574074; //1e6 * SCALAR / 1 days;
     uint256 public constant FREQUENCY_COEFFICIENT = 4000;
     uint256 public constant SIGNERS_COEFFICIENT = 6000;
+    uint256 public constant PERSONAL_FEED_PRICE_MULTIPLIER = 3;
 
     /// @notice Fixed point scalar for calculations (100%)
     uint256 public constant SCALAR = 1e6;
 
-    function calculatePrice(
-        uint256 frequency,
-        uint256 requiredSignatures
-    ) public pure returns (uint256 pricePerSecondScaled) {
+    function calculatePrice(uint256 frequency, uint256 signaturesRequired, IFeed.FeedType feedType) public pure returns (uint256 pricePerSecondScaled) {
         // Calculate frequency factor using natural logarithm approximation
         uint256 updatesPerDay = 1 days / frequency;
         uint256 frequencyFactor = _precisePow(
@@ -30,7 +28,7 @@ library PricingHelper {
         // Calculate signers factor using power function
         // signersFactor = signers^(coefficient/10000)
         uint256 signersFactor = _precisePow(
-            requiredSignatures,
+            signaturesRequired,
             SIGNERS_COEFFICIENT,
             10000
         );
@@ -39,6 +37,10 @@ library PricingHelper {
         pricePerSecondScaled = (BASE_PRICE_PER_SECOND_SCALED *
             frequencyFactor *
             signersFactor) / (SCALAR * SCALAR);
+
+        if (feedType == IFeed.FeedType.PERSONAL) {
+            pricePerSecondScaled = pricePerSecondScaled * PERSONAL_FEED_PRICE_MULTIPLIER;
+        }
     }
 
     function getPriceForTimespan(

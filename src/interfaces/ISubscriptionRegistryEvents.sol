@@ -41,4 +41,22 @@ interface ISubscriptionRegistryEvents {
     /// @param feed feed address
     /// @param owner feed owner address
     event LogPersonalFeedAccessRevoked(address indexed consumer, address indexed feed, address indexed owner);
+
+    /// @notice emitted when access is granted to a consumer for a feed
+    /// @param consumer consumer address
+    /// @param feed feed address
+    /// @param owner feed owner address
+    event LogAccessGranted(address indexed consumer, address indexed feed, address indexed owner);
+
+    /// @notice emitted when access is revoked from a consumer for a feed
+    /// @param consumer consumer address
+    /// @param feed feed address
+    /// @param owner feed owner address
+    event LogAccessRevoked(address indexed consumer, address indexed feed, address indexed owner);
+
+    /// @notice emitted when subscription is transferred to a new consumer
+    /// @param consumer consumer address
+    /// @param feed feed address
+    /// @param newConsumer new consumer address
+    event LogSubscriptionTransferred(address indexed consumer, address indexed feed, address indexed newConsumer);
 }

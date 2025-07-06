@@ -7,17 +7,22 @@ import {MessageHashUtils} from "openzeppelin-contracts/contracts/utils/cryptogra
 import {ERC165Checker} from "./libs/ERC165Checker.sol";
 import {IAccessControlManager} from "./interfaces/IAccessControlManager.sol";
 import {IFeed} from "./interfaces/IFeed.sol";
-import {IFeedRegistryStructs} from "./interfaces/IFeedRegistryStructs.sol";
+// import {IFeedRegistryStructs} from "./interfaces/IFeedRegistryStructs.sol";
 // import {INodesRegistry} from "./interfaces/INodesRegistry.sol";
 import {ISubscriptionRegistry} from "./interfaces/ISubscriptionRegistry.sol";
 // import {ITreasury} from "./interfaces/ITreasury.sol";
 import {INodeRegistry} from "./interfaces/INodeRegistry.sol";
 import {IFeed} from "./interfaces/IFeed.sol";
+import {PricingHelper} from "./libs/PricingHelper.sol";
 
 // TODO: think about aggregator deactivation flow
 contract Feed is IFeed, ERC165 {
     using ERC165Checker for address;
     using MessageHashUtils for bytes32;
+
+    uint256 internal constant MAX_FREQUENCY = 1 days;
+    uint256 internal constant MIN_FREQUENCY = 1 minutes;
+    uint256 internal constant PERSONAL_FEED_PRICE_MULTIPLIER = 3;
 
     IAccessControlManager internal immutable _accessControlManager;
     // INodesRegistry internal immutable _nodesRegistry;
@@ -25,20 +30,27 @@ contract Feed is IFeed, ERC165 {
     // ITreasury internal immutable _treasury;
     INodeRegistry internal immutable _nodeRegistry;
 
-    uint256 internal immutable _minSignaturesThresholdImmutable; // we use immutable for public feeds, for personal feeds this value is 0
-    uint256 internal _minSignaturesThreshold; // we use storage for personal feeds, for public feeds this value is 0
+    address internal immutable _owner;
+    FeedType internal immutable _feedType;
+
+    // we use immutable for public feeds to save storage slots
+    uint256 internal immutable _frequencyImmutable;
+    uint256 internal immutable _signaturesRequiredImmutable;
+
+    uint256 internal _frequency;
+    uint256 internal _signaturesRequired;
+
+    uint256 internal _pricePerSecondScaled;
+    string internal _ipfsCID;
 
     Answer[] internal _answers;
 
     modifier onlyValidConsumer() {
-        // we allow calls from EOA cause data is accessible externally anyway
-        // we allow calls from nodes cause they may need to check data
-        if (
-            !_subscriptionRegistry.isSubscribed(msg.sender, address(this)) && tx.origin != msg.sender
-                // && _pubKeys[msg.sender].isZeroPoint()
-        ) {
-            revert NotSubscribed(msg.sender);
-        }
+        require(
+            _subscriptionRegistry.isSubscribed(msg.sender, address(this)) ||
+                tx.origin == msg.sender,
+            NotSubscribed(msg.sender)
+        );
         _;
     }
 
@@ -49,48 +61,154 @@ contract Feed is IFeed, ERC165 {
         _;
     }
 
+    /// @dev only for personal feeds, public feeds have immutable config
+    modifier onlyFeedOwner() {
+        require(msg.sender == _owner, NotFeedOwner(msg.sender));
+        require(_feedType == FeedType.PERSONAL, NotPersonalFeed());
+        _;
+    }
+
     modifier onlyFeedManager() {
         _accessControlManager.verifyFeedManager(msg.sender);
         _;
     }
 
     constructor(
-        IFeedRegistryStructs.FeedType feedType,
+        FeedType feedType,
         IAccessControlManager accessControlManager,
         INodeRegistry nodeRegistry,
         ISubscriptionRegistry subscriptionRegistry,
-        uint256 minSignaturesThreshold // must be 0 for public feeds; TODO: think about this and implement properly
+        address owner,
+        uint256 signaturesRequired, // must be 0 for public feeds; TODO: think about this and implement properly
+        uint256 frequency,
+        string memory ipfsCID
     ) {
-        address(accessControlManager).shouldSupport(type(IAccessControlManager).interfaceId);
+        address(accessControlManager).shouldSupport(
+            type(IAccessControlManager).interfaceId
+        );
         address(nodeRegistry).shouldSupport(type(INodeRegistry).interfaceId);
-        address(subscriptionRegistry).shouldSupport(type(ISubscriptionRegistry).interfaceId);
+        address(subscriptionRegistry).shouldSupport(
+            type(ISubscriptionRegistry).interfaceId
+        );
 
         _accessControlManager = accessControlManager;
         _subscriptionRegistry = subscriptionRegistry;
         _nodeRegistry = nodeRegistry;
-        _minSignaturesThresholdImmutable = minSignaturesThreshold;
-        // _minSignaturesThreshold = minSignaturesThreshold;
-    }
 
-    // just idea noted here. for public feeds minSignaturesThreshold is a constant value, 
-    // so we can set it in constructor and have one less storage slot to read during publishAnswer
-    // but for personal feeds it can be changed later, so concep is to use immutable when it's set in constructor
-    // TODO: think about this and implement properly
-    function setMinSignaturesThreshold(uint256 minSignaturesThreshold) external override onlyFeedManager {
-        require(_minSignaturesThresholdImmutable == 0, ImmutableThreshold());
-        _minSignaturesThreshold = minSignaturesThreshold;
+        _feedType = feedType;
+        _owner = owner;
+        if (feedType == FeedType.PERSONAL) {
+            _frequencyImmutable = frequency;
+            _signaturesRequiredImmutable = signaturesRequired;
+        } else {
+            _frequency = frequency;
+            _signaturesRequired = signaturesRequired;
+        } 
+        _ipfsCID = ipfsCID;
+        _pricePerSecondScaled = PricingHelper.calculatePrice(frequency, signaturesRequired, feedType);
     }
 
     /// @inheritdoc IFeed
-    function publishAnswer(Answer calldata answer, INodeRegistry.SchnorrSignature calldata schnorrData) external {
-        _nodeRegistry.verifySignature(_constructMessage(answer), schnorrData, _getMinSignaturesThreshold());
+    function publishAnswer(
+        Answer calldata answer,
+        INodeRegistry.SchnorrSignature calldata schnorrData
+    ) external {
+        _nodeRegistry.verifySignature(
+            _constructMessage(answer),
+            schnorrData,
+            _getMinSignaturesThreshold()
+        );
 
         _answers.push(answer);
         emit LogAnswerPublished(answer.value, answer.timestamp);
     }
 
     /// @inheritdoc IFeed
-    function getLatest() external view override onlyValidConsumer returns (bytes memory value, uint256 timestamp) {
+    function updateFeedConfig(
+        uint256 frequency,
+        uint256 signaturesRequired,
+        string calldata ipfsCID
+    ) external override onlyFeedOwner {
+        require(
+            frequency >= MIN_FREQUENCY &&
+                frequency <= MAX_FREQUENCY,
+            InvalidFrequency(frequency)
+        );
+        // TODO: add max minSignaturesThreshol`d -> total amout of registered nodes
+        require(
+            signaturesRequired > 0,
+            InvalidMinSignaturesThreshold(signaturesRequired)
+        );
+        require(
+            keccak256(bytes(ipfsCID)) != keccak256(bytes("")),
+            InvalidCID(ipfsCID)
+        );
+
+        uint256 pricePerSecondScaled = PricingHelper.calculatePrice(frequency, signaturesRequired, _feedType);
+
+        _frequency = frequency;
+        _signaturesRequired = signaturesRequired;
+        _pricePerSecondScaled = pricePerSecondScaled;
+        _ipfsCID = ipfsCID;
+
+        emit LogFeedConfigChanged(
+            frequency,
+            signaturesRequired,
+            pricePerSecondScaled,
+            ipfsCID
+        );
+    }
+
+    /// @inheritdoc IFeed
+    function setFrequency(uint256 frequency) external override onlyFeedOwner {
+        require(
+            frequency >= MIN_FREQUENCY && frequency <= MAX_FREQUENCY,
+            InvalidFrequency(frequency)
+        );
+
+        uint256 newPrice = PricingHelper.calculatePrice(frequency, _getMinSignaturesThreshold(), _feedType);
+
+        _pricePerSecondScaled = newPrice;
+        _frequency = frequency;
+
+        emit LogFrequencyChanged(frequency, newPrice);
+    }
+
+    /// @inheritdoc IFeed
+    function setMinSignaturesThreshold(uint256 signaturesRequired) external override onlyFeedOwner {
+        // TODO: add max signaturesRequired -> total amout of registered nodes
+        require(
+            signaturesRequired > 0,
+            InvalidMinSignaturesThreshold(signaturesRequired)
+        );
+
+        uint256 newPrice = PricingHelper.calculatePrice(_getFrequency(), signaturesRequired, _feedType);
+        
+        _pricePerSecondScaled = newPrice;
+        _signaturesRequired = signaturesRequired;
+
+        emit LogMinSignaturesThresholdChanged(signaturesRequired, newPrice);
+    }
+
+    /// @inheritdoc IFeed
+    function setCID(string calldata cid) external override onlyFeedOwner {
+        require(
+            keccak256(bytes(cid)) != keccak256(bytes("")),
+            InvalidCID(cid)
+        );
+
+        _ipfsCID = cid;
+        emit LogCIDChanged(cid);
+    }
+
+    /// @inheritdoc IFeed
+    function getLatest()
+        external
+        view
+        override
+        onlyValidConsumer
+        returns (bytes memory value, uint256 timestamp)
+    {
         uint256 length = _answers.length;
         if (length == 0) {
             return ("", 0);
@@ -101,7 +219,9 @@ contract Feed is IFeed, ERC165 {
     }
 
     /// @inheritdoc IFeed
-    function getEntry(uint256 roundId)
+    function getEntry(
+        uint256 roundId
+    )
         external
         view
         override
@@ -112,7 +232,12 @@ contract Feed is IFeed, ERC165 {
         return (a.value, a.timestamp);
     }
 
-    function getLastUpdated() external view override returns (uint256 timestamp) {
+    function getLastUpdated()
+        external
+        view
+        override
+        returns (uint256 timestamp)
+    {
         uint256 length = _answers.length;
         if (length == 0) {
             return 0;
@@ -121,26 +246,57 @@ contract Feed is IFeed, ERC165 {
     }
 
     /// @inheritdoc IFeed
-    function getSubscriptionRegistry() external view override returns (ISubscriptionRegistry subscriptionRegistry) {
+    function getSubscriptionRegistry()
+        external
+        view
+        override
+        returns (ISubscriptionRegistry subscriptionRegistry)
+    {
         return _subscriptionRegistry;
     }
 
     /// @inheritdoc IFeed
-    function getMinSignaturesThreshold() external view override returns (uint256 minSignaturesThreshold) {
+    function getMinSignaturesThreshold()
+        external
+        view
+        override
+        returns (uint256 signaturesRequired)
+    {
         return _getMinSignaturesThreshold();
     }
 
-    function supportsInterface(bytes4 interfaceId) public view override returns (bool) {
-        return interfaceId == type(IFeed).interfaceId || super.supportsInterface(interfaceId);
+    function getOwner() external view override returns (address owner) {
+        return _owner;
     }
 
-    function _constructMessage(Answer calldata answer) internal view returns (bytes32) {
-        return keccak256(abi.encodePacked(address(this), answer.value, answer.timestamp)).toEthSignedMessageHash();
+    function getFeedType() external view override returns (FeedType feedType) {
+        return _feedType;
+    }
+
+    function supportsInterface(
+        bytes4 interfaceId
+    ) public view override returns (bool) {
+        return
+            interfaceId == type(IFeed).interfaceId ||
+            super.supportsInterface(interfaceId);
+    }
+
+    function _constructMessage(
+        Answer calldata answer
+    ) internal view returns (bytes32) {
+        return
+            keccak256(
+                abi.encodePacked(address(this), answer.value, answer.timestamp)
+            ).toEthSignedMessageHash();
     }
 
     // check if immutable is set, if not - use the one from storage
-    function _getMinSignaturesThreshold() internal view returns (uint256) {
-        return _minSignaturesThresholdImmutable > 0 ? _minSignaturesThresholdImmutable : _minSignaturesThreshold;
+    function _getMinSignaturesThreshold() internal view returns (uint256 signaturesRequired) {
+        signaturesRequired = _feedType == FeedType.PERSONAL ? _signaturesRequired : _signaturesRequiredImmutable;
+    }
+
+    function _getFrequency() internal view returns (uint256 frequency) {
+        frequency = _feedType == FeedType.PERSONAL ? _frequency : _frequencyImmutable;
     }
 
     function _validateAnswer(Answer calldata answer) internal view {
@@ -149,7 +305,10 @@ contract Feed is IFeed, ERC165 {
         }
         uint256 length = _answers.length;
         if (length > 0 && answer.timestamp <= _answers[length - 1].timestamp) {
-            revert PastTimestamp(answer.timestamp, _answers[length - 1].timestamp);
+            revert PastTimestamp(
+                answer.timestamp,
+                _answers[length - 1].timestamp
+            );
         }
         if (answer.timestamp > block.timestamp) {
             revert FutureTimestamp(answer.timestamp, block.timestamp);

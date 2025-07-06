@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSL-1.1
 pragma solidity ^0.8.29;
 
-import {IFeedRegistryStructs} from "./IFeedRegistryStructs.sol";
+import {IFeed} from "./IFeed.sol";
 
 /// @title IFeedRegistry - Feed registration and lookup
 /// @notice Registry of active feeds on the Molpha protocol
@@ -15,7 +15,7 @@ interface IFeedRegistryEvents {
     /// @param ipfsCID ipfsCID
     event LogFeedCreated(
         address indexed feed, 
-        IFeedRegistryStructs.FeedType feedType, 
+        IFeed.FeedType feedType, 
         uint256 frequency, 
         uint256 minSignaturesThreshold, 
         string ipfsCID
