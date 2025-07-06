@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.29;
 
 import {IFeed} from "../../src/interfaces/IFeed.sol";
 import {IFeedStructs} from "../../src/interfaces/IFeedStructs.sol";
@@ -10,6 +10,17 @@ import {INodeRegistryStructs} from "../../src/interfaces/INodeRegistryStructs.so
 contract DummyFeed is IFeed {
     IFeedStructs.Answer[] internal answers;
     uint256 internal _minSignaturesThreshold;
+    uint256 internal _frequency;
+    address internal _owner;
+    IFeed.FeedType internal _feedType;
+    string internal _ipfsCID;
+
+    constructor() {
+        _owner = msg.sender;
+        _feedType = IFeed.FeedType.PUBLIC;
+        _frequency = 3600;
+        _ipfsCID = "QmTest";
+    }
 
     function initialize(bytes32 metadataHash, uint256 minSignaturesThresholdParam) external {
         _minSignaturesThreshold = minSignaturesThresholdParam;
@@ -26,8 +37,30 @@ contract DummyFeed is IFeed {
         _minSignaturesThreshold = minSignaturesThresholdParam;
     }
 
+    function setFrequency(uint256 frequency) external {
+        _frequency = frequency;
+    }
+
+    function setCID(string calldata cid) external {
+        _ipfsCID = cid;
+    }
+
+    function updateFeedConfig(uint256 frequency, uint256 signaturesRequired, string calldata cid) external {
+        _frequency = frequency;
+        _minSignaturesThreshold = signaturesRequired;
+        _ipfsCID = cid;
+    }
+
     function getMinSignaturesThreshold() external view returns (uint256) {
         return _minSignaturesThreshold;
+    }
+
+    function getOwner() external view returns (address) {
+        return _owner;
+    }
+
+    function getFeedType() external view returns (IFeed.FeedType) {
+        return _feedType;
     }
 
     function getLatest() external view returns (bytes memory value, uint256 timestamp) {
@@ -55,11 +88,19 @@ contract DummyFeed is IFeed {
     }
 
     function getConfig() external view returns (uint256, uint256) {
-        return (0, 0);
+        return (_frequency, _minSignaturesThreshold);
     }
 
     function getFrequency() external view returns (uint256) {
-        return 0;
+        return _frequency;
+    }
+
+    function setFeedType(IFeed.FeedType feedType) external {
+        _feedType = feedType;
+    }
+
+    function setOwner(address owner) external {
+        _owner = owner;
     }
 
     function supportsInterface(bytes4 interfaceId) external view returns (bool) {

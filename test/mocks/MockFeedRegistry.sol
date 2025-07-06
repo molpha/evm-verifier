@@ -1,32 +1,17 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.29;
 
+import {IFeed} from "../../src/interfaces/IFeed.sol";
 import {IFeedRegistry} from "../../src/interfaces/IFeedRegistry.sol";
 import {IFeedRegistryStructs} from "../../src/interfaces/IFeedRegistryStructs.sol";
-import {IFeedRegistryEvents} from "../../src/interfaces/IFeedRegistryEvents.sol";
-
-// Minimal interface for IFeedFactory since it was deleted but still referenced
-interface IFeedFactory {
-    function supportsInterface(bytes4 interfaceId) external view returns (bool);
-}
-
-contract MockFeedFactory is IFeedFactory {
-    function supportsInterface(bytes4 interfaceId) external view returns (bool) {
-        return interfaceId == type(IFeedFactory).interfaceId;
-    }
-}
-
 contract MockFeedRegistry is IFeedRegistry {
     mapping(address => bool) public feeds;
     mapping(address => IFeedRegistryStructs.FeedConfig) public feedConfigs;
-    IFeedFactory public mockFeedFactory;
-
-    constructor() {
-        mockFeedFactory = new MockFeedFactory();
-    }
+    mapping(address => IFeed.FeedType) public feedTypes;
+    mapping(address => address) public feedOwners;
 
     function createFeed(
-        IFeedRegistryStructs.FeedType feedType,
+        IFeed.FeedType feedType,
         uint256 frequency,
         uint256 minSignaturesThreshold,
         string memory ipfsCID
@@ -34,13 +19,13 @@ contract MockFeedRegistry is IFeedRegistry {
         address feed = address(uint160(uint256(keccak256(abi.encodePacked(block.timestamp, msg.sender)))));
         feeds[feed] = true;
         feedConfigs[feed] = IFeedRegistryStructs.FeedConfig({
-            feedType: feedType,
-            owner: msg.sender,
             ipfsCID: ipfsCID,
             minSignaturesThreshold: minSignaturesThreshold,
             frequency: frequency,
             pricePerSecondScaled: 1000
         });
+        feedTypes[feed] = feedType;
+        feedOwners[feed] = msg.sender;
         
         emit LogFeedCreated(feed, feedType, frequency, minSignaturesThreshold, ipfsCID);
     }
@@ -63,7 +48,7 @@ contract MockFeedRegistry is IFeedRegistry {
         feedConfigs[feed].ipfsCID = ipfsCID;
     }
 
-    function isFeed(address addr) external view returns (bool) {
+    function isFeed(address addr) external view override returns (bool) {
         return feeds[addr];
     }
 
@@ -75,12 +60,34 @@ contract MockFeedRegistry is IFeedRegistry {
         return feedConfigs[feed].pricePerSecondScaled;
     }
 
-    function addFeed(address feed) external {
-        feeds[feed] = true;
+    function getFeedType(address feed) external view returns (IFeed.FeedType) {
+        return feedTypes[feed];
     }
 
-    function setMockFeedFactory(address factory) external {
-        mockFeedFactory = IFeedFactory(factory);
+    function getFeedOwner(address feed) external view returns (address) {
+        return feedOwners[feed];
+    }
+
+    function addFeed(address feed) external {
+        feeds[feed] = true;
+        feedTypes[feed] = IFeed.FeedType.PUBLIC;
+        feedOwners[feed] = msg.sender;
+        feedConfigs[feed] = IFeedRegistryStructs.FeedConfig({
+            ipfsCID: "test",
+            minSignaturesThreshold: 1,
+            frequency: 3600,
+            pricePerSecondScaled: 1000
+        });
+    }
+
+
+
+    function setFeedType(address feed, IFeed.FeedType feedType) external {
+        feedTypes[feed] = feedType;
+    }
+
+    function setFeedOwner(address feed, address owner) external {
+        feedOwners[feed] = owner;
     }
 
     function supportsInterface(bytes4 interfaceId) external pure returns (bool) {

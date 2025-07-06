@@ -28,4 +28,24 @@ interface IFeedErrors is ICommonErrors {
     /// @notice reverts when min signatures threshold is immutable
     /// @dev This error is thrown when trying to set the min signatures threshold for a public feed
     error ImmutableThreshold();
+
+    /// @notice reverts when feed is not personal
+    /// @dev This error is thrown when trying to set the min signatures threshold for a public feed
+    error NotPersonalFeed();
+
+    /// @notice reverts when frequency is invalid
+    /// @param frequency frequency
+    error InvalidFrequency(uint256 frequency);
+
+    /// @notice reverts when min signatures threshold is invalid
+    /// @param signaturesRequired min signatures threshold
+    error InvalidMinSignaturesThreshold(uint256 signaturesRequired);
+
+    /// @notice reverts when CID is invalid
+    /// @param ipfsCID CID
+    error InvalidCID(string ipfsCID);
+
+    /// @notice reverts when msg sender is not the feed owner
+    /// @param sender sender address
+    error NotFeedOwner(address sender);
 }

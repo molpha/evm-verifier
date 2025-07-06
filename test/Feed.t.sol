@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.29;
 
 import {Test} from "forge-std/Test.sol";
 import {console2} from "forge-std/console2.sol";
@@ -8,18 +8,15 @@ import {Feed} from "../src/Feed.sol";
 import {IFeed} from "../src/interfaces/IFeed.sol";
 import {IFeedStructs} from "../src/interfaces/IFeedStructs.sol";
 import {IFeedErrors} from "../src/interfaces/IFeedErrors.sol";
-import {IFeedRegistryStructs} from "../src/interfaces/IFeedRegistryStructs.sol";
 import {INodeRegistry} from "../src/interfaces/INodeRegistry.sol";
 import {INodeRegistryStructs} from "../src/interfaces/INodeRegistryStructs.sol";
-// import {MessageHashUtils} from "openzeppelin-contracts/contracts/utils/cryptography/MessageHashUtils.sol";
 import {MockAccessControlManager} from "./mocks/MockAccessControlManager.sol";
 import {MockNodeRegistry} from "./mocks/MockNodeRegistry.sol";
 import {MockSubscriptionRegistry} from "./mocks/MockSubscriptionRegistry.sol";
 
-// using MessageHashUtils for bytes32;
-
 contract FeedTest is Test {
     Feed feed;
+    Feed personalFeed;
     MockNodeRegistry registry;
     MockSubscriptionRegistry subRegistry;
     MockAccessControlManager acl;
@@ -27,6 +24,7 @@ contract FeedTest is Test {
     address consumer = address(1);
     address nonSubscriber = address(2);
     address feedManager = address(3);
+    address feedOwner = address(4);
 
     function setUp() public {
         registry = new MockNodeRegistry();
@@ -36,12 +34,28 @@ contract FeedTest is Test {
         // Set up feed manager
         acl.setFeedManager(feedManager);
         
+        // Create a public feed
         feed = new Feed(
-            IFeedRegistryStructs.FeedType.PUBLIC,
+            IFeed.FeedType.PUBLIC,
             acl, 
             registry, 
             subRegistry,
-            1 // minSignaturesThreshold
+            feedOwner,
+            1, // minSignaturesThreshold
+            3600, // frequency (1 hour)
+            "QmTestCID" // ipfsCID
+        );
+
+        // Create a personal feed
+        personalFeed = new Feed(
+            IFeed.FeedType.PERSONAL,
+            acl, 
+            registry, 
+            subRegistry,
+            feedOwner,
+            1, // minSignaturesThreshold = 1 for personal feeds (can't be 0)
+            3600, // frequency
+            "QmPersonalCID" // ipfsCID
         );
     }
 
@@ -145,36 +159,82 @@ contract FeedTest is Test {
         assertEq(value, "data");
     }
 
-    function test_setMinSignaturesThreshold_OnlyFeedManager() public {
-        // Create a personal feed (minSignaturesThreshold = 0 in constructor)
-        Feed personalFeed = new Feed(
-            IFeedRegistryStructs.FeedType.PERSONAL,
-            acl, 
-            registry, 
-            subRegistry,
-            0 // minSignaturesThreshold = 0 for personal feeds
-        );
-        
-        // Should revert for non-feed-manager
-        vm.expectRevert();
+    function test_setMinSignaturesThreshold_OnlyFeedOwner() public {
+        // Should revert for non-feed-owner
+        vm.expectRevert(abi.encodeWithSelector(IFeedErrors.NotFeedOwner.selector, address(this)));
         personalFeed.setMinSignaturesThreshold(5);
         
-        // Should work for feed manager
-        vm.prank(feedManager);
+        // Should work for feed owner
+        vm.prank(feedOwner);
         personalFeed.setMinSignaturesThreshold(5);
         
         assertEq(personalFeed.getMinSignaturesThreshold(), 5);
     }
 
     function test_setMinSignaturesThreshold_RevertsForPublicFeed() public {
-        // Our main feed has immutable threshold > 0
-        vm.prank(feedManager);
-        vm.expectRevert(IFeedErrors.ImmutableThreshold.selector);
+        // Public feeds should revert
+        vm.prank(feedOwner);
+        vm.expectRevert(abi.encodeWithSelector(IFeedErrors.NotPersonalFeed.selector));
         feed.setMinSignaturesThreshold(5);
+    }
+
+    function test_setFrequency_OnlyFeedOwner() public {
+        // Should revert for non-feed-owner
+        vm.expectRevert(abi.encodeWithSelector(IFeedErrors.NotFeedOwner.selector, address(this)));
+        personalFeed.setFrequency(1800);
+        
+        // Should work for feed owner
+        vm.prank(feedOwner);
+        personalFeed.setFrequency(1800);
+    }
+
+    function test_setCID_OnlyFeedOwner() public {
+        // Should revert for non-feed-owner
+        vm.expectRevert(abi.encodeWithSelector(IFeedErrors.NotFeedOwner.selector, address(this)));
+        personalFeed.setCID("QmNewCID");
+        
+        // Should work for feed owner
+        vm.prank(feedOwner);
+        personalFeed.setCID("QmNewCID");
+    }
+
+    function test_updateFeedConfig_OnlyFeedOwner() public {
+        // Should revert for non-feed-owner
+        vm.expectRevert(abi.encodeWithSelector(IFeedErrors.NotFeedOwner.selector, address(this)));
+        personalFeed.updateFeedConfig(1800, 3, "QmNewCID");
+        
+        // Should work for feed owner
+        vm.prank(feedOwner);
+        personalFeed.updateFeedConfig(1800, 3, "QmNewCID");
+        
+        assertEq(personalFeed.getMinSignaturesThreshold(), 3);
     }
 
     function test_getMinSignaturesThreshold_ReturnsCorrectValue() public {
         assertEq(feed.getMinSignaturesThreshold(), 1);
+        // Personal feed was created with 0 signatures required but that doesn't work in the new implementation
+        // Let's create a new personal feed with non-zero threshold
+        Feed personalFeedWithThreshold = new Feed(
+            IFeed.FeedType.PERSONAL,
+            acl, 
+            registry, 
+            subRegistry,
+            feedOwner,
+            2, // minSignaturesThreshold > 0 for personal feeds
+            3600, // frequency
+            "QmPersonalCID" // ipfsCID
+        );
+        assertEq(personalFeedWithThreshold.getMinSignaturesThreshold(), 2);
+    }
+
+    function test_getOwner_ReturnsCorrectOwner() public {
+        assertEq(feed.getOwner(), feedOwner);
+        assertEq(personalFeed.getOwner(), feedOwner);
+    }
+
+    function test_getFeedType_ReturnsCorrectType() public {
+        assertEq(uint256(feed.getFeedType()), uint256(IFeed.FeedType.PUBLIC));
+        assertEq(uint256(personalFeed.getFeedType()), uint256(IFeed.FeedType.PERSONAL));
     }
 
     function test_getSubscriptionRegistry_ReturnsCorrectAddress() public {
@@ -197,6 +257,7 @@ contract FeedTest is Test {
         vm.assume(timestamp1 > 0 && timestamp1 <= block.timestamp);
         vm.assume(timestamp2 > timestamp1 && timestamp2 <= block.timestamp + 3600); // Allow future timestamps within 1 hour
         
+        // Subscribe the test contract first
         subRegistry.subscribe(address(this), address(feed), 100);
         
         // Publish first answer
@@ -220,9 +281,12 @@ contract FeedTest is Test {
         
         IFeedStructs.Answer memory ans = IFeedStructs.Answer("test_data", uint64(block.timestamp));
         
-        // Test that event is emitted (specific event checking removed due to interface limitations)
-        vm.expectEmit(false, false, false, false);
-        
+        // Test that publishing works (event testing simplified)
         feed.publishAnswer(ans, INodeRegistryStructs.SchnorrSignature(bytes32(uint256(1)), address(1), new uint256[](1)));
+        
+        // Verify the answer was stored
+        (bytes memory value, uint256 ts) = feed.getLatest();
+        assertEq(value, "test_data");
+        assertEq(ts, ans.timestamp);
     }
 }
