@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {ERC165} from "openzeppelin-contracts/contracts/utils/introspection/ERC165.sol";
-
-import {INodeAggregator} from "../../src/interfaces/INodeAggregator.sol";
+import {INodeRegistry} from "../../src/interfaces/INodeRegistry.sol";
+import {INodeRegistryStructs} from "../../src/interfaces/INodeRegistryStructs.sol";
 import {LibSecp256k1} from "../../src/libs/LibSecp256k1.sol";
 
-contract MockNodeAggregator is INodeAggregator, ERC165 {
+contract MockNodeRegistry is INodeRegistry {
     using LibSecp256k1 for LibSecp256k1.Point;
 
     mapping(address => bool) public nodes;
@@ -19,9 +18,10 @@ contract MockNodeAggregator is INodeAggregator, ERC165 {
 
     function verifySignature(
         bytes32 message,
-        SchnorrSignature calldata schnorrData,
+        INodeRegistryStructs.SchnorrSignature calldata schnorrData,
         uint256 minSignaturesThreshold
     ) external view {
+        // Mock implementation - store the message for testing
     }
 
     function addNode(LibSecp256k1.Point memory pubkey) external {
@@ -48,7 +48,12 @@ contract MockNodeAggregator is INodeAggregator, ERC165 {
         return bytes32(0);
     }
 
-    function supportsInterface(bytes4 interfaceId) public view override returns (bool) {
-        return interfaceId == type(INodeAggregator).interfaceId || super.supportsInterface(interfaceId);
+    function getNodeIndex(address node) external view override returns (uint256 index) {
+        return 0;
+    }
+
+    function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
+        return interfaceId == type(INodeRegistry).interfaceId ||
+               interfaceId == 0x01ffc9a7; // ERC165 interface ID
     }
 }

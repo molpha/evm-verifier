@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {ERC165} from "openzeppelin-contracts/contracts/utils/introspection/ERC165.sol";
 import {IAccessControlManager} from "../..//src/interfaces/IAccessControlManager.sol";
 
-contract MockAccessControlManager is IAccessControlManager, ERC165 {
+contract MockAccessControlManager is IAccessControlManager {
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
     bytes32 public constant FEED_MANAGER = keccak256("FEED_MANAGER");
     bytes32 public constant NODE_MANAGER = keccak256("NODE_MANAGER");
@@ -70,7 +69,8 @@ contract MockAccessControlManager is IAccessControlManager, ERC165 {
         priceManager = account;
     }
 
-    function supportsInterface(bytes4 interfaceId) public view override returns (bool) {
-        return interfaceId == type(IAccessControlManager).interfaceId || super.supportsInterface(interfaceId);
+    function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
+        return interfaceId == type(IAccessControlManager).interfaceId ||
+               interfaceId == 0x01ffc9a7; // ERC165 interface ID
     }
 }

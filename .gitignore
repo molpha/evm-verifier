@@ -2,3 +2,5 @@ lib
 out
 .vscode
 cache
+.env
+broadcast

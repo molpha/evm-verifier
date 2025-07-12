@@ -1,16 +1,22 @@
 // SPDX-License-Identifier: BSL-1.1
 pragma solidity ^0.8.29;
 
-import {LibSecp256k1} from "./libs/LibSecp256k1.sol";
-import {LibSchnorr} from "./libs/LibSchnorr.sol";
-import {SchnorrSetVerifierLib} from "./libs/SchnorrSetVerifierLib.sol";
-import {INodeAggregator} from "./interfaces/INodeAggregator.sol";
-
+import {ERC165} from "openzeppelin-contracts/contracts/utils/introspection/ERC165.sol";
 import {SSTORE2} from "solmate/utils/SSTORE2.sol";
 import {Ownable2Step} from "openzeppelin-contracts/contracts/access/Ownable2Step.sol";
 import {Ownable} from "openzeppelin-contracts/contracts/access/Ownable.sol";
 
-contract NodeAggregator is INodeAggregator, Ownable2Step {
+import {LibSecp256k1} from "./libs/LibSecp256k1.sol";
+import {LibSchnorr} from "./libs/LibSchnorr.sol";
+import {SchnorrSetVerifierLib} from "./libs/SchnorrSetVerifierLib.sol";
+import {INodeRegistry} from "./interfaces/INodeRegistry.sol";
+
+
+
+/// @title NodeRegistry
+/// @notice Registry for managing nodes and verifying Schnorr signatures
+/// @dev Uses SSTORE2 for efficient storage of node public keys, supports up to 256 nodes
+contract NodeRegistry is INodeRegistry, Ownable2Step, ERC165 {
     using LibSchnorr for LibSecp256k1.Point;
     using LibSecp256k1 for LibSecp256k1.Point;
     using LibSecp256k1 for LibSecp256k1.JacobianPoint;
@@ -38,6 +44,7 @@ contract NodeAggregator is INodeAggregator, Ownable2Step {
         pointer = SSTORE2.write(abi.encode(pubKeys));
     }
 
+    /// @inheritdoc INodeRegistry
     function verifySignature(
         bytes32 message,
         SchnorrSignature calldata schnorrData,
@@ -81,7 +88,7 @@ contract NodeAggregator is INodeAggregator, Ownable2Step {
         if (!isValid) revert InvalidSignature();
     }
 
-
+    /// @inheritdoc INodeRegistry
     function addNode(LibSecp256k1.Point memory pubkey) external {
         if (pubkey.isZeroPoint()) revert InvalidPublicKey();
         if (pubkey.toAddress() == address(0)) revert ZeroAddress();
@@ -106,6 +113,7 @@ contract NodeAggregator is INodeAggregator, Ownable2Step {
         emit LogNodeAdded(node, nodesAmount, newPointer);
     }
 
+    /// @inheritdoc INodeRegistry
     function removeNode(address node) external {
         uint256 index = nodeIndexes[node];
         if (index == 0) revert NotNode(node);
@@ -132,6 +140,7 @@ contract NodeAggregator is INodeAggregator, Ownable2Step {
         isActive = nodeIndexes[node] != 0;
     }
 
+    /// @inheritdoc INodeRegistry
     function getTotalNodes()
         external
         view
@@ -146,6 +155,15 @@ contract NodeAggregator is INodeAggregator, Ownable2Step {
         hash = keccak256(SSTORE2.read(pointer));
     }
 
+    /// @inheritdoc INodeRegistry
+    function getNodeIndex(address node) external view returns (uint256 index) {
+        index = nodeIndexes[node];
+    }
+
+    function supportsInterface(bytes4 interfaceId) public view override returns (bool) {
+        return interfaceId == type(INodeRegistry).interfaceId || super.supportsInterface(interfaceId);
+    }
+
     function _getPubKeys()
         internal
         view
@@ -153,5 +171,14 @@ contract NodeAggregator is INodeAggregator, Ownable2Step {
     {
         pubKeys = abi.decode(SSTORE2.read(pointer), (LibSecp256k1.Point[]));
     }
-
 }
+
+/*
+https://api.llama.fi/tvl/uniswap -> uniswat tvl
+https://api.open-meteo.com/v1/forecast?latitude=25.276987&longitude=55.296249&current_weather=true -> Dubai Temperature
+https://api.coingecko.com/api/v3/global -> Use .market_cap_percentage.btc -> BTC dominance
+https://api.worldbank.org/v2/country/AE/indicator/NY.GDP.MKTP.CD?format=json -> UAE GDP
+https://api.fiscaldata.treasury.gov/services/api/fiscal_service/v2/accounting/od/avg_interest_rates ->  US Treasury Rates
+https://api.worldbank.org/v2/country/UA/indicator/FP.CPI.TOTL.ZG?format=json -> Ukraine CPI
+
+*/
