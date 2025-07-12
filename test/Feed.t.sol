@@ -4,19 +4,20 @@ pragma solidity ^0.8.29;
 import {Test} from "forge-std/Test.sol";
 import {console2} from "forge-std/console2.sol";
 
-import {Feed} from "../src/Feed.sol";
 import {IFeed} from "../src/interfaces/IFeed.sol";
 import {IFeedStructs} from "../src/interfaces/IFeedStructs.sol";
 import {IFeedErrors} from "../src/interfaces/IFeedErrors.sol";
 import {INodeRegistry} from "../src/interfaces/INodeRegistry.sol";
 import {INodeRegistryStructs} from "../src/interfaces/INodeRegistryStructs.sol";
+import {PublicFeed} from "../src/PublicFeed.sol";
+import {PersonalFeed} from "../src/PersonalFeed.sol";
 import {MockAccessControlManager} from "./mocks/MockAccessControlManager.sol";
 import {MockNodeRegistry} from "./mocks/MockNodeRegistry.sol";
 import {MockSubscriptionRegistry} from "./mocks/MockSubscriptionRegistry.sol";
 
 contract FeedTest is Test {
-    Feed feed;
-    Feed personalFeed;
+    PublicFeed feed;
+    PersonalFeed personalFeed;
     MockNodeRegistry registry;
     MockSubscriptionRegistry subRegistry;
     MockAccessControlManager acl;
@@ -35,20 +36,18 @@ contract FeedTest is Test {
         acl.setFeedManager(feedManager);
         
         // Create a public feed
-        feed = new Feed(
-            IFeed.FeedType.PUBLIC,
+        feed = new PublicFeed(
             acl, 
             registry, 
             subRegistry,
             feedOwner,
             1, // minSignaturesThreshold
             3600, // frequency (1 hour)
-            "QmTestCID" // ipfsCID
+            "QmTestCID" // ipfsCID 
         );
 
         // Create a personal feed
-        personalFeed = new Feed(
-            IFeed.FeedType.PERSONAL,
+        personalFeed = new PersonalFeed(
             acl, 
             registry, 
             subRegistry,
@@ -214,8 +213,7 @@ contract FeedTest is Test {
         assertEq(feed.getMinSignaturesThreshold(), 1);
         // Personal feed was created with 0 signatures required but that doesn't work in the new implementation
         // Let's create a new personal feed with non-zero threshold
-        Feed personalFeedWithThreshold = new Feed(
-            IFeed.FeedType.PERSONAL,
+        PersonalFeed personalFeedWithThreshold = new PersonalFeed(
             acl, 
             registry, 
             subRegistry,
@@ -254,14 +252,19 @@ contract FeedTest is Test {
     }
 
     function testFuzz_publishAnswer_ValidTimestamps(uint64 timestamp1, uint64 timestamp2) public {
-        vm.assume(timestamp1 > 0 && timestamp1 <= block.timestamp);
-        vm.assume(timestamp2 > timestamp1 && timestamp2 <= block.timestamp + 3600); // Allow future timestamps within 1 hour
+        // Make assumptions more reasonable to avoid rejecting too many inputs
+        vm.assume(timestamp1 > 0 && timestamp1 < type(uint64).max / 2);
+        vm.assume(timestamp2 > timestamp1 && timestamp2 < type(uint64).max / 2);
+        vm.assume(timestamp2 - timestamp1 < 86400); // Within 1 day difference
         
-        // Subscribe the test contract first
-        subRegistry.subscribe(address(this), address(feed), 100);
+        // Warp to the first timestamp first
+        vm.warp(timestamp1);
+        
+        // Subscribe the test contract with a long timespan to avoid expiration
+        // Add extra time to ensure subscription doesn't expire during the test
+        subRegistry.subscribe(address(this), address(feed), timestamp2 + 86400);
         
         // Publish first answer
-        vm.warp(timestamp1);
         IFeedStructs.Answer memory ans1 = IFeedStructs.Answer("data1", timestamp1);
         feed.publishAnswer(ans1, INodeRegistryStructs.SchnorrSignature(bytes32(uint256(1)), address(1), new uint256[](1)));
         

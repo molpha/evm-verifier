@@ -48,4 +48,7 @@ interface IFeedErrors is ICommonErrors {
     /// @notice reverts when msg sender is not the feed owner
     /// @param sender sender address
     error NotFeedOwner(address sender);
+
+    /// @notice reverts when feed function is not supported
+    error NotSupported();
 }

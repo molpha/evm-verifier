@@ -3,61 +3,95 @@ pragma solidity ^0.8.29;
 
 import {IFeed} from "../../src/interfaces/IFeed.sol";
 import {IFeedRegistry} from "../../src/interfaces/IFeedRegistry.sol";
-import {IFeedRegistryStructs} from "../../src/interfaces/IFeedRegistryStructs.sol";
+import {DummyFeed} from "./DummyFeed.sol";
+
 contract MockFeedRegistry is IFeedRegistry {
     mapping(address => bool) public feeds;
-    mapping(address => IFeedRegistryStructs.FeedConfig) public feedConfigs;
+    mapping(address => string) public feedCIDs;
+    mapping(address => uint256) public feedFrequencies;
+    mapping(address => uint256) public feedMinSignaturesThresholds;
+    mapping(address => uint256) public feedPrices;
     mapping(address => IFeed.FeedType) public feedTypes;
     mapping(address => address) public feedOwners;
 
-    function createFeed(
-        IFeed.FeedType feedType,
+    function createPublicFeed(
         uint256 frequency,
         uint256 minSignaturesThreshold,
-        string memory ipfsCID
+        string memory ipfsCID,
+        address defaultConsumer,
+        uint256 subscriptionDueTime
     ) external override {
-        address feed = address(uint160(uint256(keccak256(abi.encodePacked(block.timestamp, msg.sender)))));
-        feeds[feed] = true;
-        feedConfigs[feed] = IFeedRegistryStructs.FeedConfig({
-            ipfsCID: ipfsCID,
-            minSignaturesThreshold: minSignaturesThreshold,
-            frequency: frequency,
-            pricePerSecondScaled: 1000
-        });
-        feedTypes[feed] = feedType;
-        feedOwners[feed] = msg.sender;
+        DummyFeed feed = new DummyFeed();
+        feed.setFeedType(IFeed.FeedType.PUBLIC);
+        feed.setOwner(msg.sender);
         
-        emit LogFeedCreated(feed, feedType, frequency, minSignaturesThreshold, ipfsCID);
+        address feedAddr = address(feed);
+        feeds[feedAddr] = true;
+        feedCIDs[feedAddr] = ipfsCID;
+        feedFrequencies[feedAddr] = frequency;
+        feedMinSignaturesThresholds[feedAddr] = minSignaturesThreshold;
+        feedPrices[feedAddr] = 1000;
+        feedTypes[feedAddr] = IFeed.FeedType.PUBLIC;
+        feedOwners[feedAddr] = msg.sender;
+
+        emit LogFeedCreated(feedAddr, IFeed.FeedType.PUBLIC, frequency, minSignaturesThreshold, ipfsCID);
     }
 
+    function createPersonalFeed(
+        uint256 frequency,
+        uint256 minSignaturesThreshold,
+        string memory ipfsCID,
+        uint256 subscriptionDueTime
+    ) external override {
+        DummyFeed feed = new DummyFeed();
+        feed.setFeedType(IFeed.FeedType.PERSONAL);
+        feed.setOwner(msg.sender);
+        
+        address feedAddr = address(feed);
+        feeds[feedAddr] = true;
+        feedCIDs[feedAddr] = ipfsCID;
+        feedFrequencies[feedAddr] = frequency;
+        feedMinSignaturesThresholds[feedAddr] = minSignaturesThreshold;
+        feedPrices[feedAddr] = 1000;
+        feedTypes[feedAddr] = IFeed.FeedType.PERSONAL;
+        feedOwners[feedAddr] = msg.sender;
+
+        emit LogFeedCreated(feedAddr, IFeed.FeedType.PERSONAL, frequency, minSignaturesThreshold, ipfsCID);
+    }
+
+    // Additional helper functions for testing
     function updateFeedConfig(address feed, uint256 frequency, uint256 minSignaturesThreshold, string calldata ipfsCID) external {
-        feedConfigs[feed].frequency = frequency;
-        feedConfigs[feed].minSignaturesThreshold = minSignaturesThreshold;
-        feedConfigs[feed].ipfsCID = ipfsCID;
+        feedFrequencies[feed] = frequency;
+        feedMinSignaturesThresholds[feed] = minSignaturesThreshold;
+        feedCIDs[feed] = ipfsCID;
     }
 
     function setFrequency(address feed, uint256 frequency) external {
-        feedConfigs[feed].frequency = frequency;
+        feedFrequencies[feed] = frequency;
     }
 
     function setMinSignaturesThreshold(address feed, uint256 minSignaturesThreshold) external {
-        feedConfigs[feed].minSignaturesThreshold = minSignaturesThreshold;
+        feedMinSignaturesThresholds[feed] = minSignaturesThreshold;
     }
 
     function setCID(address feed, string calldata ipfsCID) external {
-        feedConfigs[feed].ipfsCID = ipfsCID;
+        feedCIDs[feed] = ipfsCID;
     }
 
-    function isFeed(address addr) external view override returns (bool) {
-        return feeds[addr];
+    function getFeedCID(address feed) external view returns (string memory) {
+        return feedCIDs[feed];
     }
 
-    function getFeedConfig(address feed) external view returns (IFeedRegistryStructs.FeedConfig memory) {
-        return feedConfigs[feed];
+    function getFeedFrequency(address feed) external view returns (uint256) {
+        return feedFrequencies[feed];
+    }
+
+    function getFeedMinSignaturesThreshold(address feed) external view returns (uint256) {
+        return feedMinSignaturesThresholds[feed];
     }
 
     function getFeedPrice(address feed) external view returns (uint256) {
-        return feedConfigs[feed].pricePerSecondScaled;
+        return feedPrices[feed];
     }
 
     function getFeedType(address feed) external view returns (IFeed.FeedType) {
@@ -72,15 +106,11 @@ contract MockFeedRegistry is IFeedRegistry {
         feeds[feed] = true;
         feedTypes[feed] = IFeed.FeedType.PUBLIC;
         feedOwners[feed] = msg.sender;
-        feedConfigs[feed] = IFeedRegistryStructs.FeedConfig({
-            ipfsCID: "test",
-            minSignaturesThreshold: 1,
-            frequency: 3600,
-            pricePerSecondScaled: 1000
-        });
+        feedCIDs[feed] = "test";
+        feedFrequencies[feed] = 3600;
+        feedMinSignaturesThresholds[feed] = 1;
+        feedPrices[feed] = 1000;
     }
-
-
 
     function setFeedType(address feed, IFeed.FeedType feedType) external {
         feedTypes[feed] = feedType;
@@ -88,6 +118,10 @@ contract MockFeedRegistry is IFeedRegistry {
 
     function setFeedOwner(address feed, address owner) external {
         feedOwners[feed] = owner;
+    }
+
+    function setFeedPrice(address feed, uint256 price) external {
+        feedPrices[feed] = price;
     }
 
     function supportsInterface(bytes4 interfaceId) external pure returns (bool) {

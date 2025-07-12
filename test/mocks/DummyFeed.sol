@@ -87,6 +87,10 @@ contract DummyFeed is IFeed {
         return bytes32(0);
     }
 
+    function getPricePerSecondScaled() external view returns (uint256) {
+        return 0;
+    }
+
     function getConfig() external view returns (uint256, uint256) {
         return (_frequency, _minSignaturesThreshold);
     }

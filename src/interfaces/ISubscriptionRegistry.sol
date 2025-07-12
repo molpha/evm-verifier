@@ -18,13 +18,34 @@ interface ISubscriptionRegistry is ISubscriptionRegistryStructs, ISubscriptionRe
     /// @param consumers Array of consumer addresses
     /// @param feed The feed address
     /// @param dueTime The due time of the subscription
-    function batchSubscribe(address[] calldata consumers, address feed, uint256 dueTime) external;
+    function subscribe(address[] calldata consumers, address feed, uint256 dueTime) external;
+
+    /// @notice Subscribe to a feed
+    /// @param consumer The consumer address
+    /// @param feed The feed address
+    /// @param owner The owner address
+    /// @param dueTime The due time of the subscription
+    function subscribe(address consumer, address feed, address owner, uint256 dueTime) external;
+
+    /// @notice Batch subscribe multiple consumers to a feed
+    /// @param consumers Array of consumer addresses
+    /// @param feed The feed address
+    /// @param owner The owner address
+    /// @param dueTime The due time of the subscription
+    function subscribe(address[] calldata consumers, address feed, address owner, uint256 dueTime) external;
+
+    /// @notice Extend subscription
+    /// @param consumer The consumer address
+    /// @param feed The feed address
+    /// @param dueTime The due time of the subscription
+    function extendSubscription(address consumer, address feed, uint256 dueTime) external;
+
 
     /// @notice Unsubscribe from a feed
     /// @param feed The feed address
     /// @param consumer The consumer address
     function unsubscribe(address feed, address consumer) external;
-    
+
     /// @notice Grant access to a consumer for a feed
     /// @param consumer The consumer address
     /// @param feed The feed address
@@ -33,12 +54,17 @@ interface ISubscriptionRegistry is ISubscriptionRegistryStructs, ISubscriptionRe
     /// @notice Batch grant access to multiple consumers for a feed
     /// @param consumers Array of consumer addresses
     /// @param feed The feed address
-    function batchGrantAccess(address[] calldata consumers, address feed) external;
+    function grantAccess(address[] calldata consumers, address feed) external;
 
     /// @notice Revoke access from a consumer for a feed
     /// @param consumer The consumer address
     /// @param feed The feed address
     function revokeAccess(address consumer, address feed) external;
+
+    /// @notice Batch revoke access from multiple consumers for a feed
+    /// @param consumers Array of consumer addresses
+    /// @param feed The feed address
+    function revokeAccess(address[] calldata consumers, address feed) external;
 
     /// @notice Transfer subscription to a new owner
     /// @param consumer The consumer address

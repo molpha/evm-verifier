@@ -19,25 +19,43 @@ contract MockSubscriptionRegistry is ISubscriptionRegistry {
         _feedRegistry = feedRegistry;
     }
 
-    function subscribe(address consumer, address feed, uint256 timespan) external override {
+    function subscribe(address consumer, address feed, uint256 dueTime) external override {
         subscribed[consumer][feed] = true;
-        subscriptionDueTimes[consumer][feed] = block.timestamp + timespan;
+        subscriptionDueTimes[consumer][feed] = dueTime;
         subscriptionOwners[consumer][feed] = msg.sender;
     }
 
-    function subscribePersonal(address consumer, address feed, uint256 timespan) external {
-        subscribed[consumer][feed] = true;
-        subscriptionDueTimes[consumer][feed] = block.timestamp + timespan;
-        subscriptionOwners[consumer][feed] = msg.sender;
-        personalFeedAccess[feed][consumer] = true;
-    }
-
-    function batchSubscribe(address[] calldata consumers, address feed, uint256 timespan) external override {
+    function subscribe(address[] calldata consumers, address feed, uint256 dueTime) external override {
         for (uint256 i = 0; i < consumers.length; i++) {
             subscribed[consumers[i]][feed] = true;
-            subscriptionDueTimes[consumers[i]][feed] = block.timestamp + timespan;
+            subscriptionDueTimes[consumers[i]][feed] = dueTime;
             subscriptionOwners[consumers[i]][feed] = msg.sender;
         }
+    }
+
+    function subscribe(address consumer, address feed, address owner, uint256 dueTime) external override {
+        subscribed[consumer][feed] = true;
+        subscriptionDueTimes[consumer][feed] = dueTime;
+        subscriptionOwners[consumer][feed] = owner;
+    }
+
+    function subscribe(address[] calldata consumers, address feed, address owner, uint256 dueTime) external override {
+        for (uint256 i = 0; i < consumers.length; i++) {
+            subscribed[consumers[i]][feed] = true;
+            subscriptionDueTimes[consumers[i]][feed] = dueTime;
+            subscriptionOwners[consumers[i]][feed] = owner;
+        }
+    }
+
+    function subscribePersonal(address feed, address owner, uint256 dueTime) external {
+        subscribed[owner][feed] = true;
+        subscriptionDueTimes[owner][feed] = dueTime;
+        subscriptionOwners[owner][feed] = owner;
+        personalFeedAccess[feed][owner] = true;
+    }
+
+    function extendSubscription(address consumer, address feed, uint256 dueTime) external override {
+        subscriptionDueTimes[consumer][feed] = dueTime;
     }
 
     function unsubscribe(address feed, address consumer) external override {
@@ -50,7 +68,7 @@ contract MockSubscriptionRegistry is ISubscriptionRegistry {
         accessGranted[consumer][feed] = true;
     }
 
-    function batchGrantAccess(address[] calldata consumers, address feed) external override {
+    function grantAccess(address[] calldata consumers, address feed) external override {
         for (uint256 i = 0; i < consumers.length; i++) {
             accessGranted[consumers[i]][feed] = true;
         }
@@ -58,6 +76,12 @@ contract MockSubscriptionRegistry is ISubscriptionRegistry {
 
     function revokeAccess(address consumer, address feed) external override {
         accessGranted[consumer][feed] = false;
+    }
+
+    function revokeAccess(address[] calldata consumers, address feed) external override {
+        for (uint256 i = 0; i < consumers.length; i++) {
+            accessGranted[consumers[i]][feed] = false;
+        }
     }
 
     function transferSubscription(address consumer, address feed, address newOwner) external override {

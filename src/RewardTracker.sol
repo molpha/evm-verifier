@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: BSL-1.1
 pragma solidity ^0.8.29;
 
-import {IERC20} from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ReentrancyGuard} from "openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol";
 import {IRewardTracker} from "./interfaces/IRewardTracker.sol";
@@ -15,8 +14,6 @@ import {ITreasury} from "./interfaces/ITreasury.sol";
  * @dev Uses bitmap-based participation tracking for gas efficiency
  */
 contract RewardTracker is IRewardTracker, ReentrancyGuard {
-    using SafeERC20 for IERC20;
-
     /// @notice Maximum number of nodes (256 for bitmap compatibility)
     uint256 public constant MAX_NODES = 256;
 
@@ -28,9 +25,6 @@ contract RewardTracker is IRewardTracker, ReentrancyGuard {
 
     /// @notice Treasury contract for reward payouts
     ITreasury public immutable treasury;
-
-    /// @notice Reward token (USDC)
-    IERC20 public immutable rewardToken;
 
     /// @notice Price per response/signature in reward tokens
     uint256 public pricePerResponse;
@@ -48,13 +42,11 @@ contract RewardTracker is IRewardTracker, ReentrancyGuard {
         IAccessControlManager _accessControlManager,
         INodeRegistry _nodeRegistry,
         ITreasury _treasury,
-        IERC20 _rewardToken,
         uint256 _initialPricePerResponse
     ) {
         accessControlManager = _accessControlManager;
         nodeRegistry = _nodeRegistry;
         treasury = _treasury;
-        rewardToken = _rewardToken;
         pricePerResponse = _initialPricePerResponse;
     }
 
@@ -148,7 +140,7 @@ contract RewardTracker is IRewardTracker, ReentrancyGuard {
         pendingRewards[node] = 0;
         
         // Request payout from treasury
-        treasury.payReward(rewardToken, node, amount);
+        treasury.payReward(node, amount);
 
         emit RewardsClaimed(node, amount);
     }

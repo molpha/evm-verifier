@@ -3,7 +3,6 @@ pragma solidity ^0.8.29;
 
 import {INodeRegistry, INodeRegistryStructs} from "./INodeRegistry.sol";
 import {ISubscriptionRegistry} from "./ISubscriptionRegistry.sol";
-import {IFeedRegistryStructs} from "./IFeedRegistryStructs.sol";
 import {IFeedStructs} from "./IFeedStructs.sol";
 import {IFeedEvents} from "./IFeedEvents.sol";
 import {IFeedErrors} from "./IFeedErrors.sol";
@@ -59,6 +58,10 @@ interface IFeed is IFeedStructs, IFeedEvents, IFeedErrors {
     /// @return signaturesRequired The minimum number of signatures required
     function getMinSignaturesThreshold() external view returns (uint256 signaturesRequired);
 
+    /// @notice Returns the price per second scaled
+    /// @return pricePerSecondScaled The price per second scaled
+    function getPricePerSecondScaled() external view returns (uint256 pricePerSecondScaled);
+
     /// @notice Returns the feed owner
     /// @return owner The feed owner
     function getOwner() external view returns (address owner);
@@ -85,7 +88,7 @@ interface IFeed is IFeedStructs, IFeedEvents, IFeedErrors {
 
     /// @notice Returns the entry at a specific index
     /// @param index The index of the entry
-    /// @return value The value of the entry
-    /// @return timestamp The timestamp of the entry
+    /// @return value The value at the index
+    /// @return timestamp The timestamp at the index
     function getEntry(uint256 index) external view returns (bytes memory value, uint256 timestamp);
 }
