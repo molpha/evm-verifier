@@ -2,36 +2,64 @@
 pragma solidity ^0.8.29;
 
 import {IFeed} from "./IFeed.sol";
-import {IFeedRegistryEvents} from "./IFeedRegistryEvents.sol";
-import {IFeedRegistryErrors} from "./IFeedRegistryErrors.sol";
 
 /// @title IFeedRegistry - Feed registration and lookup
 /// @notice Registry of active feeds on the Molpha protocol
-interface IFeedRegistry is IFeedRegistryEvents, IFeedRegistryErrors
+interface IFeedRegistry
 {
-    /// @notice Create a new feed
+    /// @notice Parameters for creating a feed
+    /// @param feedType The type of feed to create
     /// @param frequency The frequency of the feed
-    /// @param minSignaturesThreshold The minimum number of signatures required for the feed
-    /// @param ipfsCID The IPFS CID of the feed metadata
-    /// @param defaultConsumer The default consumer of the feed
-    /// @param subscriptionDueTime The due time of the subscription
-    function createPublicFeed(
-        uint256 frequency,
-        uint256 minSignaturesThreshold,
-        string memory ipfsCID,
-        address defaultConsumer,
-        uint256 subscriptionDueTime
-    ) external;
+    /// @param minSignaturesThreshold The minimum number of signatures required
+    /// @param ipfsCID The ipfsCID of the feed
+    /// @param defaultConsumers The default consumers of the feed
+    /// @param subscriptionDueTime The subscription due time
+    struct CreateFeedParams {
+        IFeed.FeedType feedType;
+        uint256 frequency;
+        uint256 minSignaturesThreshold;
+        string ipfsCID;
+        address[] defaultConsumers;
+        uint256 subscriptionDueTime;
+    }
 
-    /// @notice Create a new personal feed
-    /// @param frequency The frequency of the feed
-    /// @param minSignaturesThreshold The minimum number of signatures required for the feed
-    /// @param ipfsCID The IPFS CID of the feed metadata
-    /// @param subscriptionDueTime The due time of the subscription
-    function createPersonalFeed(
-        uint256 frequency,
-        uint256 minSignaturesThreshold,
-        string memory ipfsCID,
-        uint256 subscriptionDueTime
-    ) external;
+    /// @notice emitted when new feed is added
+    /// @param feed new feed address
+    /// @param feedType feed type
+    /// @param frequency feed frequency
+    /// @param minSignaturesThreshold minimum number of signatures required
+    /// @param ipfsCID ipfsCID
+    event LogFeedCreated(
+        address indexed feed, 
+        IFeed.FeedType feedType,
+        uint256 frequency, 
+        uint256 minSignaturesThreshold, 
+        uint256 pricePerSecondScaled,
+        string ipfsCID
+    );
+
+    /// @notice thrown when feed config is invalid
+    error InvalidFeedConfig();
+
+    /// @notice Initialize the feed registry
+    /// @param accessControlManager The access control manager address
+    /// @param subscriptionRegistry The subscription registry address
+    function initialize(address accessControlManager, address subscriptionRegistry) external;
+
+    /// @notice Set the access control manager
+    /// @param accessControlManager The access control manager address
+    function setAccessControlManager(address accessControlManager) external;
+
+    /// @notice Set the subscription registry
+    /// @param subscriptionRegistry The subscription registry address
+    function setSubscriptionRegistry(address subscriptionRegistry) external;
+
+    /// @notice Create a new feed
+    /// @param params The parameters for creating a feed
+    function createFeed(CreateFeedParams calldata params) external;
+
+    /// @notice Check if a feed exists
+    /// @param feed The feed address
+    /// @return True if the feed exists, false otherwise
+    function isFeed(address feed) external view returns (bool);
 }

@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: BSL-1.1
 pragma solidity ^0.8.29;
 
-import {INodeRegistry, INodeRegistryStructs} from "./INodeRegistry.sol";
 import {ISubscriptionRegistry} from "./ISubscriptionRegistry.sol";
 import {IFeedStructs} from "./IFeedStructs.sol";
 import {IFeedEvents} from "./IFeedEvents.sol";
@@ -26,11 +25,10 @@ interface IFeed is IFeedStructs, IFeedEvents, IFeedErrors {
         PUBLIC,
         PERSONAL
     }
-    
+
     /// @notice Publish an answer
     /// @param answer The answer to publish
-    /// @param schnorrData The Schnorr signature data
-    function publishAnswer(Answer calldata answer, INodeRegistryStructs.SchnorrSignature calldata schnorrData) external;
+    function publish(Answer calldata answer) external;
 
     /// @notice Set the minimum number of signatures required to verify an answer
     /// @dev This function is only callable by the feed manager and only for personal feeds

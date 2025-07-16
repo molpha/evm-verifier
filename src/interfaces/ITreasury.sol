@@ -16,6 +16,11 @@ interface ITreasury {
     error ZeroAmount();
     error ZeroAddress();
     error TransferFailed();
+    error InvalidUnderlying();
+
+    /// @notice Initialize the treasury
+    /// @param accessControlManager The access control manager
+    function initialize(address accessControlManager) external;
 
     /// @notice Deposit underlying tokens into the treasury
     /// @param from Address to deposit from
@@ -32,4 +37,13 @@ interface ITreasury {
     /// @param amount Amount to withdraw
     /// @param to Recipient address
     function emergencyWithdraw(IERC20 token, uint256 amount, address to) external;
+
+    /// @notice Set the access control manager
+    /// @param accessControlManager The access control manager
+    function setAccessControlManager(address accessControlManager) external;
+
+
+    /// @notice Get the underlying token
+    /// @return The underlying token
+    function getUnderlying() external view returns (address);
 } 

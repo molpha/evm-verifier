@@ -8,31 +8,24 @@ import {ISubscriptionRegistryErrors} from "./ISubscriptionRegistryErrors.sol";
 /// @title ISubscriptionRegistry - Manages feed subscriptions
 /// @notice Tracks which consumers are subscribed to which feeds
 interface ISubscriptionRegistry is ISubscriptionRegistryStructs, ISubscriptionRegistryEvents, ISubscriptionRegistryErrors {
-    /// @notice Subscribe to a feed
-    /// @param consumer The consumer address
-    /// @param feed The feed address
-    /// @param dueTime The due time of the subscription
-    function subscribe(address consumer, address feed, uint256 dueTime) external;
+    /// @notice Initialize the subscription registry
+    /// @param accessControlManager The access control manager address
+    /// @param feedRegistry The feed registry address
+    /// @param treasury The treasury address
+    function initialize(address accessControlManager, address feedRegistry, address treasury) external;
 
-    /// @notice Batch subscribe multiple consumers to a feed
-    /// @param consumers Array of consumer addresses
-    /// @param feed The feed address
-    /// @param dueTime The due time of the subscription
-    function subscribe(address[] calldata consumers, address feed, uint256 dueTime) external;
-
+    /// @notice Set the feed registry
     /// @notice Subscribe to a feed
-    /// @param consumer The consumer address
     /// @param feed The feed address
     /// @param owner The owner address
     /// @param dueTime The due time of the subscription
-    function subscribe(address consumer, address feed, address owner, uint256 dueTime) external;
+    /// @param consumers The consumers to subscribe
+    function subscribe(address feed, address owner, uint256 dueTime, address[] calldata consumers) external;
 
-    /// @notice Batch subscribe multiple consumers to a feed
-    /// @param consumers Array of consumer addresses
+    /// @notice Unsubscribe from a feed
     /// @param feed The feed address
-    /// @param owner The owner address
-    /// @param dueTime The due time of the subscription
-    function subscribe(address[] calldata consumers, address feed, address owner, uint256 dueTime) external;
+    /// @param consumer The consumer address
+    function unsubscribe(address feed, address consumer) external;
 
     /// @notice Extend subscription
     /// @param consumer The consumer address
@@ -40,47 +33,29 @@ interface ISubscriptionRegistry is ISubscriptionRegistryStructs, ISubscriptionRe
     /// @param dueTime The due time of the subscription
     function extendSubscription(address consumer, address feed, uint256 dueTime) external;
 
-
-    /// @notice Unsubscribe from a feed
-    /// @param feed The feed address
-    /// @param consumer The consumer address
-    function unsubscribe(address feed, address consumer) external;
-
-    /// @notice Grant access to a consumer for a feed
+    /// @notice Transfer subscription to a new consumer
     /// @param consumer The consumer address
     /// @param feed The feed address
-    function grantAccess(address consumer, address feed) external;
+    /// @param newConsumer The new consumer address
+    function transferSubscription(address consumer, address feed, address newConsumer) external;
 
-    /// @notice Batch grant access to multiple consumers for a feed
-    /// @param consumers Array of consumer addresses
-    /// @param feed The feed address
-    function grantAccess(address[] calldata consumers, address feed) external;
+    /// @notice Set the feed registry
+    /// @param feedRegistry The feed registry address
+    function setFeedRegistry(address feedRegistry) external;
 
-    /// @notice Revoke access from a consumer for a feed
+    /// @notice Set the treasury
+    /// @param treasury The treasury address
+    function setTreasury(address treasury) external;
+
+    /// @notice Get subscription
     /// @param consumer The consumer address
     /// @param feed The feed address
-    function revokeAccess(address consumer, address feed) external;
+    /// @return subscription The subscription
+    function getSubscription(address consumer, address feed) external view returns (Subscription memory subscription);
 
-    /// @notice Batch revoke access from multiple consumers for a feed
-    /// @param consumers Array of consumer addresses
-    /// @param feed The feed address
-    function revokeAccess(address[] calldata consumers, address feed) external;
-
-    /// @notice Transfer subscription to a new owner
+    /// @notice Check if a consumer is subscribed to a feed
     /// @param consumer The consumer address
     /// @param feed The feed address
-    /// @param newOwner The new owner address
-    function transferSubscription(address consumer, address feed, address newOwner) external;
-
-    /// @notice Check if a user is currently subscribed
-    /// @param user The address to check
-    /// @param feed The feed address
-    /// @return isActive True if the subscription is active
-    function isSubscribed(address user, address feed) external view returns (bool isActive);
-
-    /// @notice Get subscription due time
-    /// @param consumer The address of the subscriber
-    /// @param aggregator The aggregator address
-    /// @return dueTime subscription due time
-    function getSubscriptionDueTime(address consumer, address aggregator) external view returns (uint256 dueTime);
+    /// @return isConsumerSubscribed True if the consumer is subscribed to the feed
+    function isSubscribed(address consumer, address feed) external view returns (bool isConsumerSubscribed);
 }

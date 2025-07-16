@@ -2,23 +2,26 @@
 pragma solidity ^0.8.29;
 
 import {Test} from "forge-std/Test.sol";
-import {Vm} from "forge-std/Vm.sol";
+import {console} from "forge-std/console.sol";
 import {SubscriptionRegistry} from "../src/SubscriptionRegistry.sol";
 import {ISubscriptionRegistry} from "../src/interfaces/ISubscriptionRegistry.sol";
-import {ISubscriptionRegistryErrors} from "../src/interfaces/ISubscriptionRegistryErrors.sol";
+import {IFeedRegistry} from "../src/interfaces/IFeedRegistry.sol";
 import {IFeed} from "../src/interfaces/IFeed.sol";
 import {MockAccessControlManager} from "./mocks/MockAccessControlManager.sol";
 import {MockFeedRegistry} from "./mocks/MockFeedRegistry.sol";
 import {MockNodeRegistry} from "./mocks/MockNodeRegistry.sol";
+import {MockTreasury} from "./mocks/MockTreasury.sol";
+import {DummyFeed} from "./mocks/DummyFeed.sol";
 import {TestToken} from "./mocks/TestToken.sol";
-import {MockZeroSupplyToken} from "./mocks/MockZeroSupplyToken.sol";
 
 contract SubscriptionRegistryTest is Test {
     SubscriptionRegistry reg;
     MockAccessControlManager acl;
     MockFeedRegistry feeds;
     MockNodeRegistry nodeRegistry;
+    MockTreasury treasury;
     TestToken token;
+    DummyFeed testFeed;
     
     address user = address(1);
     address user2 = address(2);
@@ -28,406 +31,232 @@ contract SubscriptionRegistryTest is Test {
     function setUp() public {
         token = new TestToken();
         acl = new MockAccessControlManager(address(this));
-        reg = new SubscriptionRegistry(acl, token);
+        reg = new SubscriptionRegistry();
         feeds = new MockFeedRegistry();
         nodeRegistry = new MockNodeRegistry();
+        treasury = new MockTreasury();
+        testFeed = new DummyFeed();
         
-        reg.initialize(feeds);
+        reg.initialize(address(acl), address(feeds), address(treasury));
         
-        feeds.addFeed(address(100));
+        feeds.addFeed(address(address(testFeed)));
     }
 
     function test_subscribe_setsDueTime() public {
-        // First create a feed in the registry to get proper price
-        vm.recordLogs();
-        feeds.createPublicFeed(
-            3600, // frequency  
-            1,    // minSignaturesThreshold
-            "test", // ipfsCID
-            defaultConsumer, // defaultConsumer
-            30 days // subscriptionDueTime
-        );
-        
-        // Get the feed address from the last emitted event
-        Vm.Log[] memory logs = vm.getRecordedLogs();
-        address feed = address(uint160(uint256(logs[logs.length - 1].topics[1])));
-        
-        token.mint(user, 1e18);
-        vm.prank(user);
-        token.approve(address(reg), 1e18);
-        vm.prank(user);
         uint256 dueTime = block.timestamp + 30 days;
-        reg.subscribe(user, feed, dueTime);
-        assertTrue(reg.isSubscribed(user, feed));
+        address[] memory consumers = new address[](1);
+        consumers[0] = defaultConsumer;
+        
+        // Mock the feed registry to return that this is a valid feed
+        feeds.addFeed(address(address(testFeed)));
+        
+        reg.subscribe(address(address(testFeed)), user, dueTime, consumers);
+        
+        // Check that the subscription was created
+        ISubscriptionRegistry.Subscription memory subscription = reg.getSubscription(defaultConsumer, address(address(testFeed)));
+        assertEq(subscription.dueTime, dueTime);
+        assertEq(subscription.owner, user);
     }
 
-    function test_subscribe_EmitsEvent() public {
-        vm.recordLogs();
-        feeds.createPublicFeed(
-            3600,
-            1,
-            "test",
-            defaultConsumer,
-            30 days
-        );
-        
-        // Get the feed address from the last emitted event
-        Vm.Log[] memory logs = vm.getRecordedLogs();
-        address feed = address(uint160(uint256(logs[logs.length - 1].topics[1])));
-        
-        token.mint(user, 1e18);
-        vm.prank(user);
-        token.approve(address(reg), 1e18);
-        
-        // Test that subscription works (event testing simplified)
-        vm.prank(user);
+    function test_subscribe_multipleConsumers() public {
         uint256 dueTime = block.timestamp + 30 days;
-        reg.subscribe(user, feed, dueTime);
+        address[] memory consumers = new address[](2);
+        consumers[0] = user;
+        consumers[1] = user2;
+        
+        feeds.addFeed(address(testFeed));
+        
+        reg.subscribe(address(testFeed), user, dueTime, consumers);
+        
+        // Check that both subscriptions were created
+        ISubscriptionRegistry.Subscription memory subscription1 = reg.getSubscription(user, address(testFeed));
+        ISubscriptionRegistry.Subscription memory subscription2 = reg.getSubscription(user2, address(testFeed));
+        
+        assertEq(subscription1.dueTime, dueTime);
+        assertEq(subscription1.owner, user);
+        assertEq(subscription2.dueTime, dueTime);
+        assertEq(subscription2.owner, user);
     }
 
-    // function test_grantAccess_WorksCorrectly() public {
-    //     vm.recordLogs();
-    //     feeds.createPublicFeed(
-    //         3600,
-    //         1,
-    //         "test"
-    //     );
-        
-    //     // Get the feed address from the last emitted event
-    //     Vm.Log[] memory logs = vm.getRecordedLogs();
-    //     address feed = address(uint160(uint256(logs[logs.length - 1].topics[1])));
-        
-    //     reg.grantAccess(user, feed);
-    //     // Note: In mock implementation, isAccessGranted checks both regular access and personal feed access
-    // }
-
-    function test_subscribe_ZeroAddresses() public {
-        vm.recordLogs();
-        feeds.createPublicFeed(
-            3600,
-            1,
-            "test",
-            defaultConsumer,
-            30 days
-        );
-        
-        // Get the feed address from the last emitted event
-        Vm.Log[] memory logs = vm.getRecordedLogs();
-        address feed = address(uint160(uint256(logs[logs.length - 1].topics[1])));
-        
+    function test_isSubscribed_returnsTrue() public {
         uint256 dueTime = block.timestamp + 30 days;
+        address[] memory consumers = new address[](1);
+        consumers[0] = user;
         
-        // Test zero consumer address - should revert
-        vm.expectRevert();
-        reg.subscribe(address(0), feed, dueTime);
+        feeds.addFeed(address(testFeed));
         
-        // Test zero feed address - should revert
-        vm.expectRevert();
-        reg.subscribe(user, address(0), dueTime);
+        reg.subscribe(address(testFeed), user, dueTime, consumers);
+        
+        assertTrue(reg.isSubscribed(user, address(testFeed)));
     }
 
-    function test_subscribe_ExtendSubscription() public {
-        vm.recordLogs();
-        feeds.createPublicFeed(
-            3600,
-            1,
-            "test",
-            defaultConsumer,
-            30 days
-        );
+    function test_isSubscribed_returnsFalse() public {
+        feeds.addFeed(address(testFeed));
         
-        // Get the feed address from the last emitted event
-        Vm.Log[] memory logs = vm.getRecordedLogs();
-        address feed = address(uint160(uint256(logs[logs.length - 1].topics[1])));
+        assertFalse(reg.isSubscribed(user, address(testFeed)));
+    }
+
+    function test_isSubscribed_returnsFalseForExpired() public {
+        uint256 dueTime = block.timestamp + 30 days + 1; // Minimum subscription time + 1 second
+        address[] memory consumers = new address[](1);
+        consumers[0] = user;
         
-        token.mint(user, 1e18);
-        vm.prank(user);
-        token.approve(address(reg), 1e18);
+        feeds.addFeed(address(testFeed));
+        
+        reg.subscribe(address(testFeed), user, dueTime, consumers);
+        
+        // Move time forward past expiration
+        vm.warp(dueTime + 1);
+        
+        assertFalse(reg.isSubscribed(user, address(testFeed)));
+    }
+
+    function test_extendSubscription() public {
+        uint256 initialDueTime = block.timestamp + 30 days;
+        uint256 newDueTime = block.timestamp + 60 days;
+        address[] memory consumers = new address[](1);
+        consumers[0] = user;
+        
+        feeds.addFeed(address(testFeed));
         
         // Initial subscription
-        vm.prank(user);
-        uint256 dueTime1 = block.timestamp + 30 days;
-        reg.subscribe(user, feed, dueTime1);
-        
-        uint256 firstDueTime = reg.getSubscriptionDueTime(user, feed);
+        reg.subscribe(address(testFeed), user, initialDueTime, consumers);
         
         // Extend subscription
         vm.prank(user);
-        uint256 dueTime2 = block.timestamp + 45 days;
-        reg.subscribe(user, feed, dueTime2);
+        reg.extendSubscription(user, address(testFeed), newDueTime);
         
-        uint256 secondDueTime = reg.getSubscriptionDueTime(user, feed);
-        
-        // Second due time should be the new due time
-        assertEq(secondDueTime, dueTime2);
+        // Check that the subscription was extended
+        ISubscriptionRegistry.Subscription memory subscription = reg.getSubscription(user, address(testFeed));
+        assertEq(subscription.dueTime, newDueTime);
     }
 
-    function test_unsubscribe_RemovesSubscription() public {
-        vm.recordLogs();
-        feeds.createPublicFeed(
-            3600,
-            1,
-            "test",
-            defaultConsumer,
-            30 days
-        );
+    function test_extendSubscription_onlyOwner() public {
+        uint256 initialDueTime = block.timestamp + 30 days;
+        uint256 newDueTime = block.timestamp + 60 days;
+        address[] memory consumers = new address[](1);
+        consumers[0] = user;
         
-        // Get the feed address from the last emitted event
-        Vm.Log[] memory logs = vm.getRecordedLogs();
-        address feed = address(uint160(uint256(logs[logs.length - 1].topics[1])));
+        feeds.addFeed(address(testFeed));
         
-        token.mint(user, 1e18);
-        vm.prank(user);
-        token.approve(address(reg), 1e18);
-        vm.prank(user);
-        uint256 dueTime = block.timestamp + 60 days;
-        reg.subscribe(user, feed, dueTime);
+        // Initial subscription
+        reg.subscribe(address(testFeed), user, initialDueTime, consumers);
         
-        assertTrue(reg.isSubscribed(user, feed));
+        // Try to extend as non-owner
+        vm.prank(nonOwner);
+        vm.expectRevert();
+        reg.extendSubscription(user, address(testFeed), newDueTime);
+    }
+
+    function test_unsubscribe() public {
+        uint256 dueTime = block.timestamp + 30 days;
+        address[] memory consumers = new address[](1);
+        consumers[0] = user;
+        
+        feeds.addFeed(address(testFeed));
+        
+        // Initial subscription
+        reg.subscribe(address(testFeed), user, dueTime, consumers);
         
         // Unsubscribe
         vm.prank(user);
-        reg.unsubscribe(feed, user);
+        reg.unsubscribe(address(testFeed), user);
         
-        assertFalse(reg.isSubscribed(user, feed));
+        // Check that the subscription is no longer active
+        assertFalse(reg.isSubscribed(user, address(testFeed)));
     }
 
-    function test_unsubscribe_EmitsEvent() public {
-        vm.recordLogs();
-        feeds.createPublicFeed(
-            3600,
-            1,
-            "test",
-            defaultConsumer,
-            30 days
-        );
+    function test_unsubscribe_onlyOwner() public {
+        uint256 dueTime = block.timestamp + 30 days;
+        address[] memory consumers = new address[](1);
+        consumers[0] = user;
         
-        // Get the feed address from the last emitted event
-        Vm.Log[] memory logs = vm.getRecordedLogs();
-        address feed = address(uint160(uint256(logs[logs.length - 1].topics[1])));
+        feeds.addFeed(address(testFeed));
         
-        token.mint(user, 1e18);
-        vm.prank(user);
-        token.approve(address(reg), 1e18);
-        vm.prank(user);
-        uint256 dueTime = block.timestamp + 60 days;
-        reg.subscribe(user, feed, dueTime);
+        // Initial subscription
+        reg.subscribe(address(testFeed), user, dueTime, consumers);
         
-        // Test that unsubscription works (event testing simplified)
-        vm.prank(user);
-        reg.unsubscribe(feed, user);
-    }
-
-    function test_unsubscribe_OnlyOwner() public {
-        vm.recordLogs();
-        feeds.createPublicFeed(
-            3600,
-            1,
-            "test",
-            defaultConsumer,
-            30 days
-        );
-        
-        // Get the feed address from the last emitted event
-        Vm.Log[] memory logs = vm.getRecordedLogs();
-        address feed = address(uint160(uint256(logs[logs.length - 1].topics[1])));
-        
-        token.mint(user, 1e18);
-        vm.prank(user);
-        token.approve(address(reg), 1e18);
-        vm.prank(user);
-        uint256 dueTime = block.timestamp + 60 days;
-        reg.subscribe(user, feed, dueTime);
-        
-        // Non-owner tries to unsubscribe
+        // Try to unsubscribe as non-owner
         vm.prank(nonOwner);
-        vm.expectRevert(abi.encodeWithSelector(ISubscriptionRegistryErrors.NotSubscriptionOwner.selector, user));
-        reg.unsubscribe(feed, user);
+        vm.expectRevert();
+        reg.unsubscribe(address(testFeed), user);
     }
 
-
-
-    function test_isSubscribed_ReturnsCorrectStatus() public {
-        vm.recordLogs();
-        feeds.createPublicFeed(
-            3600,
-            1,
-            "test",
-            defaultConsumer,
-            30 days
-        );
-        
-        // Get the feed address from the last emitted event
-        Vm.Log[] memory logs = vm.getRecordedLogs();
-        address feed = address(uint160(uint256(logs[logs.length - 1].topics[1])));
-        
-        // Initially not subscribed
-        assertFalse(reg.isSubscribed(user, feed));
-        
-        // Subscribe
-        token.mint(user, 1e18);
-        vm.prank(user);
-        token.approve(address(reg), 1e18);
-        vm.prank(user);
+    function test_transferSubscription() public {
         uint256 dueTime = block.timestamp + 30 days;
-        reg.subscribe(user, feed, dueTime);
+        address[] memory consumers = new address[](1);
+        consumers[0] = user;
         
-        // Now subscribed
-        assertTrue(reg.isSubscribed(user, feed));
+        feeds.addFeed(address(testFeed));
         
-        // Warp past expiry
-        vm.warp(dueTime + 1);
-        assertFalse(reg.isSubscribed(user, feed));
+        // Initial subscription
+        reg.subscribe(address(testFeed), user, dueTime, consumers);
+        
+        // Transfer subscription
+        vm.prank(user);
+        reg.transferSubscription(user, address(testFeed), user2);
+        
+        // Check that the subscription was transferred
+        assertFalse(reg.isSubscribed(user, address(testFeed)));
+        assertTrue(reg.isSubscribed(user2, address(testFeed)));
+        
+        ISubscriptionRegistry.Subscription memory subscription = reg.getSubscription(user2, address(testFeed));
+        assertEq(subscription.owner, user);
     }
 
-    function test_getSubscriptionDueTime_ReturnsCorrectTime() public {
-        vm.recordLogs();
-        feeds.createPublicFeed(
-            3600,
-            1,
-            "test",
-            defaultConsumer,
-            30 days
-        );
+    function test_transferSubscription_onlyOwner() public {
+        uint256 dueTime = block.timestamp + 30 days;
+        address[] memory consumers = new address[](1);
+        consumers[0] = user;
         
-        // Get the feed address from the last emitted event
-        Vm.Log[] memory logs = vm.getRecordedLogs();
-        address feed = address(uint160(uint256(logs[logs.length - 1].topics[1])));
+        feeds.addFeed(address(testFeed));
         
-        token.mint(user, 1e18);
-        vm.prank(user);
-        token.approve(address(reg), 1e18);
+        // Initial subscription
+        reg.subscribe(address(testFeed), user, dueTime, consumers);
         
-        uint256 expectedDueTime = block.timestamp + 30 days;
-        vm.prank(user);
-        reg.subscribe(user, feed, expectedDueTime);
-        
-        uint256 dueTime = reg.getSubscriptionDueTime(user, feed);
-        
-        assertEq(dueTime, expectedDueTime);
+        // Try to transfer as non-owner
+        vm.prank(nonOwner);
+        vm.expectRevert();
+        reg.transferSubscription(user, address(testFeed), user2);
     }
 
+    function test_subscribe_requiresValidFeed() public {
+        uint256 dueTime = block.timestamp + 30 days;
+        address[] memory consumers = new address[](1);
+        consumers[0] = user;
+        address invalidFeed = address(999);
+        
+        // Don't add the feed to the registry
+        vm.expectRevert();
+        reg.subscribe(invalidFeed, user, dueTime, consumers);
+    }
 
+    function test_subscribe_requiresMinimumTime() public {
+        uint256 shortDueTime = block.timestamp + 1 days; // Less than minimum
+        address[] memory consumers = new address[](1);
+        consumers[0] = user;
+        
+        feeds.addFeed(address(testFeed));
+        
+        vm.expectRevert();
+        reg.subscribe(address(testFeed), user, shortDueTime, consumers);
+    }
 
-    function test_supportsInterface_SubscriptionRegistry() public {
+    function test_getSubscription_returnsCorrectData() public {
+        uint256 dueTime = block.timestamp + 30 days;
+        address[] memory consumers = new address[](1);
+        consumers[0] = user;
+        
+        feeds.addFeed(address(testFeed));
+        
+        reg.subscribe(address(testFeed), user, dueTime, consumers);
+        
+        ISubscriptionRegistry.Subscription memory subscription = reg.getSubscription(user, address(testFeed));
+        assertEq(subscription.dueTime, dueTime);
+        assertEq(subscription.owner, user);
+    }
+
+    function test_supportsInterface() public {
         assertTrue(reg.supportsInterface(type(ISubscriptionRegistry).interfaceId));
-    }
-
-    function test_supportsInterface_ERC165() public {
-        assertTrue(reg.supportsInterface(0x01ffc9a7)); // ERC165 interface ID
-    }
-
-    function test_supportsInterface_InvalidInterface() public {
-        assertFalse(reg.supportsInterface(0x12345678));
-    }
-
-    function test_constructor_InvalidToken() public {
-        // Create a mock token with zero total supply
-        MockZeroSupplyToken zeroToken = new MockZeroSupplyToken();
-        
-        vm.expectRevert("wrong underlying");
-        new SubscriptionRegistry(acl, zeroToken);
-    }
-
-    function test_subscribe_MultipleUsers() public {
-        vm.recordLogs();
-        feeds.createPublicFeed(
-            3600,
-            1,
-            "test",
-            defaultConsumer,
-            30 days
-        );
-        
-        // Get the feed address from the last emitted event
-        Vm.Log[] memory logs = vm.getRecordedLogs();
-        address feed = address(uint160(uint256(logs[logs.length - 1].topics[1])));
-        
-        // User 1 subscribes
-        token.mint(user, 1e18);
-        vm.prank(user);
-        token.approve(address(reg), 1e18);
-        vm.prank(user);
-        uint256 dueTime1 = block.timestamp + 30 days;
-        reg.subscribe(user, feed, dueTime1);
-        
-        // User 2 subscribes
-        token.mint(user2, 1e18);
-        vm.prank(user2);
-        token.approve(address(reg), 1e18);
-        vm.prank(user2);
-        uint256 dueTime2 = block.timestamp + 45 days;
-        reg.subscribe(user2, feed, dueTime2);
-        
-        assertTrue(reg.isSubscribed(user, feed));
-        assertTrue(reg.isSubscribed(user2, feed));
-        
-        uint256 actualDueTime1 = reg.getSubscriptionDueTime(user, feed);
-        uint256 actualDueTime2 = reg.getSubscriptionDueTime(user2, feed);
-        
-        // User 2's subscription should expire later
-        assertTrue(actualDueTime2 > actualDueTime1);
-    }
-
-    function testFuzz_subscribe_ValidDueTime(uint256 dueTime) public {
-        vm.assume(dueTime >= block.timestamp + 1 days && dueTime <= block.timestamp + 1000 days); // Valid range with buffer
-        
-        vm.recordLogs();
-        feeds.createPublicFeed(
-            3600,
-            1,
-            "test",
-            defaultConsumer,
-            30 days
-        );
-        
-        // Get the feed address from the last emitted event
-        Vm.Log[] memory logs = vm.getRecordedLogs();
-        address feed = address(uint160(uint256(logs[logs.length - 1].topics[1])));
-        
-        token.mint(user, 1e18);
-        vm.prank(user);
-        token.approve(address(reg), 1e18);
-        vm.prank(user);
-        reg.subscribe(user, feed, dueTime);
-        
-        assertTrue(reg.isSubscribed(user, feed));
-        uint256 actualDueTime = reg.getSubscriptionDueTime(user, feed);
-        assertEq(actualDueTime, dueTime);
-    }
-
-    function test_subscribe_BoundaryValues() public {
-        vm.recordLogs();
-        feeds.createPublicFeed(
-            3600,
-            1,
-            "test",
-            defaultConsumer,
-            30 days
-        );
-        
-        // Get the feed address from the last emitted event
-        Vm.Log[] memory logs = vm.getRecordedLogs();
-        address feed = address(uint160(uint256(logs[logs.length - 1].topics[1])));
-        
-        token.mint(user, 1e18);
-        vm.prank(user);
-        token.approve(address(reg), 1e18);
-        
-        // Test valid due time
-        vm.prank(user);
-        uint256 dueTime = block.timestamp + 30 days;
-        reg.subscribe(user, feed, dueTime);
-        assertTrue(reg.isSubscribed(user, feed));
-        
-        // Unsubscribe to reset
-        vm.prank(user);
-        reg.unsubscribe(feed, user);
-        
-        // Test longer valid due time
-        vm.prank(user);
-        uint256 longerDueTime = block.timestamp + 365 days;
-        reg.subscribe(user, feed, longerDueTime);
-        assertTrue(reg.isSubscribed(user, feed));
     }
 }

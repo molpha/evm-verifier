@@ -12,7 +12,8 @@ contract NodeAggregatorTest is Test {
     NodeRegistry registry;
 
     function setUp() public {
-        registry = new NodeRegistry(address(this));
+        registry = new NodeRegistry();
+        registry.initialize();
     }
 
     function test_registerNode_InvalidKey_Revert() public {

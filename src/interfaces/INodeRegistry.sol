@@ -9,6 +9,9 @@ import {INodeRegistryErrors} from "./INodeRegistryErrors.sol";
 /// @title INodeRegistry
 /// @notice Interface for the NodeAggregator
 interface INodeRegistry is INodeRegistryStructs, INodeRegistryEvents, INodeRegistryErrors {
+    /// @notice Initialize the node registry
+    function initialize() external;
+
     /// @notice Add a new node in the aggregator group
     /// @param pubkey Public key of the node
     function addNode(LibSecp256k1.Point memory pubkey) external;

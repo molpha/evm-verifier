@@ -2,127 +2,87 @@
 pragma solidity ^0.8.29;
 
 import {ISubscriptionRegistry} from "../../src/interfaces/ISubscriptionRegistry.sol";
-import {IFeedRegistry} from "../../src/interfaces/IFeedRegistry.sol";
-import {IFeed} from "../../src/interfaces/IFeed.sol";
 
 contract MockSubscriptionRegistry is ISubscriptionRegistry {
-    mapping(address => mapping(address => bool)) public subscribed;
+    mapping(address => mapping(address => bool)) public subscriptions;
+    mapping(address => mapping(address => Subscription)) public subscriptionData;
     mapping(address => mapping(address => uint256)) public subscriptionDueTimes;
-    mapping(address => uint256) public prices;
-    mapping(address => mapping(address => bool)) public personalFeedAccess;
-    mapping(address => mapping(address => bool)) public accessGranted;
-    mapping(address => mapping(address => address)) public subscriptionOwners;
-    uint256 public fee;
-    IFeedRegistry internal _feedRegistry;
 
-    function initialize(IFeedRegistry feedRegistry) external {
-        _feedRegistry = feedRegistry;
+    // ISubscriptionRegistry interface implementation
+    function initialize(address accessControlManager, address feedRegistry, address treasury) external {
+        // Mock implementation - no actual initialization needed
     }
 
-    function subscribe(address consumer, address feed, uint256 dueTime) external override {
-        subscribed[consumer][feed] = true;
-        subscriptionDueTimes[consumer][feed] = dueTime;
-        subscriptionOwners[consumer][feed] = msg.sender;
-    }
-
-    function subscribe(address[] calldata consumers, address feed, uint256 dueTime) external override {
+    function subscribe(address feed, address owner, uint256 dueTime, address[] calldata consumers) external {
         for (uint256 i = 0; i < consumers.length; i++) {
-            subscribed[consumers[i]][feed] = true;
+            subscriptions[consumers[i]][feed] = true;
             subscriptionDueTimes[consumers[i]][feed] = dueTime;
-            subscriptionOwners[consumers[i]][feed] = msg.sender;
+            subscriptionData[consumers[i]][feed] = Subscription({
+                dueTime: uint64(dueTime),
+                owner: owner
+            });
         }
     }
 
-    function subscribe(address consumer, address feed, address owner, uint256 dueTime) external override {
-        subscribed[consumer][feed] = true;
+    function extendSubscription(address consumer, address feed, uint256 dueTime) external {
+        subscriptions[consumer][feed] = true;
         subscriptionDueTimes[consumer][feed] = dueTime;
-        subscriptionOwners[consumer][feed] = owner;
+        subscriptionData[consumer][feed].dueTime = uint64(dueTime);
     }
 
-    function subscribe(address[] calldata consumers, address feed, address owner, uint256 dueTime) external override {
-        for (uint256 i = 0; i < consumers.length; i++) {
-            subscribed[consumers[i]][feed] = true;
-            subscriptionDueTimes[consumers[i]][feed] = dueTime;
-            subscriptionOwners[consumers[i]][feed] = owner;
-        }
-    }
-
-    function subscribePersonal(address feed, address owner, uint256 dueTime) external {
-        subscribed[owner][feed] = true;
-        subscriptionDueTimes[owner][feed] = dueTime;
-        subscriptionOwners[owner][feed] = owner;
-        personalFeedAccess[feed][owner] = true;
-    }
-
-    function extendSubscription(address consumer, address feed, uint256 dueTime) external override {
-        subscriptionDueTimes[consumer][feed] = dueTime;
-    }
-
-    function unsubscribe(address feed, address consumer) external override {
-        subscribed[consumer][feed] = false;
+    function unsubscribe(address feed, address consumer) external {
+        subscriptions[consumer][feed] = false;
         subscriptionDueTimes[consumer][feed] = 0;
-        personalFeedAccess[feed][consumer] = false;
+        subscriptionData[consumer][feed].dueTime = 0;
     }
 
-    function grantAccess(address consumer, address feed) external override {
-        accessGranted[consumer][feed] = true;
+    function transferSubscription(address consumer, address feed, address newConsumer) external {
+        subscriptions[newConsumer][feed] = subscriptions[consumer][feed];
+        subscriptionDueTimes[newConsumer][feed] = subscriptionDueTimes[consumer][feed];
+        subscriptionData[newConsumer][feed] = subscriptionData[consumer][feed];
+        
+        subscriptions[consumer][feed] = false;
+        subscriptionDueTimes[consumer][feed] = 0;
+        delete subscriptionData[consumer][feed];
     }
 
-    function grantAccess(address[] calldata consumers, address feed) external override {
-        for (uint256 i = 0; i < consumers.length; i++) {
-            accessGranted[consumers[i]][feed] = true;
+    function setFeedRegistry(address feedRegistry) external {
+        // Mock implementation
+    }
+
+    function setTreasury(address treasury) external {
+        // Mock implementation
+    }
+
+    function getSubscription(address consumer, address feed) external view returns (Subscription memory subscription) {
+        return subscriptionData[consumer][feed];
+    }
+
+    function isSubscribed(address consumer, address feed) external view returns (bool) {
+        return subscriptions[consumer][feed] && subscriptionDueTimes[consumer][feed] > block.timestamp;
+    }
+
+    // Helper functions for testing
+    function setSubscribed(address consumer, address feed, bool subscribed) external {
+        subscriptions[consumer][feed] = subscribed;
+        if (subscribed) {
+            subscriptionDueTimes[consumer][feed] = block.timestamp + 30 days;
+            subscriptionData[consumer][feed] = Subscription({
+                dueTime: uint64(block.timestamp + 30 days),
+                owner: msg.sender
+            });
+        } else {
+            subscriptionDueTimes[consumer][feed] = 0;
+            subscriptionData[consumer][feed].dueTime = 0;
         }
     }
 
-    function revokeAccess(address consumer, address feed) external override {
-        accessGranted[consumer][feed] = false;
-    }
-
-    function revokeAccess(address[] calldata consumers, address feed) external override {
-        for (uint256 i = 0; i < consumers.length; i++) {
-            accessGranted[consumers[i]][feed] = false;
-        }
-    }
-
-    function transferSubscription(address consumer, address feed, address newOwner) external override {
-        subscriptionOwners[consumer][feed] = newOwner;
-    }
-
-    function isSubscribed(address user, address feed) external view override returns (bool) {
-        return subscribed[user][feed] && subscriptionDueTimes[user][feed] > block.timestamp;
-    }
-
-    function getSubscriptionDueTime(address consumer, address feed) external view override returns (uint256) {
-        return subscriptionDueTimes[consumer][feed];
-    }
-
-    // Additional methods from actual implementation
-    function isAccessGranted(address consumer, address feed) external view returns (bool) {
-        return accessGranted[consumer][feed] || personalFeedAccess[feed][consumer];
-    }
-
-    function getSubscriptionPrice(address feed) external view returns (uint256) {
-        return prices[feed];
-    }
-
-    function grantPersonalFeedAccess(address consumer, address feed) external {
-        personalFeedAccess[feed][consumer] = true;
-    }
-
-    function revokePersonalFeedAccess(address consumer, address feed) external {
-        personalFeedAccess[feed][consumer] = false;
-    }
-
-    function hasPersonalFeedAccess(address consumer, address feed) external view returns (bool hasAccess) {
-        return personalFeedAccess[feed][consumer];
-    }
-
-    function setSubscriptionPrice(address feed, uint128 newPrice) external {
-        prices[feed] = newPrice;
+    function setSubscriptionDueTime(address consumer, address feed, uint256 dueTime) external {
+        subscriptionDueTimes[consumer][feed] = dueTime;
+        subscriptionData[consumer][feed].dueTime = uint64(dueTime);
     }
 
     function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
-        return interfaceId == type(ISubscriptionRegistry).interfaceId ||
-               interfaceId == 0x01ffc9a7; // ERC165 interface ID
+        return interfaceId == type(ISubscriptionRegistry).interfaceId || interfaceId == 0x01ffc9a7; // ERC165
     }
 }
