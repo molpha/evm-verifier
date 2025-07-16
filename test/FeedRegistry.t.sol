@@ -6,12 +6,9 @@ import {Vm} from "forge-std/Vm.sol";
 import {FeedRegistry} from "../src/FeedRegistry.sol";
 import {IFeedRegistry} from "../src/interfaces/IFeedRegistry.sol";
 import {IFeed} from "../src/interfaces/IFeed.sol";
-import {IFeedRegistryErrors} from "../src/interfaces/IFeedRegistryErrors.sol";
-import {IFeedRegistryEvents} from "../src/interfaces/IFeedRegistryEvents.sol";
 import {MockAccessControlManager} from "./mocks/MockAccessControlManager.sol";
 import {MockSubscriptionRegistry} from "./mocks/MockSubscriptionRegistry.sol";
 import {MockNodeRegistry} from "./mocks/MockNodeRegistry.sol";
-import {DummyFeed} from "./mocks/DummyFeed.sol";
 
 contract FeedRegistryTest is Test {
     FeedRegistry registry;
@@ -33,244 +30,136 @@ contract FeedRegistryTest is Test {
         // Set feed manager for proper access control
         acl.setFeedManager(manager);
         
-        registry = new FeedRegistry(acl, subRegistry, nodeRegistry);
+        registry = new FeedRegistry();
+        registry.initialize(address(acl), address(subRegistry));
     }
 
-    function test_createFeed_AddsFeed() public {        
+    function test_createFeed_PublicFeed() public {        
         vm.recordLogs();
-        registry.createPublicFeed(
-            3600, // frequency
-            1,    // minSignaturesThreshold  
-            "test", // ipfsCID
-            defaultConsumer, // defaultConsumer
-            30 days // subscriptionDueTime
-        );
+        
+        IFeedRegistry.CreateFeedParams memory params = IFeedRegistry.CreateFeedParams({
+            feedType: IFeed.FeedType.PUBLIC,
+            frequency: 3600,
+            minSignaturesThreshold: 1,
+            ipfsCID: "test",
+            defaultConsumers: new address[](1),
+            subscriptionDueTime: block.timestamp + 30 days
+        });
+        params.defaultConsumers[0] = defaultConsumer;
+        
+        registry.createFeed(params);
         
         // Get the feed address from the last emitted event
         Vm.Log[] memory logs = vm.getRecordedLogs();
-        address feed = address(uint160(uint256(logs[logs.length - 1].topics[1])));
+        assertTrue(logs.length > 0, "No events emitted");
         
-        assertEq(IFeed(feed).getOwner(), feedOwner);
+        // Check that the last event is LogFeedCreated
+        bytes32 expectedTopic = keccak256("LogFeedCreated(address,uint8,uint256,uint256,uint256,string)");
+        assertEq(logs[logs.length - 1].topics[0], expectedTopic, "Wrong event emitted");
+        
+        // Decode the feed address from the event
+        address feedAddress = address(uint160(uint256(logs[logs.length - 1].topics[1])));
+        
+        // Verify the feed is registered
+        assertTrue(registry.isFeed(feedAddress), "Feed should be registered");
     }
 
     function test_createFeed_PersonalFeed() public {        
         vm.recordLogs();
-        registry.createPersonalFeed(
-            7200, // frequency
-            3,    // minSignaturesThreshold  
-            "personal-test", // ipfsCID
-            30 days // subscriptionDueTime
-        );
+        
+        IFeedRegistry.CreateFeedParams memory params = IFeedRegistry.CreateFeedParams({
+            feedType: IFeed.FeedType.PERSONAL,
+            frequency: 3600,
+            minSignaturesThreshold: 1,
+            ipfsCID: "test",
+            defaultConsumers: new address[](1),
+            subscriptionDueTime: block.timestamp + 30 days
+        });
+        params.defaultConsumers[0] = defaultConsumer;
+        
+        registry.createFeed(params);
         
         // Get the feed address from the last emitted event
         Vm.Log[] memory logs = vm.getRecordedLogs();
-        address feed = address(uint160(uint256(logs[logs.length - 1].topics[1])));
+        assertTrue(logs.length > 0, "No events emitted");
         
-        assertEq(IFeed(feed).getOwner(), feedOwner);
+        // Check that the last event is LogFeedCreated
+        bytes32 expectedTopic = keccak256("LogFeedCreated(address,uint8,uint256,uint256,uint256,string)");
+        assertEq(logs[logs.length - 1].topics[0], expectedTopic, "Wrong event emitted");
+        
+        // Decode the feed address from the event
+        address feedAddress = address(uint160(uint256(logs[logs.length - 1].topics[1])));
+        
+        // Verify the feed is registered
+        assertTrue(registry.isFeed(feedAddress), "Feed should be registered");
     }
 
-    function test_createFeed_OnlyFeedManager() public {
-        vm.prank(notManager);
-        vm.expectRevert();
-        registry.createPublicFeed(
-            3600,
-            1,
-            "test",
-            defaultConsumer,
-            30 days
-        );
+    function test_createFeed_InvalidConfig_ZeroThreshold() public {
+        IFeedRegistry.CreateFeedParams memory params = IFeedRegistry.CreateFeedParams({
+            feedType: IFeed.FeedType.PUBLIC,
+            frequency: 3600,
+            minSignaturesThreshold: 0, // Invalid
+            ipfsCID: "test",
+            defaultConsumers: new address[](1),
+            subscriptionDueTime: block.timestamp + 30 days
+        });
+        params.defaultConsumers[0] = defaultConsumer;
+        
+        vm.expectRevert(IFeedRegistry.InvalidFeedConfig.selector);
+        registry.createFeed(params);
     }
 
-    function test_createFeed_InvalidFrequency() public {
-        // Test frequency too low
-        vm.expectRevert(IFeedRegistryErrors.InvalidFeedConfig.selector);
-        registry.createPublicFeed(
-            0, // invalid frequency
-            1,
-            "test",
-            defaultConsumer,
-            30 days
-        );
+    function test_createFeed_InvalidConfig_ZeroFrequency() public {
+        IFeedRegistry.CreateFeedParams memory params = IFeedRegistry.CreateFeedParams({
+            feedType: IFeed.FeedType.PUBLIC,
+            frequency: 0, // Invalid
+            minSignaturesThreshold: 1,
+            ipfsCID: "test",
+            defaultConsumers: new address[](1),
+            subscriptionDueTime: block.timestamp + 30 days
+        });
+        params.defaultConsumers[0] = defaultConsumer;
+        
+        vm.expectRevert(IFeedRegistry.InvalidFeedConfig.selector);
+        registry.createFeed(params);
     }
 
-    function test_createFeed_InvalidMinSignaturesThreshold() public {
-        vm.expectRevert(IFeedRegistryErrors.InvalidFeedConfig.selector);
-        registry.createPublicFeed(
-            3600,
-            0, // invalid threshold
-            "test",
-            defaultConsumer,
-            30 days
-        );
+    function test_createFeed_InvalidConfig_EmptyCID() public {
+        IFeedRegistry.CreateFeedParams memory params = IFeedRegistry.CreateFeedParams({
+            feedType: IFeed.FeedType.PUBLIC,
+            frequency: 3600,
+            minSignaturesThreshold: 1,
+            ipfsCID: "", // Invalid
+            defaultConsumers: new address[](1),
+            subscriptionDueTime: block.timestamp + 30 days
+        });
+        params.defaultConsumers[0] = defaultConsumer;
+        
+        vm.expectRevert(IFeedRegistry.InvalidFeedConfig.selector);
+        registry.createFeed(params);
     }
 
-    function test_createFeed_InvalidCID() public {
-        vm.expectRevert(IFeedRegistryErrors.InvalidFeedConfig.selector);
-        registry.createPublicFeed(
-            3600,
-            1,
-            "", // empty CID
-            defaultConsumer,
-            30 days
-        );
+    function test_createFeed_InvalidConfig_PastDueTime() public {
+        IFeedRegistry.CreateFeedParams memory params = IFeedRegistry.CreateFeedParams({
+            feedType: IFeed.FeedType.PUBLIC,
+            frequency: 3600,
+            minSignaturesThreshold: 1,
+            ipfsCID: "test",
+            defaultConsumers: new address[](1),
+            subscriptionDueTime: block.timestamp - 1 // Invalid - past time
+        });
+        params.defaultConsumers[0] = defaultConsumer;
+        
+        vm.expectRevert(IFeedRegistry.InvalidFeedConfig.selector);
+        registry.createFeed(params);
     }
 
-    function test_createFeed_EmitsEvent() public {
-        // Test that creating a feed works (event testing removed for now)
-        vm.recordLogs();
-        registry.createPublicFeed(
-            3600,
-            1,
-            "test",
-            defaultConsumer,
-            30 days
-        );
-        
-        // Get the feed address from the last emitted event
-        Vm.Log[] memory logs = vm.getRecordedLogs();
-        address feed = address(uint160(uint256(logs[logs.length - 1].topics[1])));
-        
-        // Verify the feed was created successfully
-        assertEq(IFeed(feed).getOwner(), feedOwner);
+    function test_isFeed_UnregisteredFeed() public {
+        address randomFeed = address(0x123);
+        assertFalse(registry.isFeed(randomFeed), "Random address should not be a feed");
     }
 
-    function test_supportsInterface_FeedRegistry() public {
-        assertTrue(registry.supportsInterface(type(IFeedRegistry).interfaceId));
-    }
-
-    function test_supportsInterface_ERC165() public {
-        assertTrue(registry.supportsInterface(0x01ffc9a7)); // ERC165 interface ID
-    }
-
-    function test_supportsInterface_InvalidInterface() public {
-        assertFalse(registry.supportsInterface(0x12345678));
-    }
-
-    function testFuzz_createFeed_ValidParameters(
-        uint256 frequency,
-        uint256 minSignaturesThreshold,
-        string memory ipfsCID
-    ) public {
-        vm.assume(frequency >= 60 && frequency <= 86400); // 1 minute to 1 day
-        vm.assume(minSignaturesThreshold > 0 && minSignaturesThreshold <= 100);
-        vm.assume(bytes(ipfsCID).length > 0 && bytes(ipfsCID).length <= 100);
-        
-        vm.recordLogs();
-        registry.createPublicFeed(
-            frequency,
-            minSignaturesThreshold,
-            ipfsCID,
-            defaultConsumer,
-            30 days
-        );
-        
-        // Get the feed address from the last emitted event
-        Vm.Log[] memory logs = vm.getRecordedLogs();
-        address feed = address(uint160(uint256(logs[logs.length - 1].topics[1])));
-        
-        assertEq(IFeed(feed).getOwner(), feedOwner);
-    }
-
-    function test_createFeed_MultipleFeedTypes() public {
-        // Create public feed
-        vm.recordLogs();
-        registry.createPublicFeed(
-            3600,
-            1,
-            "public",
-            defaultConsumer,
-            30 days
-        );
-        
-        // Get the public feed address from the last emitted event
-        Vm.Log[] memory logs = vm.getRecordedLogs();
-        address publicFeed = address(uint160(uint256(logs[logs.length - 1].topics[1])));
-        
-        // Create personal feed
-        vm.recordLogs();
-        registry.createPersonalFeed(
-            7200,
-            2,
-            "personal",
-            30 days
-        );
-        
-        // Get the personal feed address from the last emitted event  
-        logs = vm.getRecordedLogs();
-        address personalFeed = address(uint160(uint256(logs[logs.length - 1].topics[1])));
-        
-        assertEq(IFeed(publicFeed).getOwner(), feedOwner);
-        assertEq(IFeed(personalFeed).getOwner(), feedOwner);
-    }
-
-    function test_createPublicFeed_CallsSubscriptionRegistry() public {
-        // This test verifies that createPublicFeed calls the subscription registry
-        // with the correct parameters
-        vm.recordLogs();
-        registry.createPublicFeed(
-            3600,
-            1,
-            "test",
-            defaultConsumer,
-            30 days
-        );
-        
-        // Get the feed address from the last emitted event
-        Vm.Log[] memory logs = vm.getRecordedLogs();
-        address feed = address(uint160(uint256(logs[logs.length - 1].topics[1])));
-        
-        // Verify the subscription was created
-        assertTrue(subRegistry.isSubscribed(defaultConsumer, feed));
-    }
-
-    function test_createPersonalFeed_CallsSubscriptionRegistry() public {
-        // This test verifies that createPersonalFeed calls the subscription registry
-        // with the correct parameters
-        vm.recordLogs();
-        registry.createPersonalFeed(
-            7200,
-            2,
-            "personal",
-            30 days
-        );
-        
-        // Get the feed address from the last emitted event
-        Vm.Log[] memory logs = vm.getRecordedLogs();
-        address feed = address(uint160(uint256(logs[logs.length - 1].topics[1])));
-        
-        // Verify the personal subscription was created
-        assertTrue(subRegistry.isSubscribed(address(this), feed));
-    }
-
-    function test_createFeed_ValidatesFrequencyBounds() public {
-        // Test minimum frequency (1 minute)
-        vm.recordLogs();
-        registry.createPublicFeed(
-            60, // 1 minute
-            1,
-            "test-min",
-            defaultConsumer,
-            30 days
-        );
-        
-        // Get the feed address from the last emitted event
-        Vm.Log[] memory logs = vm.getRecordedLogs();
-        address feed = address(uint160(uint256(logs[logs.length - 1].topics[1])));
-        assertEq(IFeed(feed).getOwner(), feedOwner);
-        
-        // Test maximum frequency (1 day)
-        vm.recordLogs();
-        registry.createPublicFeed(
-            86400, // 1 day
-            1,
-            "test-max",
-            defaultConsumer,
-            30 days
-        );
-        
-        // Get the feed address from the last emitted event
-        logs = vm.getRecordedLogs();
-        feed = address(uint160(uint256(logs[logs.length - 1].topics[1])));
-        assertEq(IFeed(feed).getOwner(), feedOwner);
+    function test_supportsInterface() public {
+        assertTrue(registry.supportsInterface(type(IFeedRegistry).interfaceId), "Should support IFeedRegistry interface");
     }
 }

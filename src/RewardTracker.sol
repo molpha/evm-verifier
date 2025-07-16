@@ -50,8 +50,8 @@ contract RewardTracker is IRewardTracker, ReentrancyGuard {
         pricePerResponse = _initialPricePerResponse;
     }
 
-    modifier onlyFeedManager() {
-        accessControlManager.verifyFeedManager(msg.sender);
+    modifier onlyNodeRegistry() {
+        accessControlManager.verifyNodeRegistry(msg.sender);
         _;
     }
 
@@ -60,7 +60,7 @@ contract RewardTracker is IRewardTracker, ReentrancyGuard {
     /// @return index The index in the bitmap array where this participation was stored
     function recordParticipation(
         uint256 signersBitmap
-    ) external onlyFeedManager returns (uint256 index) {
+    ) external onlyNodeRegistry returns (uint256 index) {
         if (signersBitmap == 0) revert InvalidBitmap();
 
         // Add bitmap to the global array
@@ -127,7 +127,7 @@ contract RewardTracker is IRewardTracker, ReentrancyGuard {
     /// @param node Node address to claim rewards for
     function claimRewardsFor(
         address node
-    ) external onlyFeedManager nonReentrant {
+    ) external onlyNodeRegistry nonReentrant {
         _claimRewards(node);
     }
 
@@ -147,7 +147,7 @@ contract RewardTracker is IRewardTracker, ReentrancyGuard {
 
     /// @notice Update the price per response
     /// @param newPrice New price per response in reward tokens
-    function setPricePerResponse(uint256 newPrice) external onlyFeedManager {
+    function setPricePerResponse(uint256 newPrice) external onlyNodeRegistry {
         if (newPrice == 0) revert InvalidPricePerResponse();
 
         uint256 oldPrice = pricePerResponse;

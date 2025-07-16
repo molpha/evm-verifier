@@ -11,17 +11,29 @@ contract MockNodeRegistry is INodeRegistry {
     mapping(address => bool) public nodes;
     uint256 public total;
     bytes32 public lastMessage;
+    bool public verificationResult = true;
 
     function setLastMessage(bytes32 message) external {
         lastMessage = message;
     }
+
+    function setVerificationResult(bool result) external {
+        verificationResult = result;
+    }
+
+    function initialize() external override {}
 
     function verifySignature(
         bytes32 message,
         INodeRegistryStructs.SchnorrSignature calldata schnorrData,
         uint256 minSignaturesThreshold
     ) external view {
-        // Mock implementation - store the message for testing
+        // Mock implementation - revert if verification should fail
+        if (!verificationResult) {
+            revert("Verification failed");
+        }
+        // Store the message for testing (in real implementation this would be view)
+        // lastMessage = message; // Can't modify state in view function
     }
 
     function addNode(LibSecp256k1.Point memory pubkey) external {

@@ -2,6 +2,7 @@
 pragma solidity ^0.8.29;
 
 import {ERC165} from "openzeppelin-contracts/contracts/utils/introspection/ERC165.sol";
+import {Initializable} from "openzeppelin-contracts/contracts/proxy/utils/Initializable.sol";
 
 import {ERC165Checker} from "./libs/ERC165Checker.sol";
 import {PublicFeed} from "./PublicFeed.sol";
@@ -9,112 +10,85 @@ import {PersonalFeed} from "./PersonalFeed.sol";
 import {IAccessControlManager} from "./interfaces/IAccessControlManager.sol";
 import {IFeed} from "./interfaces/IFeed.sol";
 import {IFeedRegistry} from "./interfaces/IFeedRegistry.sol";
-import {INodeRegistry} from "./interfaces/INodeRegistry.sol";
 import {ISubscriptionRegistry} from "./interfaces/ISubscriptionRegistry.sol";
 import {PricingHelper} from "./libs/PricingHelper.sol";
 
-contract FeedRegistry is IFeedRegistry, ERC165 {
+contract FeedRegistry is IFeedRegistry, ERC165, Initializable {
     using ERC165Checker for address;
 
-    uint256 internal constant MAX_FREQUENCY = 1 days;
-    uint256 internal constant MIN_FREQUENCY = 1 minutes;
-    uint256 internal constant PERSONAL_FEED_PRICE_MULTIPLIER = 3;
-    uint256 internal constant MIN_SUBSCRIPTION_TIME = 30 days;
+    IAccessControlManager internal _accessControlManager;
+    ISubscriptionRegistry internal _subscriptionRegistry;
 
-    IAccessControlManager internal immutable _accessControlManager;
-    INodeRegistry internal immutable _nodeRegistry;
-    ISubscriptionRegistry internal immutable _subscriptionRegistry;
+    mapping(address => bool) internal _isFeed;
 
-    constructor(
-        IAccessControlManager accessControlManager,
-        ISubscriptionRegistry subscriptionRegistry,
-        INodeRegistry nodeRegistry
-    ) {
-        address(accessControlManager).shouldSupport(type(IAccessControlManager).interfaceId);
-        address(subscriptionRegistry).shouldSupport(type(ISubscriptionRegistry).interfaceId);
-        address(nodeRegistry).shouldSupport(type(INodeRegistry).interfaceId);
-
-        _accessControlManager = accessControlManager;
-        _subscriptionRegistry = subscriptionRegistry;
-        _nodeRegistry = nodeRegistry;
-    }
-
-    modifier onlyFeedManager() {
-       _accessControlManager.verifyFeedManager(msg.sender);
+    modifier onlyProtocolAdmin() {
+        _accessControlManager.verifyProtocolAdmin(msg.sender);
         _;
     }
 
-    // TODO: add fees collection
-    // TDOD: price is missing on subgraph for new feeds
-    /// @inheritdoc IFeedRegistry
-    function createPublicFeed(
-        uint256 frequency, 
-        uint256 minSignaturesThreshold, 
-        string memory ipfsCID,
-        address defaultConsumer,
-        uint256 subscriptionDueTime
-    ) external override {
-        _validateFeedConfig(frequency, minSignaturesThreshold, ipfsCID);
+    function initialize(address accessControlManager, address subscriptionRegistry) external override initializer {
+        accessControlManager.shouldSupport(type(IAccessControlManager).interfaceId);
+        subscriptionRegistry.shouldSupport(type(ISubscriptionRegistry).interfaceId);
 
-        address feed = address(new PublicFeed(
-            _accessControlManager,
-            _nodeRegistry,
-            _subscriptionRegistry,
-            msg.sender,
-            minSignaturesThreshold,
-            frequency,
-            ipfsCID
-        ));
-
-        _subscriptionRegistry.subscribe(defaultConsumer, feed, msg.sender, subscriptionDueTime);
-        emit LogFeedCreated(feed, IFeed.FeedType.PUBLIC, frequency, minSignaturesThreshold, ipfsCID);
+        _accessControlManager = IAccessControlManager(accessControlManager);
+        _subscriptionRegistry = ISubscriptionRegistry(subscriptionRegistry);
     }
 
-    // TDOD: price is missing on subgraph for new feeds
-    function createPersonalFeed(
-        uint256 frequency, 
-        uint256 minSignaturesThreshold, 
-        string memory ipfsCID,
-        uint256 subscriptionDueTime
-    ) external override {
-        _validateFeedConfig(frequency, minSignaturesThreshold, ipfsCID);
+    function createFeed(CreateFeedParams calldata params) external override {
+        require(params.minSignaturesThreshold > 0, InvalidFeedConfig());
+        require(params.frequency > 0, InvalidFeedConfig());
+        require(keccak256(bytes(params.ipfsCID)) != keccak256(bytes("")), InvalidFeedConfig());
+        require(params.subscriptionDueTime > block.timestamp, InvalidFeedConfig());
+ 
+        address feed;
+        if (params.feedType == IFeed.FeedType.PUBLIC) {
+            feed = address(new PublicFeed(
+                address(_accessControlManager),
+                address(_subscriptionRegistry),
+                msg.sender,
+                params.frequency,
+                params.minSignaturesThreshold,
+                params.ipfsCID
+            ));
+        } else {
+            feed = address(new PersonalFeed(
+                address(_accessControlManager),
+                address(_subscriptionRegistry),
+                msg.sender,
+                params.frequency,
+                params.minSignaturesThreshold,
+                params.ipfsCID
+            ));
+        }
 
-        address feed = address(new PersonalFeed(
-            _accessControlManager,
-            _nodeRegistry,
-            _subscriptionRegistry,
-            msg.sender,
-            minSignaturesThreshold,
-            frequency,
-            ipfsCID
-        ));
+        _isFeed[feed] = true;
+        _subscriptionRegistry.subscribe(feed, msg.sender, params.subscriptionDueTime, params.defaultConsumers);
 
-        _subscriptionRegistry.subscribe(
-            msg.sender,
-            feed,
-            msg.sender,
-            subscriptionDueTime
+        emit LogFeedCreated(
+            feed, 
+            params.feedType, 
+            params.frequency, 
+            params.minSignaturesThreshold, 
+            IFeed(feed).getPricePerSecondScaled(),
+            params.ipfsCID
         );
-        emit LogFeedCreated(feed, IFeed.FeedType.PERSONAL, frequency, minSignaturesThreshold, ipfsCID);
+    }
+
+    function setAccessControlManager(address accessControlManager) external override onlyProtocolAdmin {
+        address(accessControlManager).shouldSupport(type(IAccessControlManager).interfaceId);
+        _accessControlManager = IAccessControlManager(accessControlManager);
+    }
+
+    function setSubscriptionRegistry(address subscriptionRegistry) external override onlyProtocolAdmin {
+        address(subscriptionRegistry).shouldSupport(type(ISubscriptionRegistry).interfaceId);
+        _subscriptionRegistry = ISubscriptionRegistry(subscriptionRegistry);
+    }
+
+    function isFeed(address feed) external view override returns (bool) {
+        return _isFeed[feed];
     }
 
     function supportsInterface(bytes4 interfaceId) public view override returns (bool) {
         return interfaceId == type(IFeedRegistry).interfaceId || super.supportsInterface(interfaceId);
-    }
-
-    function _validateFeedConfig(
-        uint256 frequency, 
-        uint256 minSignaturesThreshold, 
-        string memory ipfsCID
-    ) internal pure {
-        if (minSignaturesThreshold == 0) {
-            revert InvalidFeedConfig();
-        }
-        if (frequency == 0) {
-            revert InvalidFeedConfig();
-        }
-        if (keccak256(bytes(ipfsCID)) == keccak256(bytes(""))) {
-            revert InvalidFeedConfig();
-        }
     }
 }

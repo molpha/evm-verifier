@@ -3,128 +3,73 @@ pragma solidity ^0.8.29;
 
 import {ERC165} from "openzeppelin-contracts/contracts/utils/introspection/ERC165.sol";
 import {ReentrancyGuard} from "openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol";
-import {IERC20} from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
-import {SafeERC20} from "openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol";
+import {Initializable} from "openzeppelin-contracts/contracts/proxy/utils/Initializable.sol";
 
 import {ERC165Checker} from "./libs/ERC165Checker.sol";
-import {IAccessControlManager} from "./interfaces/IAccessControlManager.sol";
 import {IFeed} from "./interfaces/IFeed.sol";
 import {IFeedRegistry} from "./interfaces/IFeedRegistry.sol";
-
+import {IAccessControlManager} from "./interfaces/IAccessControlManager.sol";
 import {ISubscriptionRegistry} from "./interfaces/ISubscriptionRegistry.sol";
 import {PricingHelper} from "./libs/PricingHelper.sol";
 import {ITreasury} from "./interfaces/ITreasury.sol";
 
-// TODO: add payment logic
 contract SubscriptionRegistry is
     ISubscriptionRegistry,
     ERC165,
-    ReentrancyGuard
+    ReentrancyGuard,
+    Initializable
 {
     using ERC165Checker for address;
-    using SafeERC20 for IERC20;
 
     // TODO: reconsider min and max values
-    uint256 internal constant MIN_SUBSCRIPTION_TIME = 1 days;
-    uint256 internal constant MAX_SUBSCRIPTION_TIME = 1095 days; // 3 years
+    uint256 internal constant MIN_SUBSCRIPTION_TIME = 30 days;
+    uint64 internal constant SUBSCRIPTION_TRANSFER_TIME_LOSS = 1 days;
 
-    uint256 internal constant MAX_BPS = 10000; // 100%
-    uint256 internal constant REFUND_FEE = 2000; // 20% refund fee
-
-    IAccessControlManager internal immutable _accessControlManager;
-    IERC20 internal immutable _underlying;
-
+    IAccessControlManager internal _accessControlManager;
     IFeedRegistry internal _feedRegistry;
     ITreasury internal _treasury;
 
     mapping(address => mapping(address => Subscription))
         internal _subscriptions; // consumer => feed => subscription
-    mapping(address => mapping(address => address))
-        internal _personalFeedAccess; // feed => consumer => owner
 
     modifier onlyProtocolAdmin() {
         _accessControlManager.verifyProtocolAdmin(msg.sender);
         _;
     }
 
-    modifier onlyFeedRegistry() {
-        if (msg.sender != address(_feedRegistry)) {
-            revert NotFeedRegistry(msg.sender);
-        }
-        _;
-    }
+    function initialize(address accessControlManager, address feedRegistry, address treasury) external override initializer {
+        accessControlManager.shouldSupport(type(IAccessControlManager).interfaceId);
+        feedRegistry.shouldSupport(type(IFeedRegistry).interfaceId);
+        treasury.shouldSupport(type(ITreasury).interfaceId);
 
-    constructor(IAccessControlManager accessControlManager, IERC20 underlying) {
-        address(accessControlManager).shouldSupport(
-            type(IAccessControlManager).interfaceId
-        );
-        require(underlying.totalSupply() > 0, "wrong underlying");
-
-        _accessControlManager = accessControlManager;
-        _underlying = underlying;
-    }
-
-    function initialize(IFeedRegistry feedRegistry) external {
-        address(feedRegistry).shouldSupport(type(IFeedRegistry).interfaceId);
-
-        _feedRegistry = feedRegistry;
+        _accessControlManager = IAccessControlManager(accessControlManager);
+        _feedRegistry = IFeedRegistry(feedRegistry);
+        _treasury = ITreasury(treasury);
     }
 
     /// @inheritdoc ISubscriptionRegistry
     function subscribe(
-        address[] calldata consumers,
-        address feed,
-        uint256 dueTime
-    )
-        external
-        override
-        nonReentrant
-    {
-        _checkSubscriptionData(consumers, feed, msg.sender, dueTime);
-        _batchSubscribe(consumers, feed, msg.sender, dueTime);
-    }
-
-    function subscribe(
-        address consumer,
-        address feed,
-        uint256 dueTime
-    )
-        external
-        override
-        nonReentrant
-    {
-        _checkSubscriptionData(consumer, feed, msg.sender, dueTime);
-        _subscribe(consumer, feed, msg.sender, dueTime);
-    }
-
-    function subscribe(
-        address[] calldata consumers,
         address feed,
         address owner,
-        uint256 dueTime
-    )
-        external
-        override
-        nonReentrant
-        onlyFeedRegistry
-    {
-        _checkSubscriptionData(consumers, feed, owner, dueTime);
-        _batchSubscribe(consumers, feed, owner, dueTime);
-    }
+        uint256 dueTime,
+        address[] calldata consumers
+    ) external override nonReentrant {
+        require(owner != address(0), ZeroAddress());
+        require(_feedRegistry.isFeed(feed), NotFeed(feed));
+        require(
+            dueTime >= block.timestamp + MIN_SUBSCRIPTION_TIME,
+            WrongSubscriptionTime(dueTime)
+        );
 
-    function subscribe(
-        address consumer,
-        address feed,
-        address owner,
-        uint256 dueTime
-    )
-        external
-        override
-        nonReentrant
-        onlyFeedRegistry
-    {
-        _checkSubscriptionData(consumer, feed, owner, dueTime);
-        _subscribe(consumer, feed, owner, dueTime);
+        IFeed.FeedType feedType = IFeed(feed).getFeedType();
+
+        if (feedType == IFeed.FeedType.PERSONAL) {
+            _createPersonalSubscription(consumers, feed, owner, dueTime);
+        } else if (feedType == IFeed.FeedType.PUBLIC) {
+            _createPublicSubscription(consumers, feed, owner, dueTime);
+        } else {
+            revert CannotSubscribe();
+        }
     }
 
     function extendSubscription(
@@ -142,87 +87,30 @@ contract SubscriptionRegistry is
             NotSubscriptionOwner(consumer)
         );
 
+        if (IFeed(feed).getFeedType() == IFeed.FeedType.PERSONAL) {
+            require(consumer == IFeed(feed).getOwner(), CannotExtendSubscription());
+        }
+
+        uint256 price = PricingHelper.getPriceForTimespan(
+            IFeed(feed).getPricePerSecondScaled(),
+            dueTime - block.timestamp
+        );
+
+        _treasury.deposit(msg.sender, price);
+
         _subscriptions[consumer][feed].dueTime = uint64(dueTime);
         emit LogSubscriptionExtended(consumer, feed, dueTime);
     }
 
     /// @inheritdoc ISubscriptionRegistry
-    function grantAccess(
-        address consumer,
-        address feed
-    ) external override nonReentrant {
-        require(consumer != address(0) && feed != address(0), ZeroAddress());
-        require(
-            msg.sender == IFeed(feed).getOwner(),
-            NotFeedOwner(msg.sender, feed)
-        );
-
-        _subscriptions[consumer][feed] = Subscription(
-            type(uint64).max,
-            msg.sender
-        );
-
-        emit LogAccessGranted(consumer, feed, msg.sender);
-    }
-
-    function grantAccess(
-        address[] calldata consumers,
-        address feed
-    ) external override nonReentrant {
-        require(consumers.length > 0, ZeroAddress());
-        require(feed != address(0), ZeroAddress());
-        require(
-            msg.sender == IFeed(feed).getOwner(),
-            NotFeedOwner(msg.sender, feed)
-        );
-
-        for (uint256 i = 0; i < consumers.length; i++) {
-            _subscriptions[consumers[i]][feed] = Subscription(
-                type(uint64).max,
-                msg.sender
-            );
-
-            emit LogAccessGranted(consumers[i], feed, msg.sender);
-        }
-    }
-
-    function revokeAccess(
-        address consumer,
-        address feed
-    ) external override nonReentrant {
+    function unsubscribe(address feed, address consumer) external override nonReentrant {
         require(
             _subscriptions[consumer][feed].owner == msg.sender,
-            NotSubscriptionOwner(consumer)
-        );
-        delete _subscriptions[consumer][feed];
-        emit LogAccessRevoked(consumer, feed, msg.sender);
-    }
-
-    function revokeAccess(
-        address[] calldata consumers,
-        address feed
-    ) external override nonReentrant {
-        for (uint256 i = 0; i < consumers.length; i++) {
-            require(
-                _subscriptions[consumers[i]][feed].owner == msg.sender,
-                NotSubscriptionOwner(consumers[i])
-            );
-            delete _subscriptions[consumers[i]][feed];
-            emit LogAccessRevoked(consumers[i], feed, msg.sender);
-        }
-    }
-
-    /// @inheritdoc ISubscriptionRegistry
-    function unsubscribe(
-        address feed,
-        address consumer
-    ) external override nonReentrant {
-        require(
-            _subscriptions[consumer][feed].owner == msg.sender,
-            NotSubscriptionOwner(consumer)
+            NotSubscriptionOwner(msg.sender)
         );
 
-        delete _subscriptions[consumer][feed];
+        // we don't need to delete the subscription, because it will be expired
+        _subscriptions[consumer][feed].dueTime = uint64(block.timestamp);
         emit LogUnsubscribed(consumer, feed);
     }
 
@@ -232,28 +120,70 @@ contract SubscriptionRegistry is
         address newConsumer
     ) external override nonReentrant {
         require(
-            _subscriptions[consumer][feed].owner == msg.sender,
-            NotSubscriptionOwner(consumer)
+            newConsumer != address(0) &&
+                feed != address(0) &&
+                consumer != address(0),
+            ZeroAddress()
         );
-        _subscriptions[newConsumer][feed] = _subscriptions[consumer][feed];
-        delete _subscriptions[consumer][feed];
-        emit LogSubscriptionTransferred(consumer, feed, newConsumer);
+
+        // only public feed subscriptions can be transferred
+        require(IFeed(feed).getFeedType() == IFeed.FeedType.PUBLIC, CannotTransferSubscription());
+
+        Subscription memory subscription = _subscriptions[consumer][feed];
+
+        require(subscription.owner == msg.sender, NotSubscriptionOwner(msg.sender));
+        require(
+            subscription.dueTime >
+                block.timestamp + SUBSCRIPTION_TRANSFER_TIME_LOSS,
+            CannotTransferSubscription()
+        );
+
+        uint64 newDueTime = subscription.dueTime - SUBSCRIPTION_TRANSFER_TIME_LOSS;
+        subscription.dueTime = newDueTime;
+
+        _subscriptions[newConsumer][feed] = subscription;
+        // set old consumer subscription to expired
+        _subscriptions[consumer][feed].dueTime = uint64(block.timestamp);
+
+        emit LogSubscriptionTransferred(consumer, feed, newConsumer, newDueTime);
+    }
+
+    /// @inheritdoc ISubscriptionRegistry
+    function setFeedRegistry(address feedRegistry) external override onlyProtocolAdmin {
+        address(feedRegistry).shouldSupport(type(IFeedRegistry).interfaceId);
+        _feedRegistry = IFeedRegistry(feedRegistry);
+    }
+
+    /// @inheritdoc ISubscriptionRegistry
+    function setTreasury(address treasury) external override onlyProtocolAdmin {
+        address(treasury).shouldSupport(type(ITreasury).interfaceId);
+        _treasury = ITreasury(treasury);
     }
 
     /// @inheritdoc ISubscriptionRegistry
     function isSubscribed(
         address consumer,
         address feed
-    ) external view override returns (bool) {
-        return _subscriptions[consumer][feed].dueTime > block.timestamp;
+    ) external view override returns (bool isConsumerSubscribed) {
+        IFeed.FeedType feedType = IFeed(feed).getFeedType();
+        Subscription storage subscription = _subscriptions[consumer][feed];
+
+        if (feedType == IFeed.FeedType.PERSONAL) {
+            isConsumerSubscribed =
+                _subscriptions[subscription.owner][feed].dueTime >
+                block.timestamp &&
+                subscription.dueTime > block.timestamp;
+        }
+
+        isConsumerSubscribed = subscription.dueTime > block.timestamp;
     }
 
     /// @inheritdoc ISubscriptionRegistry
-    function getSubscriptionDueTime(
+    function getSubscription(
         address consumer,
         address feed
-    ) external view override returns (uint256 dueTime) {
-        dueTime = _subscriptions[consumer][feed].dueTime;
+    ) external view override returns (Subscription memory subscription) {
+        subscription = _subscriptions[consumer][feed];
     }
 
     function supportsInterface(
@@ -264,14 +194,60 @@ contract SubscriptionRegistry is
             super.supportsInterface(interfaceId);
     }
 
-    function _batchSubscribe(
+    function _createPublicSubscription(
         address[] calldata consumers,
         address feed,
         address owner,
         uint256 dueTime
     ) internal {
+        require(consumers.length > 0, EmptyConsumers());
+
+        uint256 price = PricingHelper.getPriceForTimespan(
+            IFeed(feed).getPricePerSecondScaled(),
+            dueTime - block.timestamp
+        );
+        uint256 totalPrice = price * consumers.length;
+
+        _treasury.deposit(owner, totalPrice);
+
         for (uint256 i = 0; i < consumers.length; i++) {
             _subscribe(consumers[i], feed, owner, dueTime);
+        }
+    }
+
+    function _createPersonalSubscription(
+        address[] calldata consumers,
+        address feed,
+        address owner,
+        uint256 dueTime
+    ) internal {
+        require(owner == IFeed(feed).getOwner(), NotFeedOwner(owner, feed));
+
+        if (_subscriptions[owner][feed].dueTime == 0) {
+            // new subscription for new personal feed
+            uint256 price = PricingHelper.getPriceForTimespan(
+                IFeed(feed).getPricePerSecondScaled(),
+                dueTime - block.timestamp
+            );
+            _treasury.deposit(owner, price);
+
+            _subscribe(owner, feed, owner, dueTime);
+
+            if (consumers.length > 0) {
+                for (uint256 i = 0; i < consumers.length; i++) {
+                    // child subscriptions are not expired, we check parent subscription due time instead
+                    _subscribe(consumers[i], feed, owner, type(uint64).max);
+                }
+            }
+        } else {
+            // add consumers to existing personal feed
+            require(msg.sender == owner, NotSubscriptionOwner(owner));
+            require(consumers.length > 0, EmptyConsumers());
+            
+            for (uint256 i = 0; i < consumers.length; i++) {
+                // child subscriptions are not expired, we check parent subscription due time instead
+                _subscribe(consumers[i], feed, owner, type(uint64).max);
+            }
         }
     }
 
@@ -281,56 +257,17 @@ contract SubscriptionRegistry is
         address owner,
         uint256 dueTime
     ) internal {
+        require(
+            consumer != address(0) && feed != address(0) && owner != address(0),
+            ZeroAddress()
+        );
+
+        require(
+            _subscriptions[consumer][feed].dueTime == 0,
+            SubscriptionAlreadyExists(consumer, feed)
+        );
+
         _subscriptions[consumer][feed] = Subscription(uint64(dueTime), owner);
         emit LogSubscribed(consumer, feed, owner, dueTime);
-    }
-
-    function _collectPayment(
-        uint256 consumers,
-        address feed,
-        uint256 dueTime
-    ) internal {
-        uint256 price = PricingHelper.getPriceForTimespan(
-            IFeed(feed).getPricePerSecondScaled(),
-            dueTime - block.timestamp
-        );
-        uint256 totalPrice = price * consumers;
-
-        _treasury.deposit(msg.sender, totalPrice);
-    }
-
-    function _checkSubscriptionData(
-        address consumer,
-        address feed,
-        address owner,
-        uint256 dueTime
-    ) internal {
-        require(consumer != address(0) && feed != address(0), ZeroAddress());
-        require(
-            dueTime >= block.timestamp + MIN_SUBSCRIPTION_TIME,
-            WrongSubscriptionTime(dueTime)
-        );
-        require(
-            IFeed(feed).getFeedType() == IFeed.FeedType.PUBLIC,
-            NotPublicFeed(feed)
-        );
-    }
-
-    function _checkSubscriptionData(
-        address[] calldata consumers,
-        address feed,
-        address owner,
-        uint256 dueTime
-    ) internal view {
-        require(consumers.length > 0, ZeroAddress());
-        require(feed != address(0) && owner != address(0), ZeroAddress());
-        require(
-            dueTime >= block.timestamp + MIN_SUBSCRIPTION_TIME,
-            WrongSubscriptionTime(dueTime)
-        );
-        require(
-            IFeed(feed).getFeedType() == IFeed.FeedType.PUBLIC,
-            NotPublicFeed(feed)
-        );
     }
 }

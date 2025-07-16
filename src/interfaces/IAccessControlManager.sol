@@ -4,15 +4,12 @@ pragma solidity ^0.8.29;
 import {IAccessControl} from "openzeppelin-contracts/contracts/access/IAccessControl.sol";
 
 interface IAccessControlManager is IAccessControl {
-    /// @notice admin role
-    /// @dev role allowed to add and remove new roles
-    function ADMIN_ROLE() external view returns (bytes32);
+    /// @notice initialize the access control manager
+    /// @param protocolAdmin the protocol admin address
+    function initialize(address protocolAdmin) external;
 
-    /// @notice feeds manager role
-    function FEED_MANAGER() external view returns (bytes32);
-
-    /// @notice nodes manager role
-    function NODE_MANAGER() external view returns (bytes32);
+    /// @notice node registry role
+    function NODE_REGISTRY() external view returns (bytes32);
 
     /// @notice price manager role
     function PRICE_MANAGER() external view returns (bytes32);
@@ -21,15 +18,11 @@ interface IAccessControlManager is IAccessControl {
     /// @param account account to verify
     function verifyProtocolAdmin(address account) external view;
 
-    /// @notice verify if account has feeds manager role, and revert otherwise
-    /// @param account account to verify
-    function verifyFeedManager(address account) external view;
-
-    /// @notice verify if account has node manager role, and revert otherwise
-    /// @param account account to verify
-    function verifyNodeManager(address account) external view;
-
     /// @notice verify if account has price manager role, and revert otherwise
     /// @param account account to verify
     function verifyPriceManager(address account) external view;
+
+    /// @notice verify if account has node registry role, and revert otherwise
+    /// @param account account to verify
+    function verifyNodeRegistry(address account) external view;
 }

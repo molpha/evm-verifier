@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: BSL-1.1
 pragma solidity ^0.8.29;
 
-import {MessageHashUtils} from "openzeppelin-contracts/contracts/utils/cryptography/MessageHashUtils.sol";
-
+import {ERC165Checker} from "./libs/ERC165Checker.sol";
 import {IAccessControlManager} from "./interfaces/IAccessControlManager.sol";
 import {IFeed} from "./interfaces/IFeed.sol";
 import {ISubscriptionRegistry} from "./interfaces/ISubscriptionRegistry.sol";
@@ -13,7 +12,7 @@ import {BaseFeed} from "./BaseFeed.sol";
 
 // TODO: think about aggregator deactivation flow
 contract PublicFeed is BaseFeed {
-    using MessageHashUtils for bytes32;
+    using ERC165Checker for address;
 
     FeedType internal constant FEED_TYPE = FeedType.PUBLIC;
 
@@ -21,28 +20,21 @@ contract PublicFeed is BaseFeed {
     uint256 internal immutable _signaturesRequired;
 
     constructor(
-        IAccessControlManager accessControlManager,
-        INodeRegistry nodeRegistry,
-        ISubscriptionRegistry subscriptionRegistry,
-        address owner,
-        uint256 signaturesRequired, // must be 0 for public feeds; TODO: think about this and implement properly
-        uint256 frequency,
+        address accessControlManager,
+        address subscriptionRegistry,
+        address owner, 
+        uint256 frequency, 
+        uint256 signaturesRequired, 
         string memory ipfsCID
-    ) BaseFeed(
-        accessControlManager,
-        nodeRegistry,
-        subscriptionRegistry,
-        owner
-    ) {
+    ) BaseFeed(owner, accessControlManager, subscriptionRegistry, FEED_TYPE) {
+        require(frequency > MIN_FREQUENCY && frequency <= MAX_FREQUENCY, InvalidFrequency(frequency));
+        require(signaturesRequired > 0, InvalidMinSignaturesThreshold(signaturesRequired));
+        require(keccak256(bytes(ipfsCID)) != keccak256(bytes("")), InvalidCID(ipfsCID));
 
         _frequency = frequency;
         _signaturesRequired = signaturesRequired;
         _ipfsCID = ipfsCID;
         _pricePerSecondScaled = PricingHelper.calculatePrice(frequency, signaturesRequired, FEED_TYPE);
-    }
-
-    function _checkAccess(address consumer) internal view override returns (bool) {
-        return _subscriptionRegistry.isSubscribed(consumer, address(this));
     }
 
     function _setFeedConfig(uint256, uint256, string calldata) internal pure override {
@@ -53,20 +45,12 @@ contract PublicFeed is BaseFeed {
         revert NotSupported();
     }
 
-    function _setMinSignaturesThreshold(uint256) internal pure override {
+    function _setSignaturesRequired(uint256) internal pure override {
         revert NotPersonalFeed();
     }
 
-    function _setCID(string calldata) internal pure override {
-        revert NotSupported();
-    }
-
-    function _getFeedType() internal pure override returns (FeedType feedType) {
-        feedType = FEED_TYPE;
-    }
-
     // check if immutable is set, if not - use the one from storage
-    function _getMinSignaturesThreshold() internal view override returns (uint256 signaturesRequired) {
+    function _getSignaturesRequired() internal view override returns (uint256 signaturesRequired) {
         signaturesRequired = _signaturesRequired;
     }
 
@@ -74,7 +58,7 @@ contract PublicFeed is BaseFeed {
         frequency = _frequency;
     }
 
-    function _getPricePerSecondScaled() internal view override returns (uint256 pricePerSecondScaled) {
+    function _getPricePerSecondScaled() internal view returns (uint256 pricePerSecondScaled) {
         pricePerSecondScaled = PricingHelper.calculatePrice(_frequency, _signaturesRequired, FEED_TYPE);
     }
 

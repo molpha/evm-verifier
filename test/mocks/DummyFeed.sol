@@ -14,22 +14,21 @@ contract DummyFeed is IFeed {
     address internal _owner;
     IFeed.FeedType internal _feedType;
     string internal _ipfsCID;
+    uint256 internal _pricePerSecondScaled;
 
     constructor() {
         _owner = msg.sender;
         _feedType = IFeed.FeedType.PUBLIC;
         _frequency = 3600;
         _ipfsCID = "QmTest";
+        _pricePerSecondScaled = 1000;
     }
 
     function initialize(bytes32 metadataHash, uint256 minSignaturesThresholdParam) external {
         _minSignaturesThreshold = minSignaturesThresholdParam;
     }
 
-    function publishAnswer(
-        IFeedStructs.Answer calldata answer,
-        INodeRegistryStructs.SchnorrSignature calldata
-    ) external {
+    function publish(IFeedStructs.Answer calldata answer) external {
         answers.push(answer);
     }
 
@@ -53,6 +52,10 @@ contract DummyFeed is IFeed {
 
     function getMinSignaturesThreshold() external view returns (uint256) {
         return _minSignaturesThreshold;
+    }
+
+    function getPricePerSecondScaled() external view returns (uint256) {
+        return _pricePerSecondScaled;
     }
 
     function getOwner() external view returns (address) {
@@ -83,12 +86,9 @@ contract DummyFeed is IFeed {
         return (a.value, a.timestamp);
     }
 
+    // Helper methods for testing
     function getMetadataHash() external view returns (bytes32) {
         return bytes32(0);
-    }
-
-    function getPricePerSecondScaled() external view returns (uint256) {
-        return 0;
     }
 
     function getConfig() external view returns (uint256, uint256) {
@@ -105,6 +105,10 @@ contract DummyFeed is IFeed {
 
     function setOwner(address owner) external {
         _owner = owner;
+    }
+
+    function setPricePerSecondScaled(uint256 price) external {
+        _pricePerSecondScaled = price;
     }
 
     function supportsInterface(bytes4 interfaceId) external view returns (bool) {
