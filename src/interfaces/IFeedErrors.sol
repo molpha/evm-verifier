@@ -16,19 +16,6 @@ interface IFeedErrors is ICommonErrors {
     /// @param blockTimestamp block timestamp
     error FutureTimestamp(uint256 timestamp, uint256 blockTimestamp);
 
-    /// @notice reverts consumer is not subscribed to the aggregator
-    /// @param consumer consumer address
-    error NotSubscribed(address consumer);
-
-    /// @notice reverts when msg sender is not a nodes registry
-    /// only a nodes registry can add or remove nodes
-    /// @param sender sender address
-    error NotNodeRegistry(address sender);
-
-    /// @notice reverts when min signatures threshold is immutable
-    /// @dev This error is thrown when trying to set the min signatures threshold for a public feed
-    error ImmutableThreshold();
-
     /// @notice reverts when feed is not personal
     /// @dev This error is thrown when trying to set the min signatures threshold for a public feed
     error NotPersonalFeed();
@@ -49,6 +36,18 @@ interface IFeedErrors is ICommonErrors {
     /// @param sender sender address
     error NotFeedOwner(address sender);
 
-    /// @notice reverts when feed function is not supported
-    error NotSupported();
+    /// @notice reverts when consumers and due times are not the same length
+    error InvalidConsumersAndDueTimes();
+
+    /// @notice reverts when consumer is already subscribed
+    /// @param consumer consumer address
+    error NotConsumer(address consumer);
+
+    /// @notice reverts when due time is in the past
+    /// @param dueTime due time
+    error PastDueTime(uint256 dueTime);
+
+    /// @notice reverts when roundId is invalid
+    /// @param roundId roundId
+    error InvalidRoundId(uint256 roundId);
 }

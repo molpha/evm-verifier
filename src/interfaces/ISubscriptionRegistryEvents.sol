@@ -42,4 +42,10 @@ interface ISubscriptionRegistryEvents {
         address indexed feed,
         uint256 dueTime
     );
+
+    /// @notice emitted when subscription is updated
+    /// @param feed feed address
+    /// @param subscriber subscriber address
+    /// @param newDueTime new due time
+    event LogSubscriptionUpdated(address feed, address subscriber, uint256 newDueTime);
 }

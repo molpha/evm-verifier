@@ -10,6 +10,7 @@ contract MockAccessControlManager is IAccessControlManager {
     address public priceManager;
     address public feedRegistry;
     address public nodeRegistry;
+    address public subscriptionRegistry;
 
     constructor(address _admin) {
         admin = _admin;
@@ -39,6 +40,10 @@ contract MockAccessControlManager is IAccessControlManager {
         nodeRegistry = _nodeRegistry;
     }
 
+    function setSubscriptionRegistry(address _subscriptionRegistry) external {
+        subscriptionRegistry = _subscriptionRegistry;
+    }
+
     // IAccessControlManager interface implementation
     function NODE_REGISTRY() external pure returns (bytes32) {
         return keccak256("NODE_REGISTRY");
@@ -46,6 +51,10 @@ contract MockAccessControlManager is IAccessControlManager {
 
     function PRICE_MANAGER() external pure returns (bytes32) {
         return keccak256("PRICE_MANAGER");
+    }
+
+    function SUBSCRIPTION_REGISTRY() external pure returns (bytes32) {
+        return keccak256("SUBSCRIPTION_REGISTRY");
     }
 
     function verifyProtocolAdmin(address account) external view {
@@ -58,6 +67,10 @@ contract MockAccessControlManager is IAccessControlManager {
 
     function verifyNodeRegistry(address account) external view {
         require(account == nodeRegistry, "Not node registry");
+    }
+
+    function verifySubscriptionRegistry(address account) external view {
+        require(account == subscriptionRegistry, "Not subscription registry");
     }
 
     // Helper methods for testing (not part of interface)

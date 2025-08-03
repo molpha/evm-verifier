@@ -16,6 +16,8 @@ contract DummyFeed is IFeed {
     string internal _ipfsCID;
     uint256 internal _pricePerSecondScaled;
 
+    mapping(address => uint256) internal _consumers;
+
     constructor() {
         _owner = msg.sender;
         _feedType = IFeed.FeedType.PUBLIC;
@@ -38,6 +40,24 @@ contract DummyFeed is IFeed {
 
     function setFrequency(uint256 frequency) external {
         _frequency = frequency;
+    }
+
+    function addConsumer(address consumer, uint256 dueTime) external {
+        _consumers[consumer] = dueTime;
+    }
+
+    function removeConsumer(address consumer) external {
+        delete _consumers[consumer];
+    }
+
+    function setConsumers(address[] calldata consumersToAdd, uint256 dueTime, address[] calldata consumersToRemove) external {
+        for (uint256 i = 0; i < consumersToAdd.length; i++) {
+            _consumers[consumersToAdd[i]] = dueTime;
+        }
+
+        for (uint256 i = 0; i < consumersToRemove.length; i++) {
+            delete _consumers[consumersToRemove[i]];
+        }
     }
 
     function setCID(string calldata cid) external {

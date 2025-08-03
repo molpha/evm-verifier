@@ -8,12 +8,10 @@ import {IFeedRegistry} from "../src/interfaces/IFeedRegistry.sol";
 import {IFeed} from "../src/interfaces/IFeed.sol";
 import {MockAccessControlManager} from "./mocks/MockAccessControlManager.sol";
 import {MockSubscriptionRegistry} from "./mocks/MockSubscriptionRegistry.sol";
-import {MockNodeRegistry} from "./mocks/MockNodeRegistry.sol";
 
 contract FeedRegistryTest is Test {
     FeedRegistry registry;
     MockSubscriptionRegistry subRegistry;
-    MockNodeRegistry nodeRegistry;
     MockAccessControlManager acl;
 
     address manager;
@@ -25,7 +23,6 @@ contract FeedRegistryTest is Test {
         manager = address(this); // Use the test contract as manager
         acl = new MockAccessControlManager(manager);
         subRegistry = new MockSubscriptionRegistry();
-        nodeRegistry = new MockNodeRegistry();
         
         // Set feed manager for proper access control
         acl.setFeedManager(manager);
@@ -43,28 +40,34 @@ contract FeedRegistryTest is Test {
             minSignaturesThreshold: 1,
             ipfsCID: "test",
             defaultConsumers: new address[](1),
-            subscriptionDueTime: block.timestamp + 30 days
+            subscriptionDueTime: block.timestamp + 30 days,
+            consumerPricePerSecondScaled: 0
         });
         params.defaultConsumers[0] = defaultConsumer;
-        
+        vm.prank(feedOwner);
         registry.createFeed(params);
         
         // Get the feed address from the last emitted event
-        Vm.Log[] memory logs = vm.getRecordedLogs();
-        assertTrue(logs.length > 0, "No events emitted");
+        Vm.Log[] memory entries = vm.getRecordedLogs();
         
-        // Check that the last event is LogFeedCreated
-        bytes32 expectedTopic = keccak256("LogFeedCreated(address,uint8,uint256,uint256,uint256,string)");
-        assertEq(logs[logs.length - 1].topics[0], expectedTopic, "Wrong event emitted");
+        // The LogFeedCreated event should be emitted
+        // event LogFeedCreated(address indexed feed, IFeed.FeedType feedType, uint256 frequency, uint256 minSignaturesThreshold, string ipfsCID)
+        assertEq(entries.length, 1); // Only LogFeedCreated event (MockSubscriptionRegistry doesn't emit events)
         
-        // Decode the feed address from the event
-        address feedAddress = address(uint160(uint256(logs[logs.length - 1].topics[1])));
+        // Check that the event was emitted with correct signature
+        // LogFeedCreated signature should match IFeedRegistry interface
+        bytes32 expectedEventSignature = keccak256("LogFeedCreated(address,uint8,uint256,uint256,string)");
+        assertEq(entries[0].topics[0], expectedEventSignature);
         
-        // Verify the feed is registered
-        assertTrue(registry.isFeed(feedAddress), "Feed should be registered");
+        address feedAddress = address(uint160(uint256(entries[0].topics[1])));
+        IFeed feed = IFeed(feedAddress);
+        assertEq(uint8(feed.getFeedType()), uint8(IFeed.FeedType.PUBLIC));
+        assertEq(feed.getFrequency(), 3600);
+        assertEq(feed.getMinSignaturesThreshold(), 1);
+        assertEq(feed.getOwner(), feedOwner);
     }
 
-    function test_createFeed_PersonalFeed() public {        
+    function test_createFeed_PersonalFeed() public {
         vm.recordLogs();
         
         IFeedRegistry.CreateFeedParams memory params = IFeedRegistry.CreateFeedParams({
@@ -73,25 +76,31 @@ contract FeedRegistryTest is Test {
             minSignaturesThreshold: 1,
             ipfsCID: "test",
             defaultConsumers: new address[](1),
-            subscriptionDueTime: block.timestamp + 30 days
+            subscriptionDueTime: block.timestamp + 30 days,
+            consumerPricePerSecondScaled: 0
         });
         params.defaultConsumers[0] = defaultConsumer;
-        
+
+        vm.prank(feedOwner);
         registry.createFeed(params);
         
         // Get the feed address from the last emitted event
-        Vm.Log[] memory logs = vm.getRecordedLogs();
-        assertTrue(logs.length > 0, "No events emitted");
+        Vm.Log[] memory entries = vm.getRecordedLogs();
         
-        // Check that the last event is LogFeedCreated
-        bytes32 expectedTopic = keccak256("LogFeedCreated(address,uint8,uint256,uint256,uint256,string)");
-        assertEq(logs[logs.length - 1].topics[0], expectedTopic, "Wrong event emitted");
+        // The LogFeedCreated event should be emitted
+        // event LogFeedCreated(address indexed feed, IFeed.FeedType feedType, uint256 frequency, uint256 minSignaturesThreshold, string ipfsCID)
+        assertEq(entries.length, 1); // Only LogFeedCreated event (MockSubscriptionRegistry doesn't emit events)
         
-        // Decode the feed address from the event
-        address feedAddress = address(uint160(uint256(logs[logs.length - 1].topics[1])));
+        // Check that the event was emitted with correct signature
+        bytes32 expectedEventSignature = keccak256("LogFeedCreated(address,uint8,uint256,uint256,string)");
+        assertEq(entries[0].topics[0], expectedEventSignature);
         
-        // Verify the feed is registered
-        assertTrue(registry.isFeed(feedAddress), "Feed should be registered");
+        address feedAddress = address(uint160(uint256(entries[0].topics[1])));
+        IFeed feed = IFeed(feedAddress);
+        assertEq(uint8(feed.getFeedType()), uint8(IFeed.FeedType.PERSONAL));
+        assertEq(feed.getFrequency(), 3600);
+        assertEq(feed.getMinSignaturesThreshold(), 1);
+        assertEq(feed.getOwner(), feedOwner);
     }
 
     function test_createFeed_InvalidConfig_ZeroThreshold() public {
@@ -101,7 +110,8 @@ contract FeedRegistryTest is Test {
             minSignaturesThreshold: 0, // Invalid
             ipfsCID: "test",
             defaultConsumers: new address[](1),
-            subscriptionDueTime: block.timestamp + 30 days
+            subscriptionDueTime: block.timestamp + 30 days,
+            consumerPricePerSecondScaled: 0
         });
         params.defaultConsumers[0] = defaultConsumer;
         
@@ -116,7 +126,8 @@ contract FeedRegistryTest is Test {
             minSignaturesThreshold: 1,
             ipfsCID: "test",
             defaultConsumers: new address[](1),
-            subscriptionDueTime: block.timestamp + 30 days
+            subscriptionDueTime: block.timestamp + 30 days,
+            consumerPricePerSecondScaled: 0
         });
         params.defaultConsumers[0] = defaultConsumer;
         
@@ -131,7 +142,8 @@ contract FeedRegistryTest is Test {
             minSignaturesThreshold: 1,
             ipfsCID: "", // Invalid
             defaultConsumers: new address[](1),
-            subscriptionDueTime: block.timestamp + 30 days
+            subscriptionDueTime: block.timestamp + 30 days,
+            consumerPricePerSecondScaled: 0
         });
         params.defaultConsumers[0] = defaultConsumer;
         
@@ -146,7 +158,8 @@ contract FeedRegistryTest is Test {
             minSignaturesThreshold: 1,
             ipfsCID: "test",
             defaultConsumers: new address[](1),
-            subscriptionDueTime: block.timestamp - 1 // Invalid - past time
+            subscriptionDueTime: block.timestamp - 1, // Invalid - past time
+            consumerPricePerSecondScaled: 0
         });
         params.defaultConsumers[0] = defaultConsumer;
         
@@ -154,10 +167,7 @@ contract FeedRegistryTest is Test {
         registry.createFeed(params);
     }
 
-    function test_isFeed_UnregisteredFeed() public {
-        address randomFeed = address(0x123);
-        assertFalse(registry.isFeed(randomFeed), "Random address should not be a feed");
-    }
+
 
     function test_supportsInterface() public {
         assertTrue(registry.supportsInterface(type(IFeedRegistry).interfaceId), "Should support IFeedRegistry interface");

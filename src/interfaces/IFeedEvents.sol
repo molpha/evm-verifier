@@ -13,20 +13,15 @@ interface IFeedEvents {
     /// @param ipfsCID new ipfsCID
     event LogCIDChanged(string ipfsCID);
 
-    /// @notice emitted when feed frequency is changed
-    /// @param frequency new frequency
-    /// @param pricePerSecondScaled new price per second scaled
-    event LogFrequencyChanged(uint256 frequency, uint256 pricePerSecondScaled);
-
-    /// @notice emitted when feed minSignaturesThreshold is changed
-    /// @param minSignaturesThreshold new minSignaturesThreshold
-    /// @param pricePerSecondScaled new price per second scaled
-    event LogMinSignaturesThresholdChanged(uint256 minSignaturesThreshold, uint256 pricePerSecondScaled);
-
     /// @notice emitted when feed config is changed
     /// @param frequency new frequency
     /// @param minSignaturesThreshold new minSignaturesThreshold
-    /// @param pricePerSecondScaled new price per second scaled
     /// @param ipfsCID new ipfsCID
-    event LogFeedConfigChanged(uint256 frequency, uint256 minSignaturesThreshold, uint256 pricePerSecondScaled, string ipfsCID);
+    event LogFeedConfigChanged(uint256 frequency, uint256 minSignaturesThreshold, string ipfsCID);
+
+    /// @notice emitted when consumers are set
+    /// @param consumersToAdd consumers to add
+    /// @param dueTime due time
+    /// @param consumersToRemove consumers to remove
+    event LogConsumersSet(address[] consumersToAdd, uint256 dueTime, address[] consumersToRemove);
 }

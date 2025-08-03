@@ -41,7 +41,17 @@ contract NodeRegistry is INodeRegistry, ERC165, Initializable {
     /// @notice pointer to signers array stored with SSTORE2, signers[0] is empty cause we use 1-based indexing
     address public pointer;
 
-    function initialize() external override initializer {
+    IAccessControlManager public _accessControlManager;
+
+    modifier onlyProtocolAdmin {
+        _accessControlManager.verifyProtocolAdmin(msg.sender);
+        _;
+    }
+
+    function initialize(address accessControlManager) external override initializer {
+        _accessControlManager = IAccessControlManager(accessControlManager);
+        _accessControlManager.verifyProtocolAdmin(msg.sender);
+
         // Initialize with empty array that has one empty slot at index 0
         LibSecp256k1.Point[] memory emptyArray = new LibSecp256k1.Point[](1);
         // emptyArray[0] remains zero point (default)
@@ -77,7 +87,7 @@ contract NodeRegistry is INodeRegistry, ERC165, Initializable {
     }
 
     /// @inheritdoc INodeRegistry
-    function addNode(LibSecp256k1.Point memory pubkey) external {
+    function addNode(LibSecp256k1.Point memory pubkey) external onlyProtocolAdmin {
         if (pubkey.isZeroPoint()) revert InvalidPublicKey();
         if (pubkey.toAddress() == address(0)) revert ZeroAddress();
 
@@ -101,7 +111,7 @@ contract NodeRegistry is INodeRegistry, ERC165, Initializable {
         emit LogNodeAdded(node, nodesAmount, newPointer);
     }
 
-    function removeNode(address node) external {
+    function removeNode(address node) external onlyProtocolAdmin {
         uint256 index = nodeIndexes[node];
         if (index == 0) revert NotNode(node);
 

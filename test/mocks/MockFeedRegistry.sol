@@ -30,9 +30,17 @@ contract MockFeedRegistry is IFeedRegistry {
             params.feedType,
             params.frequency,
             params.minSignaturesThreshold,
-            0, // pricePerSecondScaled - mock value
             params.ipfsCID
         );
+    }
+    
+    function updateFeed(
+        address feed, 
+        uint256 frequency, 
+        uint256 signaturesRequired, 
+        string calldata ipfsCID
+    ) external {
+        // Mock implementation
     }
 
     function setAccessControlManager(address accessControlManager) external {

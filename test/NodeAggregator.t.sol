@@ -3,6 +3,7 @@ pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
 import {NodeRegistry} from "../src/NodeRegistry.sol";
+import {AccessControlManager} from "../src/AccessControlManager.sol";
 import {INodeRegistry, INodeRegistryErrors, INodeRegistryStructs} from "../src/interfaces/INodeRegistry.sol";
 import {LibSecp256k1} from "../src/libs/LibSecp256k1.sol";
 
@@ -10,10 +11,20 @@ contract NodeAggregatorTest is Test {
     using LibSecp256k1 for LibSecp256k1.Point;
 
     NodeRegistry registry;
+    AccessControlManager acl;
 
     function setUp() public {
         registry = new NodeRegistry();
-        registry.initialize();
+        acl = new AccessControlManager();
+        
+        // Initialize AccessControlManager with the test contract as admin
+        acl.initialize(address(this));
+        
+        // Grant NODE_REGISTRY role to this test contract so it can call addNode/removeNode
+        acl.grantRole(acl.NODE_REGISTRY(), address(this));
+        
+        // Initialize NodeRegistry
+        registry.initialize(address(acl));
     }
 
     function test_registerNode_InvalidKey_Revert() public {

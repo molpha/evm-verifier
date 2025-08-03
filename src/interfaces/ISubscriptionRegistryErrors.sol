@@ -41,6 +41,12 @@ interface ISubscriptionRegistryErrors is ICommonErrors {
     /// @notice thrown when trying to transfer subscription with invalid subscription type
     error CannotTransferSubscription();
 
+    /// @notice thrown when consumer address is already subscribed to feed
+    /// @param consumer consumer address
+    /// @param feed feed address
+    /// @param dueTime due time
+    error ConsumerAlreadySubscribed(address consumer, address feed, uint256 dueTime);
+
     /// @notice thrown when underlying token is invalid
     error InvalidUnderlying();
 }

@@ -13,7 +13,25 @@ contract MockSubscriptionRegistry is ISubscriptionRegistry {
         // Mock implementation - no actual initialization needed
     }
 
-    function subscribe(address feed, address owner, uint256 dueTime, address[] calldata consumers) external {
+    function subscribe(address feed, uint256 dueTime, address[] calldata consumers) external {
+        for (uint256 i = 0; i < consumers.length; i++) {
+            subscriptions[consumers[i]][feed] = true;
+            subscriptionDueTimes[consumers[i]][feed] = dueTime;
+            subscriptionData[consumers[i]][feed] = Subscription({
+                dueTime: uint64(dueTime),
+                owner: msg.sender
+            });
+        }
+    }
+
+    function initFeedSubscription(address feed, address owner, uint256 dueTime, address[] calldata consumers) external {
+        subscriptions[owner][feed] = true;
+        subscriptionDueTimes[owner][feed] = dueTime;
+        subscriptionData[owner][feed] = Subscription({
+            dueTime: uint64(dueTime),
+            owner: owner
+        });
+
         for (uint256 i = 0; i < consumers.length; i++) {
             subscriptions[consumers[i]][feed] = true;
             subscriptionDueTimes[consumers[i]][feed] = dueTime;
@@ -46,6 +64,13 @@ contract MockSubscriptionRegistry is ISubscriptionRegistry {
         delete subscriptionData[consumer][feed];
     }
 
+    function recalculateSubscription(address feed) external {
+        // Mock implementation
+    }
+
+    function setConsumerPricePerSecondScaled(address feed, uint256 consumerPricePerSecondScaled) external {
+        // Mock implementation
+    }
     function setFeedRegistry(address feedRegistry) external {
         // Mock implementation
     }

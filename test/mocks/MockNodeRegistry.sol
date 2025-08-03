@@ -21,7 +21,15 @@ contract MockNodeRegistry is INodeRegistry {
         verificationResult = result;
     }
 
-    function initialize() external override {}
+    function initialize(address accessControlManager) external override {}
+
+    function publish(
+        INodeRegistryStructs.DataUpdate calldata dataUpdate,
+        INodeRegistryStructs.SchnorrSignature calldata schnorrData
+    ) external {
+        // Mock implementation - revert if verification should fail
+        // verifySignature(dataUpdate.message, schnorrData, dataUpdate.minSignaturesThreshold);
+    }
 
     function verifySignature(
         bytes32 message,

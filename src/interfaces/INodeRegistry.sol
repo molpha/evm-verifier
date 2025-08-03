@@ -10,7 +10,13 @@ import {INodeRegistryErrors} from "./INodeRegistryErrors.sol";
 /// @notice Interface for the NodeAggregator
 interface INodeRegistry is INodeRegistryStructs, INodeRegistryEvents, INodeRegistryErrors {
     /// @notice Initialize the node registry
-    function initialize() external;
+    /// @param accessControlManager The access control manager address
+    function initialize(address accessControlManager) external;
+
+    function publish(
+        DataUpdate calldata dataUpdate,
+        SchnorrSignature calldata schnorrData
+    ) external;
 
     /// @notice Add a new node in the aggregator group
     /// @param pubkey Public key of the node
