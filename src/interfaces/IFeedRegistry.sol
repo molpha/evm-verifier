@@ -82,9 +82,4 @@ interface IFeedRegistry
     /// @notice Set the subscription registry
     /// @param subscriptionRegistry The subscription registry address
     function setSubscriptionRegistry(address subscriptionRegistry) external;
-
-    /// @notice Check if a feed exists
-    /// @param feed The feed address
-    /// @return True if the feed exists, false otherwise
-    // function isFeed(address feed) external view returns (bool);
 }

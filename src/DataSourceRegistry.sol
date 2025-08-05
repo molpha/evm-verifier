@@ -14,6 +14,12 @@ contract DataSourceRegistry is IDataSourceRegistry, Initializable, ERC165 {
     using ERC165Checker for address;
     using MessageHashUtils for bytes32;
 
+    // bytes32 private constant DOMAIN_TYPEHASH = keccak256("EIP712Domain(string name,string version)");
+    // keccak256(abi.encode(DOMAIN_TYPEHASH, keccak256(bytes("Molpha")), keccak256(bytes("1"))));
+    bytes32 private constant DOMAIN_SEPARATOR = 0xd6dc77456cd6cc2f8012c898026dfdb4d69a83d4de13d55b11930a8c1afce764;
+    // keccak256("DataSource(uint8 dataSourceType,string source,address owner,string name)");
+    bytes32 private constant DATA_SOURCE_TYPEHASH = 0x8f7e89416d94336ff837c168b395ae5273e2ec5457f72fff21b3172e3cde3309;
+
     IAccessControlManager public accessControlManager;
 
     mapping(bytes32 => DataSource) private _dataSources;
@@ -40,7 +46,7 @@ contract DataSourceRegistry is IDataSourceRegistry, Initializable, ERC165 {
             revert DataSourceAlreadyExists(dataSourceId);
         }
 
-        _verifyDataSourceSignature(dataSourceId, dataSource.owner, signature);
+        _verifySignature(dataSource, signature);
 
         _dataSources[dataSourceId] = dataSource;
         emit DataSourceCreated(dataSourceId, dataSource.owner, dataSource.dataSourceType, dataSource.source, dataSource.name);
@@ -63,16 +69,33 @@ contract DataSourceRegistry is IDataSourceRegistry, Initializable, ERC165 {
         return interfaceId == type(IDataSourceRegistry).interfaceId || super.supportsInterface(interfaceId);
     }
 
-    function _generateDataSourceId(DataSource calldata dataSource) internal pure returns (bytes32) {
-        return keccak256(abi.encodePacked(dataSource.dataSourceType, dataSource.source, dataSource.owner, dataSource.name));
+    function _generateDataSourceId(DataSource calldata dataSource) internal pure returns (bytes32 dataSourceId) {
+        dataSourceId = keccak256(
+            abi.encodePacked(
+                dataSource.dataSourceType, 
+                dataSource.source, 
+                dataSource.owner, 
+                dataSource.name    
+            ));
     }
 
-    function _verifyDataSourceSignature(bytes32 dataSourceId, address owner, bytes calldata signature) internal pure {
-        require(signature.length > 0, InvalidSignature());
+    function _verifySignature(DataSource calldata dataSource, bytes calldata signature) internal pure {
+        bytes32 structHash = keccak256(
+            abi.encode(
+                DATA_SOURCE_TYPEHASH,
+                dataSource.dataSourceType,
+                keccak256(bytes(dataSource.source)),
+                dataSource.owner,
+                keccak256(bytes(dataSource.name))
+            )
+        );
 
-        bytes32 ethSignedMessageHash = dataSourceId.toEthSignedMessageHash();
-        address signer = ethSignedMessageHash.recover(signature);
-        if (signer != owner) {
+        bytes32 digest = MessageHashUtils.toTypedDataHash(
+            DOMAIN_SEPARATOR,
+            structHash
+        );
+        address signer = digest.recover(signature);
+        if (signer != dataSource.owner) {
             revert InvalidSignature();
         }
     }
