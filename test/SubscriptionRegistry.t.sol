@@ -238,7 +238,7 @@ contract SubscriptionRegistryTest is Test {
         assertEq(subscription.owner, address(this));
     }
 
-    function test_supportsInterface() public {
+    function test_supportsInterface() public view {
         assertTrue(reg.supportsInterface(type(ISubscriptionRegistry).interfaceId));
     }
 }

@@ -32,9 +32,9 @@ contract MockNodeRegistry is INodeRegistry {
     }
 
     function verifySignature(
-        bytes32 message,
-        INodeRegistryStructs.SchnorrSignature calldata schnorrData,
-        uint256 minSignaturesThreshold
+        bytes32 /*message*/,
+        INodeRegistryStructs.SchnorrSignature calldata /*schnorrData*/,
+        uint256 /*minSignaturesThreshold*/
     ) external view {
         // Mock implementation - revert if verification should fail
         if (!verificationResult) {
@@ -68,7 +68,7 @@ contract MockNodeRegistry is INodeRegistry {
         return bytes32(0);
     }
 
-    function getNodeIndex(address node) external view override returns (uint256 index) {
+    function getNodeIndex(address /*node*/) external pure override returns (uint256 index) {
         return 0;
     }
 

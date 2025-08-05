@@ -13,6 +13,7 @@ import {NodeRegistry} from "../src/NodeRegistry.sol";
 import {Treasury} from "../src/Treasury.sol";
 import {MockedUSDC} from "../src/mocks/MockedUSDC.sol";
 import {PricingHelper} from "../src/PricingHelper.sol";
+import {DataSourceRegistry} from "../src/DataSourceRegistry.sol";
 
 import {IAccessControlManager} from "../src/interfaces/IAccessControlManager.sol";
 import {IFeedRegistry} from "../src/interfaces/IFeedRegistry.sol";
@@ -51,12 +52,14 @@ contract Deploy is Script {
         address nodeRegistryImpl = address(new NodeRegistry());
         address subscriptionRegistryImpl = address(new SubscriptionRegistry());
         address pricingHelperImpl = address(new PricingHelper());
+        address dataSourceRegistryImpl = address(new DataSourceRegistry());
 
         address treasury = _deployProxy(treasuryImpl, proxyAdmin, type(Treasury).name);
         address feedRegistry = _deployProxy(feedRegistryImpl, proxyAdmin, type(FeedRegistry).name);
         address subscriptionsRegistry = _deployProxy(subscriptionRegistryImpl, proxyAdmin, type(SubscriptionRegistry).name);
         address nodesRegistry = _deployProxy(nodeRegistryImpl, proxyAdmin, type(NodeRegistry).name);
         address pricingHelper = _deployProxy(pricingHelperImpl, proxyAdmin, type(PricingHelper).name);
+        address dataSourceRegistry = _deployProxy(dataSourceRegistryImpl, proxyAdmin, type(DataSourceRegistry).name);
 
         // initialize AccessControlManager first
         IAccessControlManager(accessControlManager).initialize(protocolAdmin);
@@ -65,7 +68,7 @@ contract Deploy is Script {
         IAccessControlManager acm = IAccessControlManager(accessControlManager);
         acm.grantRole(acm.NODE_REGISTRY(), nodesRegistry);
         acm.grantRole(acm.PRICE_MANAGER(), protocolAdmin);
-        IFeedRegistry(feedRegistry).initialize(accessControlManager, subscriptionsRegistry);
+        IFeedRegistry(feedRegistry).initialize(accessControlManager, subscriptionsRegistry, dataSourceRegistry);
         ISubscriptionRegistry(subscriptionsRegistry).initialize(accessControlManager, treasury, pricingHelper);
         ITreasury(treasury).initialize(accessControlManager);
         INodeRegistry(nodesRegistry).initialize(accessControlManager);

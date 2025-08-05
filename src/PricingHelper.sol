@@ -2,20 +2,23 @@
 pragma solidity ^0.8.29;
 
 import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
-
+import {ERC165} from "openzeppelin-contracts/contracts/utils/introspection/ERC165.sol";
+import {ERC165Checker} from "./libs/ERC165Checker.sol";
 import {IAccessControlManager} from "./interfaces/IAccessControlManager.sol";
 import {IPricingHelper} from "./interfaces/IPricingHelper.sol";
 import {IFeed} from "./interfaces/IFeed.sol";
-import {IERC165} from "openzeppelin-contracts/contracts/utils/introspection/IERC165.sol";
+
 
 /**
  * @title PricingHelper
  * @notice Contract for calculating subscription prices with configurable parameters
  */
-contract PricingHelper is IPricingHelper, Initializable {
+contract PricingHelper is IPricingHelper, Initializable, ERC165 {
+    using ERC165Checker for address;
+
     uint64 public constant MAX_BPS = 10000;
 
-    uint64 internal _basePricePerSecondScaled = 5787037; // 0.5 * 1e6 * SCALAR / 1 days;
+    uint64 internal _basePricePerSecondScaled = 5787037; // 0.5 * 1ed6 * SCALAR / 1 days;
     uint64 internal _frequencyCoefficient = 3000;
     uint64 internal _signersCoefficient = 4000;
     uint64 internal _rewardPercentage = 5000; // 50% in basis points (out of 10000)
@@ -234,7 +237,7 @@ contract PricingHelper is IPricingHelper, Initializable {
         return SCALAR + x + (x2 / 2) + (x3 / 6);
     }
 
-    function supportsInterface(bytes4 interfaceId) external view returns (bool) {
-        return interfaceId == type(IPricingHelper).interfaceId || interfaceId == type(IERC165).interfaceId;
+    function supportsInterface(bytes4 interfaceId) public view override returns (bool) {
+        return interfaceId == type(IPricingHelper).interfaceId || super.supportsInterface(interfaceId);
     }
 }

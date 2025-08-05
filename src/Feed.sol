@@ -19,6 +19,7 @@ contract Feed is IFeed, ERC165 {
     address internal immutable _owner;
     FeedType internal immutable _feedType;
     bool internal immutable _isFree;
+    bytes32 internal immutable _dataSourceId;
 
     uint256 internal _frequency;
     uint256 internal _signaturesRequired;
@@ -54,42 +55,17 @@ contract Feed is IFeed, ERC165 {
         _;
     }
 
-    constructor(
-        address owner,
-        address accessControlManager,
-        IFeed.FeedType feedType,
-        uint256 frequency,
-        uint256 signaturesRequired,
-        string memory ipfsCID,
-        uint256 consumerPricePerSecondScaled
-    ) {
-        require(owner != address(0), ZeroAddress());
-        accessControlManager.shouldSupport(
-            type(IAccessControlManager).interfaceId
-        );
-        // only public feed can have consumer price
-        require(consumerPricePerSecondScaled == 0 || feedType == FeedType.PUBLIC, NotPersonalFeed());
+    constructor(CreateFeedParams memory params) {
+        _validateFeedConfig(params);
 
-        require(
-            frequency >= MIN_FREQUENCY && frequency <= MAX_FREQUENCY,
-            InvalidFrequency(frequency)
-        );
-        require(
-            signaturesRequired > 0,
-            InvalidMinSignaturesThreshold(signaturesRequired)
-        );
-        require(
-            keccak256(bytes(ipfsCID)) != keccak256(bytes("")),
-            InvalidCID(ipfsCID)
-        );
-
-        _owner = owner;
-        _accessControlManager = IAccessControlManager(accessControlManager);
-        _feedType = feedType;
-        _frequency = frequency;
-        _signaturesRequired = signaturesRequired;
-        _ipfsCID = ipfsCID;
-        _isFree = consumerPricePerSecondScaled == 0;
+        _accessControlManager = IAccessControlManager(params.accessControlManager);
+        _owner = params.owner;
+        _feedType = params.feedType;
+        _frequency = params.frequency;
+        _signaturesRequired = params.signaturesRequired;
+        _ipfsCID = params.ipfsCID;
+        _isFree = params.consumerPricePerSecondScaled == 0;
+        _dataSourceId = params.dataSourceId;
     }
 
     /// @inheritdoc IFeed
@@ -163,9 +139,13 @@ contract Feed is IFeed, ERC165 {
             InvalidCID(ipfsCID)
         );
 
-        _frequency = frequency;
-        _signaturesRequired = signaturesRequired;
-        _ipfsCID = ipfsCID;
+        if (frequency != _frequency) _frequency = frequency;
+        if (signaturesRequired != _signaturesRequired) {
+            _signaturesRequired = signaturesRequired;
+        }
+        if (keccak256(bytes(ipfsCID)) != keccak256(bytes(_ipfsCID))) {
+            _ipfsCID = ipfsCID;
+        }
 
         emit LogFeedConfigChanged(
             frequency,
@@ -252,5 +232,28 @@ contract Feed is IFeed, ERC165 {
     function _getLastUpdated() internal view returns (uint256 lastUpdated) {
         uint256 length = _answers.length;
         lastUpdated = length > 0 ? _answers[length - 1].timestamp : 0;
+    }
+
+    function _validateFeedConfig(CreateFeedParams memory params) internal view {
+        require(params.owner != address(0), ZeroAddress());
+        params.accessControlManager.shouldSupport(
+            type(IAccessControlManager).interfaceId
+        );
+        // only public feed can have consumer price
+        require(params.consumerPricePerSecondScaled == 0 || params.feedType == FeedType.PUBLIC, NotPersonalFeed());
+
+        require(
+            params.frequency >= MIN_FREQUENCY && params.frequency <= MAX_FREQUENCY,
+            InvalidFrequency(params.frequency)
+        );
+        require(
+            params.signaturesRequired > 0,
+            InvalidMinSignaturesThreshold(params.signaturesRequired)
+        );
+        require(
+            keccak256(bytes(params.ipfsCID)) != keccak256(bytes("")),
+            InvalidCID(params.ipfsCID)
+        );
+        require(params.dataSourceId != bytes32(0), InvalidDataSourceId(params.dataSourceId));
     }
 }

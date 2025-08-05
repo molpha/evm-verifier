@@ -50,4 +50,8 @@ interface IFeedErrors is ICommonErrors {
     /// @notice reverts when roundId is invalid
     /// @param roundId roundId
     error InvalidRoundId(uint256 roundId);
+
+    /// @notice reverts when data source ID is invalid
+    /// @param dataSourceId data source ID
+    error InvalidDataSourceId(bytes32 dataSourceId);
 }

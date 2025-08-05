@@ -2,6 +2,7 @@
 pragma solidity ^0.8.29;
 
 import {IFeed} from "./IFeed.sol";
+import {IDataSourceRegistry} from "./IDataSourceRegistry.sol";
 
 /// @title IFeedRegistry - Feed registration and lookup
 /// @notice Registry of active feeds on the Molpha protocol
@@ -16,12 +17,20 @@ interface IFeedRegistry
     /// @param subscriptionDueTime The subscription due time
     struct CreateFeedParams {
         IFeed.FeedType feedType;
-        uint256 frequency;
-        uint256 minSignaturesThreshold;
-        string ipfsCID;
+        uint64 frequency;
+        uint64 minSignaturesThreshold;
+        uint64 subscriptionDueTime;
+        uint128 consumerPricePerSecondScaled;
         address[] defaultConsumers;
-        uint256 subscriptionDueTime;
-        uint256 consumerPricePerSecondScaled;
+        string ipfsCID;
+    }
+
+    /// @notice Parameters for creating a data source
+    /// @param dataSource The data source to create
+    /// @param signature The signature of the data source owner
+    struct CreateDataSourceParams {
+        IDataSourceRegistry.DataSource dataSource;
+        bytes signature;
     }
 
     /// @notice emitted when new feed is added
@@ -41,14 +50,23 @@ interface IFeedRegistry
     /// @notice thrown when feed config is invalid
     error InvalidFeedConfig();
 
+    /// @notice thrown when data source is private and not owned by the caller
+    error PrivateDataSource();
+
     /// @notice Initialize the feed registry
     /// @param accessControlManager The access control manager address
     /// @param subscriptionRegistry The subscription registry address
-    function initialize(address accessControlManager, address subscriptionRegistry) external;
+    /// @param dataSourceRegistry The data source registry address
+    function initialize(address accessControlManager, address subscriptionRegistry, address dataSourceRegistry) external;
 
-    /// @notice Create a new feed
+    /// @notice Create a new feed with a new data source
     /// @param params The parameters for creating a feed
-    function createFeed(CreateFeedParams calldata params) external;
+    function createFeed(CreateFeedParams calldata params, CreateDataSourceParams calldata dataSourceParams) external;
+
+    /// @notice Create a new feed with an existing data source
+    /// @param params The parameters for creating a feed
+    /// @param dataSourceId The ID of the data source
+    function createFeed(CreateFeedParams calldata params, bytes32 dataSourceId) external;
 
     /// @notice Update the feed configuration
     /// @param feed The feed address

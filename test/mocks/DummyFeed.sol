@@ -26,7 +26,7 @@ contract DummyFeed is IFeed {
         _pricePerSecondScaled = 1000;
     }
 
-    function initialize(bytes32 metadataHash, uint256 minSignaturesThresholdParam) external {
+    function initialize(bytes32 /*metadataHash*/, uint256 minSignaturesThresholdParam) external {
         _minSignaturesThreshold = minSignaturesThresholdParam;
     }
 
@@ -97,7 +97,7 @@ contract DummyFeed is IFeed {
         return answers[answers.length - 1].timestamp;
     }
 
-    function getSubscriptionRegistry() external view returns (ISubscriptionRegistry) {
+    function getSubscriptionRegistry() external pure returns (ISubscriptionRegistry) {
         return ISubscriptionRegistry(address(0));
     }
 
@@ -107,7 +107,7 @@ contract DummyFeed is IFeed {
     }
 
     // Helper methods for testing
-    function getMetadataHash() external view returns (bytes32) {
+    function getMetadataHash() external pure returns (bytes32) {
         return bytes32(0);
     }
 
@@ -131,7 +131,7 @@ contract DummyFeed is IFeed {
         _pricePerSecondScaled = price;
     }
 
-    function supportsInterface(bytes4 interfaceId) external view returns (bool) {
+    function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
         return interfaceId == type(IFeed).interfaceId;
     }
 }

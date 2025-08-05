@@ -3,16 +3,17 @@ pragma solidity ^0.8.29;
 
 import {IFeedRegistry} from "../../src/interfaces/IFeedRegistry.sol";
 import {IFeed} from "../../src/interfaces/IFeed.sol";
+import {IDataSourceRegistry} from "../../src/interfaces/IDataSourceRegistry.sol";
 
 contract MockFeedRegistry is IFeedRegistry {
     mapping(address => bool) public feeds;
     address[] public feedList;
 
-    function initialize(address accessControlManager, address subscriptionRegistry) external {
+    function initialize(address accessControlManager, address subscriptionRegistry, address dataSourceRegistry) external {
         // Mock implementation - no actual initialization needed
     }
 
-    function createFeed(CreateFeedParams calldata params) external {
+    function createFeed(CreateFeedParams calldata params, CreateDataSourceParams calldata /*dataSourceParams*/) external {
         // Mock implementation - create a dummy feed address
         address feed = address(uint160(uint256(keccak256(abi.encodePacked(
             params.feedType,
@@ -33,7 +34,29 @@ contract MockFeedRegistry is IFeedRegistry {
             params.ipfsCID
         );
     }
-    
+
+    function createFeed(CreateFeedParams calldata params, bytes32 dataSourceId) external {
+        // Mock implementation - create a dummy feed address
+        address feed = address(uint160(uint256(keccak256(abi.encodePacked(
+            params.feedType,
+            params.frequency,
+            params.minSignaturesThreshold,
+            params.ipfsCID,
+            dataSourceId
+        )))));
+        
+        feeds[feed] = true;
+        feedList.push(feed);
+        
+        emit LogFeedCreated(
+            feed,
+            params.feedType,
+            params.frequency,
+            params.minSignaturesThreshold,
+            params.ipfsCID
+        );
+    }
+
     function updateFeed(
         address feed, 
         uint256 frequency, 

@@ -13,9 +13,15 @@ interface IFeed is IFeedStructs, IFeedEvents, IFeedErrors {
     /// @notice Feed update configuration
     /// @param frequency The frequency of the feed
     /// @param signaturesRequired The minimum number of signatures required to verify an answer
-    struct FeedPublishConfig {
-        uint256 frequency;
-        uint256 signaturesRequired;
+    struct CreateFeedParams {
+        FeedType feedType;
+        address accessControlManager;
+        address owner;
+        uint64 frequency;
+        uint64 signaturesRequired;
+        uint128 consumerPricePerSecondScaled;
+        string ipfsCID;
+        bytes32 dataSourceId;
     }
 
     /// @notice Feed type

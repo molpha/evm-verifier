@@ -5,7 +5,7 @@ import {IPricingHelper} from "../../src/interfaces/IPricingHelper.sol";
 import {IERC165} from "openzeppelin-contracts/contracts/utils/introspection/IERC165.sol";
 
 contract MockPricingHelper is IPricingHelper {
-    function calculatePrice(address) external view returns (uint256) {
+    function calculatePrice(address) external pure returns (uint256) {
         return 1;
     }
 

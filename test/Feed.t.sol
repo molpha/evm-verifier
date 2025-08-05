@@ -12,6 +12,8 @@ import {MockAccessControlManager} from "./mocks/MockAccessControlManager.sol";
 import {MockSubscriptionRegistry} from "./mocks/MockSubscriptionRegistry.sol";
 import {MockNodeRegistry} from "./mocks/MockNodeRegistry.sol";
 import {PricingHelper} from "../src/PricingHelper.sol";
+import {DataSourceRegistry} from "../src/DataSourceRegistry.sol";
+import {IDataSourceRegistry} from "../src/interfaces/IDataSourceRegistry.sol";
 
 contract FeedTest is Test {
     IFeed publicFeed;
@@ -20,6 +22,7 @@ contract FeedTest is Test {
     MockSubscriptionRegistry subRegistry;
     MockNodeRegistry nodeRegistry;
     PricingHelper pricingHelper;
+    DataSourceRegistry dataSourceRegistry;
     
     address feedOwner = address(1);
     address consumer = address(2);
@@ -30,35 +33,74 @@ contract FeedTest is Test {
         subRegistry = new MockSubscriptionRegistry();
         nodeRegistry = new MockNodeRegistry();
         pricingHelper = new PricingHelper();
+        dataSourceRegistry = new DataSourceRegistry();
+        
+        // Initialize DataSourceRegistry
+        dataSourceRegistry.initialize(address(acl));
+        
         // Set up access control
         acl.setNodeRegistry(address(nodeRegistry));
+        acl.setFeedRegistry(address(this)); // Set test contract as feed registry for DataSourceRegistry
+        
+        // Create data sources for feeds
+        IDataSourceRegistry.DataSource memory publicDataSource = IDataSourceRegistry.DataSource({
+            owner: feedOwner,
+            dataSourceType: IDataSourceRegistry.DataSourceType.Public,
+            source: "https://api.example.com/public",
+            name: "public"
+        });
+        
+        IDataSourceRegistry.DataSource memory personalDataSource = IDataSourceRegistry.DataSource({
+            owner: feedOwner,
+            dataSourceType: IDataSourceRegistry.DataSourceType.Public,
+            source: "https://api.example.com/personal",
+            name: "personal"
+        });
+        
+        // Generate dataSourceIds without creating them (since we don't have proper signatures)
+        bytes32 publicDataSourceId = keccak256(abi.encodePacked(
+            publicDataSource.owner, 
+            publicDataSource.source, 
+            publicDataSource.dataSourceType
+        ));
+        
+        bytes32 personalDataSourceId = keccak256(abi.encodePacked(
+            personalDataSource.owner, 
+            personalDataSource.source, 
+            personalDataSource.dataSourceType
+        ));
         
         // Deploy feeds - fix constructor parameter order
         // Make public feed free (consumerPricePerSecondScaled: 0)
         publicFeed = new Feed(
-            feedOwner,              // owner (first parameter)
-            address(acl),           // accessControlManager (second parameter)
-            IFeed.FeedType.PUBLIC,  // feedType
-            3600,                   // frequency
-            1,                      // minSignaturesThreshold
-            "QmTestPublic",         // ipfsCID
-            0                       // consumerPricePerSecondScaled - free feed
+            IFeed.CreateFeedParams({
+                feedType: IFeed.FeedType.PUBLIC,
+                accessControlManager: address(acl),
+                owner: feedOwner,
+                frequency: 3600,
+                signaturesRequired: 1,
+                consumerPricePerSecondScaled: 0,
+                ipfsCID: "QmTestPublic",
+                dataSourceId: publicDataSourceId
+            })
         );
         
         // Make personal feed paid (consumerPricePerSecondScaled: 0 for personal feeds)
         personalFeed = new Feed(
-            feedOwner,               // owner (first parameter)
-            address(acl),            // accessControlManager (second parameter)
-            IFeed.FeedType.PERSONAL, // feedType
-            3600,                    // frequency
-            1,                       // minSignaturesThreshold
-            "QmTestPersonal",        // ipfsCID
-            0                        // consumerPricePerSecondScaled - must be 0 for personal feeds
+            IFeed.CreateFeedParams({
+                feedType: IFeed.FeedType.PERSONAL,
+                accessControlManager: address(acl),
+                owner: feedOwner,
+                frequency: 3600,
+                signaturesRequired: 1,
+                consumerPricePerSecondScaled: 0,
+                ipfsCID: "QmTestPersonal",
+                dataSourceId: personalDataSourceId
+            })
         );
         
         // Set up subscription registry access
         acl.setSubscriptionRegistry(address(subRegistry));
-        acl.setFeedRegistry(address(this)); // Set test contract as feed registry for updateFeedConfig tests
         
         // Add consumer to the personal feed (personal feeds are not free by default)
         vm.prank(feedOwner);
@@ -66,11 +108,11 @@ contract FeedTest is Test {
     }
 
     // Public Feed Tests
-    function test_publicFeed_getFeedType() public {
+    function test_publicFeed_getFeedType() public view {
         assertEq(uint8(publicFeed.getFeedType()), uint8(IFeed.FeedType.PUBLIC));
     }
 
-    function test_publicFeed_getOwner() public {
+    function test_publicFeed_getOwner() public view {
         assertEq(publicFeed.getOwner(), feedOwner);
     }
 
@@ -90,11 +132,11 @@ contract FeedTest is Test {
     }
 
     // Personal Feed Tests
-    function test_personalFeed_getFeedType() public {
+    function test_personalFeed_getFeedType() public view {
         assertEq(uint8(personalFeed.getFeedType()), uint8(IFeed.FeedType.PERSONAL));
     }
 
-    function test_personalFeed_getOwner() public {
+    function test_personalFeed_getOwner() public view {
         assertEq(personalFeed.getOwner(), feedOwner);
     }
 
@@ -240,11 +282,11 @@ contract FeedTest is Test {
         assertEq(personalFeed.getLastUpdated(), block.timestamp);
     }
 
-    function test_publicFeed_getMinSignaturesThreshold() public {
+    function test_publicFeed_getMinSignaturesThreshold() public view {
         assertEq(publicFeed.getMinSignaturesThreshold(), 1);
     }
 
-    function test_personalFeed_getMinSignaturesThreshold() public {
+    function test_personalFeed_getMinSignaturesThreshold() public view {
         assertEq(personalFeed.getMinSignaturesThreshold(), 1);
     }
 
