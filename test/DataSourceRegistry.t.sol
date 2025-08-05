@@ -25,9 +25,8 @@ contract DataSourceRegistryTest is Test {
     uint256 privateKey;
     address signer;
 
-    // EIP712 constants
-    bytes32 private constant DOMAIN_SEPARATOR = 0xd6dc77456cd6cc2f8012c898026dfdb4d69a83d4de13d55b11930a8c1afce764;
-    bytes32 private constant DATA_SOURCE_TYPEHASH = 0x8f7e89416d94336ff837c168b395ae5273e2ec5457f72fff21b3172e3cde3309;
+    bytes32 private constant DOMAIN_SEPARATOR = 0x91af22df910089dce34bc41d0790bb4a1beee77dda588667c082bb964143739f;
+    bytes32 private constant DATA_SOURCE_TYPEHASH = 0x2b67d03a9a9eb19ee3f5a924a5a495f9523224841dd674c995394bbe27c3bf40;
 
     function setUp() public {
         admin = address(this);
