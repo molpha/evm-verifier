@@ -11,9 +11,4 @@ interface ISubscriptionRegistryStructs {
         uint64 dueTime;
         address owner;
     }
-
-    // struct ConsumerSubscription {
-    //     address subscriptionOwner;
-    //     address[] consumers;
-    // }
 }

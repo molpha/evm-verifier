@@ -62,7 +62,7 @@ contract FeedRegistryTest is Test {
 
         params.defaultConsumers[0] = defaultConsumer;
         vm.prank(feedOwner);
-        registry.createFeed(params, dataSourceParams);
+        registry.createFeedWithNewDataSource(params, dataSourceParams);
         
         // Get the feed address from the last emitted event
         Vm.Log[] memory entries = vm.getRecordedLogs();
@@ -108,7 +108,7 @@ contract FeedRegistryTest is Test {
         params.defaultConsumers[0] = defaultConsumer;
 
         vm.prank(feedOwner);
-        registry.createFeed(params, dataSourceParams);
+        registry.createFeedWithNewDataSource(params, dataSourceParams);
         
         // Get the feed address from the last emitted event
         Vm.Log[] memory entries = vm.getRecordedLogs();
@@ -151,7 +151,7 @@ contract FeedRegistryTest is Test {
         params.defaultConsumers[0] = defaultConsumer;
         
         vm.expectRevert(IFeedRegistry.InvalidFeedConfig.selector);
-        registry.createFeed(params, dataSourceParams);
+        registry.createFeedWithNewDataSource(params, dataSourceParams);
     }
 
     function test_createFeed_InvalidConfig_ZeroFrequency() public {
@@ -177,7 +177,7 @@ contract FeedRegistryTest is Test {
         params.defaultConsumers[0] = defaultConsumer;
         
         vm.expectRevert(IFeedRegistry.InvalidFeedConfig.selector);
-        registry.createFeed(params, dataSourceParams);
+        registry.createFeedWithNewDataSource(params, dataSourceParams);
     }
 
     function test_createFeed_InvalidConfig_EmptyCID() public {
@@ -203,7 +203,7 @@ contract FeedRegistryTest is Test {
         params.defaultConsumers[0] = defaultConsumer;
         
         vm.expectRevert(IFeedRegistry.InvalidFeedConfig.selector);
-        registry.createFeed(params, dataSourceParams);
+        registry.createFeedWithNewDataSource(params, dataSourceParams);
     }
 
     function test_createFeed_InvalidConfig_PastDueTime() public {
@@ -229,7 +229,7 @@ contract FeedRegistryTest is Test {
         params.defaultConsumers[0] = defaultConsumer;
         
         vm.expectRevert(IFeedRegistry.InvalidFeedConfig.selector);
-        registry.createFeed(params, dataSourceParams);
+        registry.createFeedWithNewDataSource(params, dataSourceParams);
     }
 
     function test_supportsInterface() public view {

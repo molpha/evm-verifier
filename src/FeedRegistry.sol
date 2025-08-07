@@ -45,12 +45,18 @@ contract FeedRegistry is IFeedRegistry, ERC165, Initializable {
         _dataSourceRegistry = IDataSourceRegistry(dataSourceRegistry);
     }
 
-    function createFeed(
+    function createFeedWithNewDataSource(
         CreateFeedParams calldata params,
         CreateDataSourceParams calldata dataSourceParams
     ) external override {
         _validateFeedConfig(params);
 
+        require(
+            dataSourceParams.dataSource.owner == msg.sender ||
+                dataSourceParams.dataSource.dataSourceType ==
+                IDataSourceRegistry.DataSourceType.Public,
+            PrivateDataSource()
+        );
         bytes32 dataSourceId = _dataSourceRegistry.createDataSource(dataSourceParams.dataSource, dataSourceParams.signature);
 
         _createFeed(params, dataSourceId);

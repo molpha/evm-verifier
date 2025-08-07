@@ -13,7 +13,7 @@ contract MockFeedRegistry is IFeedRegistry {
         // Mock implementation - no actual initialization needed
     }
 
-    function createFeed(CreateFeedParams calldata params, CreateDataSourceParams calldata /*dataSourceParams*/) external {
+    function createFeedWithNewDataSource(CreateFeedParams calldata params, CreateDataSourceParams calldata /*dataSourceParams*/) external {
         // Mock implementation - create a dummy feed address
         address feed = address(uint160(uint256(keccak256(abi.encodePacked(
             params.feedType,

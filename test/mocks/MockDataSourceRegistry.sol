@@ -8,6 +8,8 @@ contract MockDataSourceRegistry is IDataSourceRegistry, ERC165 {
     mapping(bytes32 => DataSource) private _dataSources;
     mapping(bytes32 => bool) private _dataSourceExists;
 
+    function initialize(address /* _accessControlManager */) external {}
+
     function createDataSource(DataSource calldata dataSource, bytes calldata /* signature */) 
         external 
         returns (bytes32) 

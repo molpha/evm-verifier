@@ -61,7 +61,7 @@ interface IFeedRegistry
 
     /// @notice Create a new feed with a new data source
     /// @param params The parameters for creating a feed
-    function createFeed(CreateFeedParams calldata params, CreateDataSourceParams calldata dataSourceParams) external;
+    function createFeedWithNewDataSource(CreateFeedParams calldata params, CreateDataSourceParams calldata dataSourceParams) external;
 
     /// @notice Create a new feed with an existing data source
     /// @param params The parameters for creating a feed

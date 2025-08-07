@@ -31,7 +31,7 @@ contract DataSourceRegistry is IDataSourceRegistry, Initializable, ERC165 {
         _;
     }
 
-    function initialize(address _accessControlManager) external initializer {
+    function initialize(address _accessControlManager) external override initializer {
         _accessControlManager.shouldSupport(type(IAccessControlManager).interfaceId);
         accessControlManager = IAccessControlManager(_accessControlManager);
     }

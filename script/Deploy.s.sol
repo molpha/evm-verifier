@@ -20,9 +20,17 @@ import {IFeedRegistry} from "../src/interfaces/IFeedRegistry.sol";
 import {ISubscriptionRegistry} from "../src/interfaces/ISubscriptionRegistry.sol";
 import {INodeRegistry} from "../src/interfaces/INodeRegistry.sol";
 import {ITreasury} from "../src/interfaces/ITreasury.sol";
+import {IPricingHelper} from "../src/interfaces/IPricingHelper.sol";
+import {IDataSourceRegistry} from "../src/interfaces/IDataSourceRegistry.sol";
 
 contract Deploy is Script {
     string private _addresses;
+
+    uint64 private constant BASE_PRICE_PER_SECOND_SCALED = 5787037; // 0.5 * 1ed6 * SCALAR / 1 days;
+    uint64 private constant FREQUENCY_COEFFICIENT = 3000;
+    uint64 private constant SIGNERS_COEFFICIENT = 4000;
+    uint64 private constant REWARD_PERCENTAGE = 5000; // 50% in basis points (out of 10000)
+
 
     constructor() {
         // Use a simpler approach - write to the current directory or a relative path
@@ -68,10 +76,21 @@ contract Deploy is Script {
         IAccessControlManager acm = IAccessControlManager(accessControlManager);
         acm.grantRole(acm.NODE_REGISTRY(), nodesRegistry);
         acm.grantRole(acm.PRICE_MANAGER(), protocolAdmin);
+        acm.grantRole(acm.FEED_REGISTRY(), feedRegistry);
+        acm.grantRole(acm.SUBSCRIPTION_REGISTRY(), subscriptionsRegistry);
+
         IFeedRegistry(feedRegistry).initialize(accessControlManager, subscriptionsRegistry, dataSourceRegistry);
         ISubscriptionRegistry(subscriptionsRegistry).initialize(accessControlManager, treasury, pricingHelper);
+        IDataSourceRegistry(dataSourceRegistry).initialize(accessControlManager);
         ITreasury(treasury).initialize(accessControlManager);
         INodeRegistry(nodesRegistry).initialize(accessControlManager);
+        IPricingHelper(pricingHelper).initialize(
+            accessControlManager, 
+            BASE_PRICE_PER_SECOND_SCALED, 
+            FREQUENCY_COEFFICIENT, 
+            SIGNERS_COEFFICIENT, 
+            REWARD_PERCENTAGE
+        );
 
         vm.stopBroadcast();
     }

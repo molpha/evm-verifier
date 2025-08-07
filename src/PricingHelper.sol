@@ -18,10 +18,10 @@ contract PricingHelper is IPricingHelper, Initializable, ERC165 {
 
     uint64 public constant MAX_BPS = 10000;
 
-    uint64 internal _basePricePerSecondScaled = 5787037; // 0.5 * 1ed6 * SCALAR / 1 days;
-    uint64 internal _frequencyCoefficient = 3000;
-    uint64 internal _signersCoefficient = 4000;
-    uint64 internal _rewardPercentage = 5000; // 50% in basis points (out of 10000)
+    uint64 internal _basePricePerSecondScaled ;
+    uint64 internal _frequencyCoefficient;
+    uint64 internal _signersCoefficient;
+    uint64 internal _rewardPercentage;
 
     IAccessControlManager internal _accessControlManager;
 
@@ -34,15 +34,20 @@ contract PricingHelper is IPricingHelper, Initializable, ERC165 {
     }
 
     function initialize(
-        IAccessControlManager accessControlManager,
+        address accessControlManager,
         uint64 basePricePerSecondScaled, 
         uint64 frequencyCoefficient, 
         uint64 signersCoefficient, 
         uint64 rewardPercentage
     ) public initializer {
         require(rewardPercentage <= MAX_BPS, "Reward percentage cannot exceed 100%");
+        require(basePricePerSecondScaled > 0, "Base price per second scaled must be greater than 0");
+        require(frequencyCoefficient > 0, "Frequency coefficient must be greater than 0");
+        require(signersCoefficient > 0, "Signers coefficient must be greater than 0");
+
+        accessControlManager.shouldSupport(type(IAccessControlManager).interfaceId);
         
-        _accessControlManager = accessControlManager;
+        _accessControlManager = IAccessControlManager(accessControlManager);
         _basePricePerSecondScaled = basePricePerSecondScaled;
         _frequencyCoefficient = frequencyCoefficient;
         _signersCoefficient = signersCoefficient;

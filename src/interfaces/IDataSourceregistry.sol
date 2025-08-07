@@ -43,6 +43,10 @@ interface IDataSourceRegistry {
     /// @param dataSourceId The invalid data source ID
     error InvalidDataSourceId(bytes32 dataSourceId);
 
+    /// @notice Initialize the DataSourceRegistry
+    /// @param _accessControlManager The address of the access control manager
+    function initialize(address _accessControlManager) external;
+
     /// @notice Create a new data source
     /// @param dataSource The data source to create
     function createDataSource(DataSource calldata dataSource, bytes calldata signature) external returns (bytes32);
