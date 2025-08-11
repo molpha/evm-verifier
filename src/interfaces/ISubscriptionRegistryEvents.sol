@@ -13,7 +13,8 @@ interface ISubscriptionRegistryEvents {
         address indexed subscriber,
         address indexed feed,
         address indexed owner,
-        uint256 dueTime
+        uint256 dueTime,
+        uint256 pricePerSecondScaled
     );
 
     /// @notice emitted when consumer unsubscribes from feed
@@ -47,5 +48,11 @@ interface ISubscriptionRegistryEvents {
     /// @param feed feed address
     /// @param subscriber subscriber address
     /// @param newDueTime new due time
-    event LogSubscriptionUpdated(address feed, address subscriber, uint256 newDueTime);
+    /// @param newPricePerSecondScaled new price per second scaled
+    event LogSubscriptionUpdated(
+        address indexed feed,
+        address indexed subscriber,
+        uint256 newDueTime,
+        uint256 newPricePerSecondScaled
+    );
 }

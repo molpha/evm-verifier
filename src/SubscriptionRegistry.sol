@@ -91,7 +91,7 @@ contract SubscriptionRegistry is
         );
 
         for (uint256 i = 0; i < consumers.length; i++) {
-            _subscribe(consumers[i], feed, msg.sender, dueTime);
+            _subscribe(consumers[i], feed, msg.sender, dueTime, pricePerSecond);
         }
 
         _treasury.deposit(msg.sender, price * consumers.length);
@@ -125,7 +125,7 @@ contract SubscriptionRegistry is
 
         _pricePerSecondScaled[feed] = pricePerSecondScaled;
 
-        _subscribe(owner, feed, owner, dueTime);
+        _subscribe(owner, feed, owner, dueTime, pricePerSecondScaled);
 
         _treasury.deposit(owner, price);
 
@@ -148,27 +148,26 @@ contract SubscriptionRegistry is
             ? dueTime - currentDueTime
             : dueTime - block.timestamp;
 
-        uint256 price;
+        uint256 pricePerSecondScaled;
         if (IFeed(feed).getOwner() == msg.sender) {
-            price = _pricingHelper.getPriceForTimespan(
-                _pricePerSecondScaled[feed],
-                timeSpan
-            );
+            pricePerSecondScaled = _pricePerSecondScaled[feed];
+            
         } else {
             require(
                 _subscriptions[consumer][feed].owner == msg.sender,
                 NotSubscriptionOwner(msg.sender)
             );
-            price = _pricingHelper.getPriceForTimespan(
-                _consumerPricePerSecondScaled[feed],
-                timeSpan
-            );
+            pricePerSecondScaled = _consumerPricePerSecondScaled[feed];
             _subscriptions[msg.sender][feed].dueTime = uint64(dueTime);
         }
+        uint256 price = _pricingHelper.getPriceForTimespan(
+                pricePerSecondScaled,
+                timeSpan
+            );
 
         _treasury.deposit(msg.sender, price);
 
-        emit LogSubscriptionUpdated(msg.sender, feed, dueTime);
+        emit LogSubscriptionUpdated(msg.sender, feed, dueTime, pricePerSecondScaled);
     }
 
     function transferSubscription(
@@ -242,7 +241,7 @@ contract SubscriptionRegistry is
 
         _subscriptions[owner][feed].dueTime = uint64(newDueTime);
 
-        emit LogSubscriptionUpdated(feed, owner, newDueTime);
+        emit LogSubscriptionUpdated(feed, owner, newDueTime, newPricePerSecondScaled);
     }
 
     /// @inheritdoc ISubscriptionRegistry
@@ -271,7 +270,8 @@ contract SubscriptionRegistry is
         address consumer,
         address feed,
         address owner,
-        uint256 dueTime
+        uint256 dueTime,
+        uint256 pricePerSecondScaled
     ) internal {
         require(consumer != address(0), ZeroAddress());
 
@@ -281,6 +281,6 @@ contract SubscriptionRegistry is
         );
 
         _subscriptions[consumer][feed] = Subscription(uint64(dueTime), owner);
-        emit LogSubscribed(consumer, feed, owner, dueTime);
+        emit LogSubscribed(consumer, feed, owner, dueTime, pricePerSecondScaled);
     }
 }

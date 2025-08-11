@@ -28,10 +28,6 @@ interface IFeedErrors is ICommonErrors {
     /// @param signaturesRequired min signatures threshold
     error InvalidMinSignaturesThreshold(uint256 signaturesRequired);
 
-    /// @notice reverts when CID is invalid
-    /// @param ipfsCID CID
-    error InvalidCID(string ipfsCID);
-
     /// @notice reverts when msg sender is not the feed owner
     /// @param sender sender address
     error NotFeedOwner(address sender);
@@ -50,6 +46,10 @@ interface IFeedErrors is ICommonErrors {
     /// @notice reverts when roundId is invalid
     /// @param roundId roundId
     error InvalidRoundId(uint256 roundId);
+
+    /// @notice reverts when feed ID is invalid
+    /// @param feedId feed ID
+    error InvalidFeedId(bytes32 feedId);
 
     /// @notice reverts when data source ID is invalid
     /// @param dataSourceId data source ID

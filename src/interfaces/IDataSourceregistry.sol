@@ -24,10 +24,6 @@ interface IDataSourceRegistry {
     /// @param name The name of the data source
     event DataSourceCreated(bytes32 indexed dataSourceId, address indexed owner, DataSourceType indexed dataSourceType, string source, string name);
 
-    /// @notice Emitted when a data source is verified
-    /// @param dataSourceId The ID of the data source
-    event DataSourceVerified(bytes32 indexed dataSourceId);
-
     /// @notice Thrown when the provided signature is invalid
     error InvalidSignature();
 

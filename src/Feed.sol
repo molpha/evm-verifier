@@ -19,11 +19,11 @@ contract Feed is IFeed, ERC165 {
     address internal immutable _owner;
     FeedType internal immutable _feedType;
     bool internal immutable _isFree;
+    bytes32 internal immutable _feedId;
     bytes32 internal immutable _dataSourceId;
 
     uint256 internal _frequency;
     uint256 internal _signaturesRequired;
-    string internal _ipfsCID;
 
     Answer[] internal _answers;
     mapping(address => uint256) internal _consumers;
@@ -63,7 +63,7 @@ contract Feed is IFeed, ERC165 {
         _feedType = params.feedType;
         _frequency = params.frequency;
         _signaturesRequired = params.signaturesRequired;
-        _ipfsCID = params.ipfsCID;
+        _feedId = params.feedId;
         _isFree = params.consumerPricePerSecondScaled == 0;
         _dataSourceId = params.dataSourceId;
     }
@@ -123,8 +123,7 @@ contract Feed is IFeed, ERC165 {
     /// @inheritdoc IFeed
     function updateFeedConfig(
         uint256 frequency,
-        uint256 signaturesRequired,
-        string calldata ipfsCID
+        uint256 signaturesRequired
     ) external override onlyFeedRegistry {
         require(
             frequency >= MIN_FREQUENCY && frequency <= MAX_FREQUENCY,
@@ -134,23 +133,15 @@ contract Feed is IFeed, ERC165 {
             signaturesRequired > 0,
             InvalidMinSignaturesThreshold(signaturesRequired)
         );
-        require(
-            keccak256(bytes(ipfsCID)) != keccak256(bytes("")),
-            InvalidCID(ipfsCID)
-        );
 
         if (frequency != _frequency) _frequency = frequency;
         if (signaturesRequired != _signaturesRequired) {
             _signaturesRequired = signaturesRequired;
         }
-        if (keccak256(bytes(ipfsCID)) != keccak256(bytes(_ipfsCID))) {
-            _ipfsCID = ipfsCID;
-        }
 
         emit LogFeedConfigChanged(
             frequency,
-            signaturesRequired,
-            ipfsCID
+            signaturesRequired
         );
     }
 
@@ -210,6 +201,14 @@ contract Feed is IFeed, ERC165 {
         owner = _owner;
     }
 
+    function getFeedId() external view override returns (bytes32 feedId) {
+        feedId = _feedId;
+    }
+
+    function getDataSourceId() external view override returns (bytes32 dataSourceId) {
+        dataSourceId = _dataSourceId;
+    }
+
     function getFeedType() external view override returns (FeedType feedType) {
         feedType = _feedType;
     }
@@ -250,10 +249,7 @@ contract Feed is IFeed, ERC165 {
             params.signaturesRequired > 0,
             InvalidMinSignaturesThreshold(params.signaturesRequired)
         );
-        require(
-            keccak256(bytes(params.ipfsCID)) != keccak256(bytes("")),
-            InvalidCID(params.ipfsCID)
-        );
+        require(params.feedId != bytes32(0), InvalidFeedId(params.feedId));
         require(params.dataSourceId != bytes32(0), InvalidDataSourceId(params.dataSourceId));
     }
 }

@@ -9,15 +9,10 @@ interface IFeedEvents {
     /// @param timestamp new answer timestamp
     event LogAnswerPublished(bytes value, uint64 indexed timestamp);
 
-    /// @notice emitted when feed CID is changed
-    /// @param ipfsCID new ipfsCID
-    event LogCIDChanged(string ipfsCID);
-
     /// @notice emitted when feed config is changed
     /// @param frequency new frequency
     /// @param minSignaturesThreshold new minSignaturesThreshold
-    /// @param ipfsCID new ipfsCID
-    event LogFeedConfigChanged(uint256 frequency, uint256 minSignaturesThreshold, string ipfsCID);
+    event LogFeedConfigChanged(uint256 frequency, uint256 minSignaturesThreshold);
 
     /// @notice emitted when consumers are set
     /// @param consumersToAdd consumers to add

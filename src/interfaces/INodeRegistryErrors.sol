@@ -37,4 +37,9 @@ interface INodeRegistryErrors is ICommonErrors {
     /// @notice Thrown when a signer index is invalid (zero or out of bounds)
     /// @param index The invalid index
     error InvalidIndex(uint256 index);
+
+    /// @notice Thrown when the feed ID is invalid
+    /// @param expectedFeedId The expected feed ID
+    /// @param actualFeedId The actual feed ID
+    error InvalidFeed(bytes32 expectedFeedId, bytes32 actualFeedId);
 }

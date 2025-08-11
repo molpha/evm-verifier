@@ -21,6 +21,7 @@ interface INodeRegistryStructs {
     /// @param timestamp The timestamp of the update
     struct DataUpdate {
         address feed;
+        bytes32 feedId;
         bytes value;
         uint64 timestamp;
     }

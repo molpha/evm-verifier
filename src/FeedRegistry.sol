@@ -83,17 +83,12 @@ contract FeedRegistry is IFeedRegistry, ERC165, Initializable {
     function updateFeed(
         address feed,
         uint256 frequency,
-        uint256 signaturesRequired,
-        string calldata ipfsCID
+        uint256 signaturesRequired
     ) external override {
         require(signaturesRequired > 0, InvalidFeedConfig());
         require(frequency > 0, InvalidFeedConfig());
-        require(
-            keccak256(bytes(ipfsCID)) != keccak256(bytes("")),
-            InvalidFeedConfig()
-        );
 
-        IFeed(feed).updateFeedConfig(frequency, signaturesRequired, ipfsCID);
+        IFeed(feed).updateFeedConfig(frequency, signaturesRequired);
         _subscriptionRegistry.recalculateSubscription(feed);
     }
 
@@ -126,10 +121,7 @@ contract FeedRegistry is IFeedRegistry, ERC165, Initializable {
     function _validateFeedConfig(CreateFeedParams calldata params) internal view {
         require(params.minSignaturesThreshold > 0, InvalidFeedConfig());
         require(params.frequency > 0, InvalidFeedConfig());
-        require(
-            keccak256(bytes(params.ipfsCID)) != keccak256(bytes("")),
-            InvalidFeedConfig()
-        );
+        require(params.feedId != bytes32(0), InvalidFeedConfig());
         require(
             params.subscriptionDueTime > block.timestamp,
             InvalidFeedConfig()
@@ -150,7 +142,7 @@ contract FeedRegistry is IFeedRegistry, ERC165, Initializable {
                     signaturesRequired: params.minSignaturesThreshold,
                     consumerPricePerSecondScaled: params
                         .consumerPricePerSecondScaled,
-                    ipfsCID: params.ipfsCID,
+                    feedId: params.feedId,
                     dataSourceId: dataSourceId
                 })
             )
@@ -165,10 +157,13 @@ contract FeedRegistry is IFeedRegistry, ERC165, Initializable {
 
         emit LogFeedCreated(
             feed,
+            dataSourceId,
+            params.feedId,
+            params.subscriptionDueTime,
             params.feedType,
             params.frequency,
             params.minSignaturesThreshold,
-            params.ipfsCID
+            params.consumerPricePerSecondScaled
         );
     }
 }

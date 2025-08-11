@@ -80,7 +80,7 @@ contract FeedTest is Test {
                 frequency: 3600,
                 signaturesRequired: 1,
                 consumerPricePerSecondScaled: 0,
-                ipfsCID: "QmTestPublic",
+                feedId: bytes32(uint256(1)),
                 dataSourceId: publicDataSourceId
             })
         );
@@ -94,7 +94,7 @@ contract FeedTest is Test {
                 frequency: 3600,
                 signaturesRequired: 1,
                 consumerPricePerSecondScaled: 0,
-                ipfsCID: "QmTestPersonal",
+                feedId: bytes32(uint256(1)),
                 dataSourceId: personalDataSourceId
             })
         );
@@ -292,7 +292,7 @@ contract FeedTest is Test {
 
     function test_personalFeed_updateFeedConfig_onlyOwner() public {
         // Test contract is set as feed registry in setUp, so it can call updateFeedConfig
-        personalFeed.updateFeedConfig(7200, 2, "newCID");
+        personalFeed.updateFeedConfig(7200, 2);
         
         // Verify changes
         assertEq(personalFeed.getMinSignaturesThreshold(), 2);
@@ -301,6 +301,6 @@ contract FeedTest is Test {
     function test_personalFeed_updateFeedConfig_notOwner() public {
         vm.prank(nonConsumer);
         vm.expectRevert();
-        personalFeed.updateFeedConfig(7200, 2, "newCID");
+        personalFeed.updateFeedConfig(7200, 2);
     }
 }

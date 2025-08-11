@@ -65,6 +65,8 @@ contract NodeRegistry is INodeRegistry, ERC165, Initializable {
         require(dataUpdate.feed != address(0), ZeroAddress());
 
         uint256 minSignaturesThreshold = IFeed(dataUpdate.feed).getMinSignaturesThreshold();
+        bytes32 feedId = IFeed(dataUpdate.feed).getFeedId();
+        require(feedId == dataUpdate.feedId, InvalidFeed(dataUpdate.feedId, feedId));
 
         bytes32 message = _constructMessage(dataUpdate);
         _verifySignature(message, schnorrData, minSignaturesThreshold);
@@ -221,7 +223,7 @@ contract NodeRegistry is INodeRegistry, ERC165, Initializable {
     ) internal pure returns (bytes32 message) {
         message = keccak256(
             abi.encodePacked(
-                dataUpdate.feed,
+                dataUpdate.feedId,
                 dataUpdate.value,
                 dataUpdate.timestamp
             )

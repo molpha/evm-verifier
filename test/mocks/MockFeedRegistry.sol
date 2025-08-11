@@ -13,25 +13,36 @@ contract MockFeedRegistry is IFeedRegistry {
         // Mock implementation - no actual initialization needed
     }
 
-    function createFeedWithNewDataSource(CreateFeedParams calldata params, CreateDataSourceParams calldata /*dataSourceParams*/) external {
+    function createFeedWithNewDataSource(CreateFeedParams calldata params, CreateDataSourceParams calldata dataSourceParams) external {
         // Mock implementation - create a dummy feed address
         address feed = address(uint160(uint256(keccak256(abi.encodePacked(
             params.feedType,
             params.frequency,
             params.minSignaturesThreshold,
-            params.ipfsCID,
+            params.feedId,
             block.timestamp
         )))));
         
         feeds[feed] = true;
         feedList.push(feed);
+
+        bytes32 dataSourceId = keccak256(
+            abi.encodePacked(
+                dataSourceParams.dataSource.dataSourceType, 
+                dataSourceParams.dataSource.source, 
+                dataSourceParams.dataSource.owner, 
+                dataSourceParams.dataSource.name    
+            ));
         
         emit LogFeedCreated(
             feed,
+            dataSourceId,   
+            params.feedId,
+            params.subscriptionDueTime,
             params.feedType,
             params.frequency,
             params.minSignaturesThreshold,
-            params.ipfsCID
+            params.consumerPricePerSecondScaled
         );
     }
 
@@ -41,7 +52,7 @@ contract MockFeedRegistry is IFeedRegistry {
             params.feedType,
             params.frequency,
             params.minSignaturesThreshold,
-            params.ipfsCID,
+            params.feedId,
             dataSourceId
         )))));
         
@@ -50,18 +61,20 @@ contract MockFeedRegistry is IFeedRegistry {
         
         emit LogFeedCreated(
             feed,
+            dataSourceId,
+            params.feedId,
+            params.subscriptionDueTime,
             params.feedType,
             params.frequency,
             params.minSignaturesThreshold,
-            params.ipfsCID
+            params.consumerPricePerSecondScaled
         );
     }
 
     function updateFeed(
         address feed, 
         uint256 frequency, 
-        uint256 signaturesRequired, 
-        string calldata ipfsCID
+        uint256 signaturesRequired
     ) external {
         // Mock implementation
     }

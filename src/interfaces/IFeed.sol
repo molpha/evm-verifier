@@ -20,7 +20,7 @@ interface IFeed is IFeedStructs, IFeedEvents, IFeedErrors {
         uint64 frequency;
         uint64 signaturesRequired;
         uint128 consumerPricePerSecondScaled;
-        string ipfsCID;
+        bytes32 feedId;
         bytes32 dataSourceId;
     }
 
@@ -57,8 +57,7 @@ interface IFeed is IFeedStructs, IFeedEvents, IFeedErrors {
     /// @dev This function is only callable by the feed manager and only for personal feeds
     /// @param frequency The frequency of the feed
     /// @param signaturesRequired The minimum number of signatures required
-    /// @param cid The IPFS CID of the feed
-    function updateFeedConfig(uint256 frequency, uint256 signaturesRequired, string calldata cid) external;
+    function updateFeedConfig(uint256 frequency, uint256 signaturesRequired) external;
 
     /// @notice Returns the minimum number of signatures required to verify an answer
     /// @return signaturesRequired The minimum number of signatures required
@@ -75,6 +74,14 @@ interface IFeed is IFeedStructs, IFeedEvents, IFeedErrors {
     /// @notice Returns the feed type
     /// @return feedType The feed type
     function getFeedType() external view returns (FeedType feedType);
+
+    /// @notice Returns the feed ID
+    /// @return feedId The feed ID
+    function getFeedId() external view returns (bytes32 feedId);
+
+    /// @notice Returns the data source ID
+    /// @return dataSourceId The data source ID
+    function getDataSourceId() external view returns (bytes32 dataSourceId);
 
     /// @notice Returns the latest feed data
     /// @return value The latest value
