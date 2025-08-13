@@ -17,7 +17,7 @@ contract MockDataSourceRegistry is IDataSourceRegistry, ERC165 {
         bytes32 dataSourceId = _generateDataSourceId(dataSource);
         
         if (_dataSourceExists[dataSourceId]) {
-            revert DataSourceAlreadyExists(dataSourceId);
+            revert("DataSource exists");
         }
 
         // Mock implementation - skip signature verification
@@ -43,7 +43,7 @@ contract MockDataSourceRegistry is IDataSourceRegistry, ERC165 {
         returns (DataSource memory) 
     {
         if (!_dataSourceExists[dataSourceId]) {
-            revert DataSourceNotFound(dataSourceId);
+            revert("DataSource not found");
         }
         return _dataSources[dataSourceId];
     }

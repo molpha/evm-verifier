@@ -7,7 +7,6 @@ import {Feed} from "../src/Feed.sol";
 import {IFeed} from "../src/interfaces/IFeed.sol";
 import {IFeedStructs} from "../src/interfaces/IFeedStructs.sol";
 import {IFeedEvents} from "../src/interfaces/IFeedEvents.sol";
-import {IFeedErrors} from "../src/interfaces/IFeedErrors.sol";
 import {MockAccessControlManager} from "./mocks/MockAccessControlManager.sol";
 import {MockSubscriptionRegistry} from "./mocks/MockSubscriptionRegistry.sol";
 import {MockNodeRegistry} from "./mocks/MockNodeRegistry.sol";
@@ -81,7 +80,8 @@ contract FeedTest is Test {
                 signaturesRequired: 1,
                 consumerPricePerSecondScaled: 0,
                 feedId: bytes32(uint256(1)),
-                dataSourceId: publicDataSourceId
+                dataSourceId: publicDataSourceId,
+                ipfsCID: "test"
             })
         );
         
@@ -95,7 +95,8 @@ contract FeedTest is Test {
                 signaturesRequired: 1,
                 consumerPricePerSecondScaled: 0,
                 feedId: bytes32(uint256(1)),
-                dataSourceId: personalDataSourceId
+                dataSourceId: personalDataSourceId,
+                ipfsCID: "test"
             })
         );
         
@@ -292,7 +293,7 @@ contract FeedTest is Test {
 
     function test_personalFeed_updateFeedConfig_onlyOwner() public {
         // Test contract is set as feed registry in setUp, so it can call updateFeedConfig
-        personalFeed.updateFeedConfig(7200, 2);
+        personalFeed.updateFeedConfig(7200, 2, bytes32(uint256(1)), "test");
         
         // Verify changes
         assertEq(personalFeed.getMinSignaturesThreshold(), 2);
@@ -301,6 +302,6 @@ contract FeedTest is Test {
     function test_personalFeed_updateFeedConfig_notOwner() public {
         vm.prank(nonConsumer);
         vm.expectRevert();
-        personalFeed.updateFeedConfig(7200, 2);
+        personalFeed.updateFeedConfig(7200, 2, bytes32(uint256(1)), "test");
     }
 }

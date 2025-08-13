@@ -4,7 +4,7 @@ pragma solidity ^0.8.20;
 import {Test} from "forge-std/Test.sol";
 import {NodeRegistry} from "../src/NodeRegistry.sol";
 import {AccessControlManager} from "../src/AccessControlManager.sol";
-import {INodeRegistry, INodeRegistryErrors, INodeRegistryStructs} from "../src/interfaces/INodeRegistry.sol";
+import {INodeRegistry, INodeRegistryStructs} from "../src/interfaces/INodeRegistry.sol";
 import {LibSecp256k1} from "../src/libs/LibSecp256k1.sol";
 
 contract NodeAggregatorTest is Test {
@@ -29,7 +29,7 @@ contract NodeAggregatorTest is Test {
 
     function test_registerNode_InvalidKey_Revert() public {
         LibSecp256k1.Point memory zero = LibSecp256k1.ZERO_POINT();
-        vm.expectRevert(INodeRegistryErrors.InvalidPublicKey.selector);
+        vm.expectRevert("Invalid public key");
         registry.addNode(zero);
     }
 
@@ -56,7 +56,7 @@ contract NodeAggregatorTest is Test {
             signers: signers
         });
         bytes32 msgHash = keccak256(abi.encodePacked(a, b));
-        vm.expectRevert(INodeRegistryErrors.InvalidSignersOrder.selector);
+        vm.expectRevert("Invalid signers order");
         registry.verifySignature(msgHash, s, 1);
     }
 }

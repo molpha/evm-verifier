@@ -19,11 +19,12 @@ contract Feed is IFeed, ERC165 {
     address internal immutable _owner;
     FeedType internal immutable _feedType;
     bool internal immutable _isFree;
-    bytes32 internal immutable _feedId;
     bytes32 internal immutable _dataSourceId;
 
     uint256 internal _frequency;
     uint256 internal _signaturesRequired;
+    bytes32 internal _feedId;
+    string internal _ipfsCID;
 
     Answer[] internal _answers;
     mapping(address => uint256) internal _consumers;
@@ -33,7 +34,7 @@ contract Feed is IFeed, ERC165 {
             _isFree ||
                 msg.sender == tx.origin ||
                 _consumers[msg.sender] >= block.timestamp,
-            NotConsumer(msg.sender)
+            "Not consumer"
         );
         _;
     }
@@ -64,21 +65,22 @@ contract Feed is IFeed, ERC165 {
         _frequency = params.frequency;
         _signaturesRequired = params.signaturesRequired;
         _feedId = params.feedId;
+        _ipfsCID = params.ipfsCID;
         _isFree = params.consumerPricePerSecondScaled == 0;
         _dataSourceId = params.dataSourceId;
     }
 
     /// @inheritdoc IFeed
     function publish(Answer calldata answer) external onlyNodeRegistry {
-        require(answer.value.length > 0, ZeroValue());
+        require(answer.value.length > 0, "Zero value");
         uint256 lastUpdated = _getLastUpdated();
         require(
             answer.timestamp > lastUpdated,
-            PastTimestamp(answer.timestamp, lastUpdated)
+            "Past timestamp"
         );
         require(
             answer.timestamp <= block.timestamp,
-            FutureTimestamp(answer.timestamp, block.timestamp)
+            "Future timestamp"
         );
 
         _answers.push(answer);
@@ -87,14 +89,16 @@ contract Feed is IFeed, ERC165 {
 
     /// @inheritdoc IFeed
     function addConsumer(address consumer, uint256 dueTime) external override onlyFeedOwnerOrSubRegistry {
-        require(dueTime > block.timestamp, PastDueTime(dueTime));
+        require(dueTime > block.timestamp, "Past due time");
         _consumers[consumer] = dueTime;
+        emit LogConsumerAdded(consumer, dueTime);
     }
 
     /// @inheritdoc IFeed
     function removeConsumer(address consumer) external override onlyFeedOwnerOrSubRegistry {
-        if (_consumers[consumer] == 0) revert NotConsumer(consumer);
+        if (_consumers[consumer] == 0) revert("Not consumer");
         delete _consumers[consumer];
+        emit LogConsumerRemoved(consumer);
     }
 
     /// @inheritdoc IFeed
@@ -104,7 +108,7 @@ contract Feed is IFeed, ERC165 {
         address[] calldata consumersToRemove
     ) external override onlyFeedOwnerOrSubRegistry {
         if (consumersToAdd.length > 0) {
-            require(dueTime > block.timestamp, PastDueTime(dueTime));
+            require(dueTime > block.timestamp, "Past due time");
             for (uint256 i = 0; i < consumersToAdd.length; i++) {
                 _consumers[consumersToAdd[i]] = dueTime;
             }
@@ -112,7 +116,7 @@ contract Feed is IFeed, ERC165 {
 
         if (consumersToRemove.length > 0) {
             for (uint256 i = 0; i < consumersToRemove.length; i++) {
-                if (_consumers[consumersToRemove[i]] == 0) revert NotConsumer(consumersToRemove[i]);
+                if (_consumers[consumersToRemove[i]] == 0) revert("Not consumer");
                 delete _consumers[consumersToRemove[i]];
             }
         }
@@ -123,16 +127,23 @@ contract Feed is IFeed, ERC165 {
     /// @inheritdoc IFeed
     function updateFeedConfig(
         uint256 frequency,
-        uint256 signaturesRequired
+        uint256 signaturesRequired,
+        bytes32 feedId,
+        string calldata ipfsCID
     ) external override onlyFeedRegistry {
         require(
             frequency >= MIN_FREQUENCY && frequency <= MAX_FREQUENCY,
-            InvalidFrequency(frequency)
+            "Invalid frequency"
         );
         require(
             signaturesRequired > 0,
-            InvalidMinSignaturesThreshold(signaturesRequired)
+            "Invalid signatures"
         );
+        require(feedId != bytes32(0), "Empty feed ID");
+        require(keccak256(bytes(ipfsCID)) != keccak256(bytes("")), "Empty IPFS CID");
+
+        if (feedId != _feedId) _feedId = feedId;
+        if (keccak256(bytes(ipfsCID)) != keccak256(bytes(_ipfsCID))) _ipfsCID = ipfsCID;
 
         if (frequency != _frequency) _frequency = frequency;
         if (signaturesRequired != _signaturesRequired) {
@@ -140,8 +151,10 @@ contract Feed is IFeed, ERC165 {
         }
 
         emit LogFeedConfigChanged(
+            feedId,
             frequency,
-            signaturesRequired
+            signaturesRequired,
+            ipfsCID
         );
     }
 
@@ -170,7 +183,7 @@ contract Feed is IFeed, ERC165 {
         onlyValidConsumer
         returns (bytes memory value, uint256 timestamp)
     {
-        require(roundId < _answers.length, InvalidRoundId(roundId));
+        require(roundId < _answers.length, "Invalid round ID");
         return _getAnswer(roundId);
     }
 
@@ -234,22 +247,22 @@ contract Feed is IFeed, ERC165 {
     }
 
     function _validateFeedConfig(CreateFeedParams memory params) internal view {
-        require(params.owner != address(0), ZeroAddress());
+        require(params.owner != address(0), "Zero address");
         params.accessControlManager.shouldSupport(
             type(IAccessControlManager).interfaceId
         );
         // only public feed can have consumer price
-        require(params.consumerPricePerSecondScaled == 0 || params.feedType == FeedType.PUBLIC, NotPersonalFeed());
+        require(params.consumerPricePerSecondScaled == 0 || params.feedType == FeedType.PUBLIC, "Not personal feed");
 
         require(
             params.frequency >= MIN_FREQUENCY && params.frequency <= MAX_FREQUENCY,
-            InvalidFrequency(params.frequency)
+            "Invalid frequency"
         );
         require(
             params.signaturesRequired > 0,
-            InvalidMinSignaturesThreshold(params.signaturesRequired)
+            "Invalid signatures"
         );
-        require(params.feedId != bytes32(0), InvalidFeedId(params.feedId));
-        require(params.dataSourceId != bytes32(0), InvalidDataSourceId(params.dataSourceId));
+        require(params.feedId != bytes32(0), "Empty feed ID");
+        require(params.dataSourceId != bytes32(0), "Empty data source ID");
     }
 }

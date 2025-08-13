@@ -68,9 +68,11 @@ contract DummyFeed is IFeed {
         _ipfsCID = cid;
     }
 
-    function updateFeedConfig(uint256 frequency, uint256 signaturesRequired) external {
+    function updateFeedConfig(uint256 frequency, uint256 signaturesRequired, bytes32 feedId, string calldata ipfsCID) external {
         _frequency = frequency;
         _minSignaturesThreshold = signaturesRequired;
+        _feedId = feedId;
+        _ipfsCID = ipfsCID;
     }
 
     function getMinSignaturesThreshold() external view returns (uint256) {

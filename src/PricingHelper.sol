@@ -40,10 +40,10 @@ contract PricingHelper is IPricingHelper, Initializable, ERC165 {
         uint64 signersCoefficient, 
         uint64 rewardPercentage
     ) public initializer {
-        require(rewardPercentage <= MAX_BPS, "Reward percentage cannot exceed 100%");
-        require(basePricePerSecondScaled > 0, "Base price per second scaled must be greater than 0");
-        require(frequencyCoefficient > 0, "Frequency coefficient must be greater than 0");
-        require(signersCoefficient > 0, "Signers coefficient must be greater than 0");
+        require(rewardPercentage <= MAX_BPS, "Reward % > 100%");
+        require(basePricePerSecondScaled > 0, "Base price = 0");
+        require(frequencyCoefficient > 0, "Freq coeff = 0");
+        require(signersCoefficient > 0, "Signer coeff = 0");
 
         accessControlManager.shouldSupport(type(IAccessControlManager).interfaceId);
         
@@ -67,7 +67,7 @@ contract PricingHelper is IPricingHelper, Initializable, ERC165 {
     }
 
     function setRewardPercentage(uint64 rewardPercentage) public onlyProtocolAdmin {
-        require(rewardPercentage <= MAX_BPS, "Reward percentage cannot exceed 100%");
+        require(rewardPercentage <= MAX_BPS, "Reward % > 100%");
         _rewardPercentage = rewardPercentage;
     }
 
@@ -126,8 +126,8 @@ contract PricingHelper is IPricingHelper, Initializable, ERC165 {
         uint256 frequency = IFeed(feed).getFrequency();
         uint256 signaturesRequired = IFeed(feed).getMinSignaturesThreshold();
 
-        require(frequency > 0, "Frequency must be greater than 0");
-        require(signaturesRequired > 0, "Signatures required must be greater than 0");
+        require(frequency > 0, "Frequency = 0");
+        require(signaturesRequired > 0, "Signatures = 0");
         
         // Get the price per second scaled
         uint256 pricePerSecondScaled = calculatePrice(feed);

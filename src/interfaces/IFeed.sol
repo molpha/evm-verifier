@@ -4,12 +4,11 @@ pragma solidity ^0.8.29;
 import {ISubscriptionRegistry} from "./ISubscriptionRegistry.sol";
 import {IFeedStructs} from "./IFeedStructs.sol";
 import {IFeedEvents} from "./IFeedEvents.sol";
-import {IFeedErrors} from "./IFeedErrors.sol";
 
 /// @title IFeed - Interface for a data feed contract
 /// @notice Handles feed metadata, update logic, and on-chain value access
 /// @dev Implemented by specific feed contracts
-interface IFeed is IFeedStructs, IFeedEvents, IFeedErrors {
+interface IFeed is IFeedStructs, IFeedEvents {
     /// @notice Feed update configuration
     /// @param frequency The frequency of the feed
     /// @param signaturesRequired The minimum number of signatures required to verify an answer
@@ -22,6 +21,7 @@ interface IFeed is IFeedStructs, IFeedEvents, IFeedErrors {
         uint128 consumerPricePerSecondScaled;
         bytes32 feedId;
         bytes32 dataSourceId;
+        string ipfsCID;
     }
 
     /// @notice Feed type
@@ -57,7 +57,9 @@ interface IFeed is IFeedStructs, IFeedEvents, IFeedErrors {
     /// @dev This function is only callable by the feed manager and only for personal feeds
     /// @param frequency The frequency of the feed
     /// @param signaturesRequired The minimum number of signatures required
-    function updateFeedConfig(uint256 frequency, uint256 signaturesRequired) external;
+    /// @param feedId The feed ID
+    /// @param ipfsCID The IPFS CID of the feed metadata
+    function updateFeedConfig(uint256 frequency, uint256 signaturesRequired, bytes32 feedId, string calldata ipfsCID) external;
 
     /// @notice Returns the minimum number of signatures required to verify an answer
     /// @return signaturesRequired The minimum number of signatures required

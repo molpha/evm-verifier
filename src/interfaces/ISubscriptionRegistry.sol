@@ -3,11 +3,10 @@ pragma solidity ^0.8.29;
 
 import {ISubscriptionRegistryStructs} from "./ISubscriptionRegistryStructs.sol";
 import {ISubscriptionRegistryEvents} from "./ISubscriptionRegistryEvents.sol";
-import {ISubscriptionRegistryErrors} from "./ISubscriptionRegistryErrors.sol";
 
 /// @title ISubscriptionRegistry - Manages feed subscriptions
 /// @notice Tracks which consumers are subscribed to which feeds
-interface ISubscriptionRegistry is ISubscriptionRegistryStructs, ISubscriptionRegistryEvents, ISubscriptionRegistryErrors {
+interface ISubscriptionRegistry is ISubscriptionRegistryStructs, ISubscriptionRegistryEvents {
     /// @notice Initialize the subscription registry
     /// @param accessControlManager The access control manager address
     /// @param treasury The treasury address
@@ -34,10 +33,10 @@ interface ISubscriptionRegistry is ISubscriptionRegistryStructs, ISubscriptionRe
     // function unsubscribe(address feed, address consumer) external;
 
     /// @notice Extend subscription
-    /// @param consumer The consumer address
     /// @param feed The feed address
+    /// @param consumer The consumer address
     /// @param dueTime The due time of the subscription
-    function extendSubscription(address consumer, address feed, uint256 dueTime) external;
+    function extendSubscription(address feed, address consumer, uint256 dueTime) external;
 
     /// @notice Transfer subscription to a new consumer
     /// @param consumer The consumer address
@@ -63,4 +62,14 @@ interface ISubscriptionRegistry is ISubscriptionRegistryStructs, ISubscriptionRe
     /// @param feed The feed address
     /// @return subscription The subscription
     function getSubscription(address consumer, address feed) external view returns (Subscription memory subscription);
+
+    /// @notice Get price per second scaled
+    /// @param feed The feed address
+    /// @return pricePerSecondScaled The price per second scaled
+    function getPricePerSecondScaled(address feed) external view returns (uint256 pricePerSecondScaled);
+
+    /// @notice Get consumer price per second scaled
+    /// @param feed The feed address
+    /// @return consumerPricePerSecondScaled The consumer price per second scaled
+    function getConsumerPricePerSecondScaled(address feed) external view returns (uint256 consumerPricePerSecondScaled);
 }

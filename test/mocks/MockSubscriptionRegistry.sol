@@ -19,7 +19,8 @@ contract MockSubscriptionRegistry is ISubscriptionRegistry {
             subscriptionDueTimes[consumers[i]][feed] = dueTime;
             subscriptionData[consumers[i]][feed] = Subscription({
                 dueTime: uint64(dueTime),
-                owner: msg.sender
+                owner: msg.sender,
+                subscriptionType: SubscriptionType.Consumer
             });
         }
     }
@@ -29,7 +30,8 @@ contract MockSubscriptionRegistry is ISubscriptionRegistry {
         subscriptionDueTimes[owner][feed] = dueTime;
         subscriptionData[owner][feed] = Subscription({
             dueTime: uint64(dueTime),
-            owner: owner
+            owner: owner,
+            subscriptionType: SubscriptionType.Owner
         });
 
         for (uint256 i = 0; i < consumers.length; i++) {
@@ -37,7 +39,8 @@ contract MockSubscriptionRegistry is ISubscriptionRegistry {
             subscriptionDueTimes[consumers[i]][feed] = dueTime;
             subscriptionData[consumers[i]][feed] = Subscription({
                 dueTime: uint64(dueTime),
-                owner: owner
+                owner: owner,
+                subscriptionType: SubscriptionType.Owner
             });
         }
     }
@@ -94,7 +97,8 @@ contract MockSubscriptionRegistry is ISubscriptionRegistry {
             subscriptionDueTimes[consumer][feed] = block.timestamp + 30 days;
             subscriptionData[consumer][feed] = Subscription({
                 dueTime: uint64(block.timestamp + 30 days),
-                owner: msg.sender
+                owner: msg.sender,
+                subscriptionType: SubscriptionType.Consumer
             });
         } else {
             subscriptionDueTimes[consumer][feed] = 0;
@@ -105,6 +109,14 @@ contract MockSubscriptionRegistry is ISubscriptionRegistry {
     function setSubscriptionDueTime(address consumer, address feed, uint256 dueTime) external {
         subscriptionDueTimes[consumer][feed] = dueTime;
         subscriptionData[consumer][feed].dueTime = uint64(dueTime);
+    }
+
+    function getPricePerSecondScaled(address /*feed*/) external pure returns (uint256) {
+        return 1;
+    }
+
+    function getConsumerPricePerSecondScaled(address /*feed*/) external pure returns (uint256) {
+        return 1;
     }
 
     function supportsInterface(bytes4 interfaceId) external pure returns (bool) {

@@ -43,7 +43,7 @@ contract DataSourceRegistry is IDataSourceRegistry, Initializable, ERC165 {
     {
         bytes32 dataSourceId = _generateDataSourceId(dataSource);
         if (_dataSources[dataSourceId].owner != address(0)) {
-            revert DataSourceAlreadyExists(dataSourceId);
+            revert("DataSource exists");
         }
 
         _verifySignature(dataSource, signature);
@@ -56,7 +56,7 @@ contract DataSourceRegistry is IDataSourceRegistry, Initializable, ERC165 {
     
     function getDataSource(bytes32 dataSourceId) external view returns (DataSource memory) {
         if (_dataSources[dataSourceId].owner == address(0)) {
-            revert DataSourceNotFound(dataSourceId);
+            revert("DataSource not found");
         }
         return _dataSources[dataSourceId];
     }
@@ -96,7 +96,7 @@ contract DataSourceRegistry is IDataSourceRegistry, Initializable, ERC165 {
         );
         address signer = digest.recover(signature);
         if (signer != dataSource.owner) {
-            revert InvalidSignature();
+            revert("Invalid signature");
         }
     }
 }

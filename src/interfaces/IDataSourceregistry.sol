@@ -24,21 +24,6 @@ interface IDataSourceRegistry {
     /// @param name The name of the data source
     event DataSourceCreated(bytes32 indexed dataSourceId, address indexed owner, DataSourceType indexed dataSourceType, string source, string name);
 
-    /// @notice Thrown when the provided signature is invalid
-    error InvalidSignature();
-
-    /// @notice Thrown when a data source is not found
-    /// @param dataSourceId The ID of the data source
-    error DataSourceNotFound(bytes32 dataSourceId);
-
-    /// @notice Thrown when a data source already exists
-    /// @param dataSourceId The ID of the data source
-    error DataSourceAlreadyExists(bytes32 dataSourceId);
-
-    /// @notice Thrown when the provided data source ID is invalid
-    /// @param dataSourceId The invalid data source ID
-    error InvalidDataSourceId(bytes32 dataSourceId);
-
     /// @notice Initialize the DataSourceRegistry
     /// @param _accessControlManager The address of the access control manager
     function initialize(address _accessControlManager) external;

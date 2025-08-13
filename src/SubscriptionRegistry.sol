@@ -49,7 +49,7 @@ contract SubscriptionRegistry is
                 _accessControlManager.FEED_REGISTRY(),
                 msg.sender
             ) || IFeed(feed).getOwner() == msg.sender,
-            NotFeedOwner(msg.sender, feed)
+            "Not feed owner"
         );
         _;
     }
@@ -76,14 +76,14 @@ contract SubscriptionRegistry is
         uint256 dueTime,
         address[] calldata consumers
     ) external override nonReentrant {
-        require(consumers.length > 0, EmptyConsumers());
+        require(consumers.length > 0, "Empty consumers");
         require(
             dueTime >= block.timestamp + MIN_SUBSCRIPTION_TIME,
-            WrongSubscriptionTime(dueTime)
+            "Wrong sub time"
         );
 
         uint256 pricePerSecond = _consumerPricePerSecondScaled[feed];
-        require(pricePerSecond > 0, CannotSubscribe());
+        require(pricePerSecond > 0, "Cannot subscribe");
 
         uint256 price = _pricingHelper.getPriceForTimespan(
             pricePerSecond,
@@ -91,7 +91,7 @@ contract SubscriptionRegistry is
         );
 
         for (uint256 i = 0; i < consumers.length; i++) {
-            _subscribe(consumers[i], feed, msg.sender, dueTime, pricePerSecond);
+            _subscribe(SubscriptionType.Consumer, consumers[i], feed, msg.sender, dueTime, pricePerSecond);
         }
 
         _treasury.deposit(msg.sender, price * consumers.length);
@@ -105,16 +105,16 @@ contract SubscriptionRegistry is
         uint256 dueTime,
         address[] calldata consumers
     ) external override nonReentrant onlyFeedRegistry {
-        require(feed != address(0), ZeroAddress());
-        require(owner != address(0), ZeroAddress());
+        require(feed != address(0), "Zero address");
+        require(owner != address(0), "Zero address");
         require(
             dueTime >= block.timestamp + MIN_SUBSCRIPTION_TIME,
-            WrongSubscriptionTime(dueTime)
+            "Wrong sub time"
         );
-        require(IFeed(feed).getOwner() == owner, NotFeedOwner(owner, feed));
+        require(IFeed(feed).getOwner() == owner, "Not feed owner");
         require(
             _subscriptions[owner][feed].dueTime == 0,
-            SubscriptionAlreadyExists(owner, feed)
+            "Sub exists"
         );
 
         uint256 pricePerSecondScaled = _pricingHelper.calculatePrice(feed);
@@ -125,7 +125,7 @@ contract SubscriptionRegistry is
 
         _pricePerSecondScaled[feed] = pricePerSecondScaled;
 
-        _subscribe(owner, feed, owner, dueTime, pricePerSecondScaled);
+        _subscribe(SubscriptionType.Owner, owner, feed, owner, dueTime, pricePerSecondScaled);
 
         _treasury.deposit(owner, price);
 
@@ -134,16 +134,16 @@ contract SubscriptionRegistry is
 
     function extendSubscription(
         address feed,
-        address consumer,
+        address subscriber,
         uint256 dueTime
     ) external override nonReentrant {
-        require(feed != address(0), ZeroAddress());
+        require(feed != address(0), "Zero address");
         require(
             dueTime >= block.timestamp + MIN_SUBSCRIPTION_TIME,
-            WrongSubscriptionTime(dueTime)
+            "Wrong sub time"
         );
 
-        uint256 currentDueTime = _subscriptions[msg.sender][feed].dueTime;
+        uint256 currentDueTime = _subscriptions[subscriber][feed].dueTime;
         uint256 timeSpan = currentDueTime > block.timestamp
             ? dueTime - currentDueTime
             : dueTime - block.timestamp;
@@ -151,23 +151,23 @@ contract SubscriptionRegistry is
         uint256 pricePerSecondScaled;
         if (IFeed(feed).getOwner() == msg.sender) {
             pricePerSecondScaled = _pricePerSecondScaled[feed];
-            
         } else {
             require(
-                _subscriptions[consumer][feed].owner == msg.sender,
-                NotSubscriptionOwner(msg.sender)
+                _subscriptions[subscriber][feed].owner == msg.sender,
+                "Not sub owner"
             );
             pricePerSecondScaled = _consumerPricePerSecondScaled[feed];
-            _subscriptions[msg.sender][feed].dueTime = uint64(dueTime);
         }
         uint256 price = _pricingHelper.getPriceForTimespan(
-                pricePerSecondScaled,
-                timeSpan
-            );
+            pricePerSecondScaled,
+            timeSpan
+        );
+
+        _subscriptions[subscriber][feed].dueTime = uint64(dueTime);
 
         _treasury.deposit(msg.sender, price);
 
-        emit LogSubscriptionUpdated(msg.sender, feed, dueTime, pricePerSecondScaled);
+        emit LogSubscriptionExtended(subscriber, feed, dueTime);
     }
 
     function transferSubscription(
@@ -179,12 +179,7 @@ contract SubscriptionRegistry is
             newConsumer != address(0) &&
                 feed != address(0) &&
                 consumer != address(0),
-            ZeroAddress()
-        );
-        // we can transfer only consumer's subscription
-        require(
-            consumer == msg.sender,
-            CannotTransferSubscription()
+            "Zero address"
         );
 
         Subscription memory subscription = _subscriptions[consumer][feed];
@@ -192,20 +187,22 @@ contract SubscriptionRegistry is
         // only active subscriptions can be transferred
         require(
             subscription.owner == msg.sender,
-            NotSubscriptionOwner(msg.sender)
+            "Not sub owner"
         );
         require(
-            subscription.dueTime > block.timestamp,
-            CannotTransferSubscription()
+            subscription.dueTime > block.timestamp &&
+                subscription.subscriptionType == SubscriptionType.Consumer,
+            "Cannot transfer subscription"
         );
         require(
             _subscriptions[newConsumer][feed].dueTime < block.timestamp,
-            SubscriptionAlreadyExists(newConsumer, feed)
+            "Sub exists"
         );
 
         _subscriptions[newConsumer][feed] = Subscription(
+            msg.sender,
             uint64(subscription.dueTime),
-            msg.sender
+            SubscriptionType.Consumer
         );
 
         delete _subscriptions[consumer][feed];
@@ -230,7 +227,9 @@ contract SubscriptionRegistry is
     }
 
     /// @inheritdoc ISubscriptionRegistry
-    function recalculateSubscription(address feed) external override onlyFeedRegistry {
+    function recalculateSubscription(
+        address feed
+    ) external override onlyFeedRegistry {
         address owner = IFeed(feed).getOwner();
         uint256 oldPricePerSecondScaled = _pricePerSecondScaled[feed];
         uint256 newPricePerSecondScaled = _pricingHelper.calculatePrice(feed);
@@ -240,8 +239,14 @@ contract SubscriptionRegistry is
                 oldPricePerSecondScaled) / newPricePerSecondScaled);
 
         _subscriptions[owner][feed].dueTime = uint64(newDueTime);
+        _pricePerSecondScaled[feed] = newPricePerSecondScaled;
 
-        emit LogSubscriptionUpdated(feed, owner, newDueTime, newPricePerSecondScaled);
+        emit LogSubscriptionUpdated(
+            feed,
+            owner,
+            newDueTime,
+            newPricePerSecondScaled
+        );
     }
 
     /// @inheritdoc ISubscriptionRegistry
@@ -252,10 +257,18 @@ contract SubscriptionRegistry is
 
     /// @inheritdoc ISubscriptionRegistry
     function getSubscription(
-        address consumer,
+        address subscriber,
         address feed
     ) external view override returns (Subscription memory subscription) {
-        subscription = _subscriptions[consumer][feed];
+        subscription = _subscriptions[subscriber][feed];
+    }
+
+    function getPricePerSecondScaled(address feed) external view override returns (uint256) {
+        return _pricePerSecondScaled[feed];
+    }
+
+    function getConsumerPricePerSecondScaled(address feed) external view override returns (uint256) {
+        return _consumerPricePerSecondScaled[feed];
     }
 
     function supportsInterface(
@@ -267,20 +280,31 @@ contract SubscriptionRegistry is
     }
 
     function _subscribe(
-        address consumer,
+        SubscriptionType subscriptionType,
+        address subscriber,
         address feed,
-        address owner,
+        address subscriptionOwner,
         uint256 dueTime,
         uint256 pricePerSecondScaled
     ) internal {
-        require(consumer != address(0), ZeroAddress());
+        require(subscriber != address(0), "Zero address");
 
         require(
-            _subscriptions[consumer][feed].dueTime < block.timestamp,
-            SubscriptionAlreadyExists(consumer, feed)
+            _subscriptions[subscriber][feed].dueTime < block.timestamp,
+            "Sub exists"
         );
 
-        _subscriptions[consumer][feed] = Subscription(uint64(dueTime), owner);
-        emit LogSubscribed(consumer, feed, owner, dueTime, pricePerSecondScaled);
+        _subscriptions[subscriber][feed] = Subscription(
+            subscriptionOwner,
+            uint64(dueTime),
+            subscriptionType
+        );
+        emit LogSubscribed(
+            subscriber,
+            feed,
+            subscriptionOwner,
+            dueTime,
+            pricePerSecondScaled
+        );
     }
 }

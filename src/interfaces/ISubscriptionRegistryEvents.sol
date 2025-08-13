@@ -35,11 +35,11 @@ interface ISubscriptionRegistryEvents {
     );
 
     /// @notice emitted when subscription is extended
-    /// @param consumer consumer address
+    /// @param subscriber subscriber address
     /// @param feed feed address
     /// @param dueTime subscription due time
     event LogSubscriptionExtended(
-        address indexed consumer,
+        address indexed subscriber,
         address indexed feed,
         uint256 dueTime
     );

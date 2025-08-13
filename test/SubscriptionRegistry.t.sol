@@ -5,9 +5,6 @@ import {Test} from "forge-std/Test.sol";
 import {console} from "forge-std/console.sol";
 import {SubscriptionRegistry} from "../src/SubscriptionRegistry.sol";
 import {ISubscriptionRegistry} from "../src/interfaces/ISubscriptionRegistry.sol";
-import {
-    ISubscriptionRegistryErrors
-} from "../src/interfaces/ISubscriptionRegistryErrors.sol";
 import {IFeedRegistry} from "../src/interfaces/IFeedRegistry.sol";
 import {IFeed} from "../src/interfaces/IFeed.sol";
 import {MockAccessControlManager} from "./mocks/MockAccessControlManager.sol";
@@ -112,12 +109,7 @@ contract SubscriptionRegistryTest is Test {
         
         // Try to extend as non-owner
         vm.prank(nonOwner);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                ISubscriptionRegistryErrors.NotSubscriptionOwner.selector,
-                nonOwner
-            )
-        );
+        vm.expectRevert("Not sub owner");
         reg.extendSubscription(address(testFeed), user, newDueTime);
     }
 
@@ -202,11 +194,7 @@ contract SubscriptionRegistryTest is Test {
         address invalidFeed = address(999);
         
         // Don't add the feed to the registry
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                ISubscriptionRegistryErrors.CannotSubscribe.selector
-            )
-        );
+        vm.expectRevert("Cannot subscribe");
         reg.subscribe(invalidFeed, dueTime, consumers);
     }
 
@@ -217,12 +205,7 @@ contract SubscriptionRegistryTest is Test {
         
         feeds.addFeed(address(testFeed));
         
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                ISubscriptionRegistryErrors.WrongSubscriptionTime.selector,
-                shortDueTime
-            )
-        );
+        vm.expectRevert("Wrong sub time");
         reg.subscribe(address(testFeed), shortDueTime, consumers);
     }
 

@@ -4,11 +4,10 @@ pragma solidity ^0.8.29;
 import {LibSecp256k1} from "../libs/LibSecp256k1.sol";
 import {INodeRegistryStructs} from "./INodeRegistryStructs.sol";
 import {INodeRegistryEvents} from "./INodeRegistryEvents.sol";
-import {INodeRegistryErrors} from "./INodeRegistryErrors.sol";
 
 /// @title INodeRegistry
 /// @notice Interface for the NodeAggregator
-interface INodeRegistry is INodeRegistryStructs, INodeRegistryEvents, INodeRegistryErrors {
+interface INodeRegistry is INodeRegistryStructs, INodeRegistryEvents {
     /// @notice Initialize the node registry
     /// @param accessControlManager The access control manager address
     function initialize(address accessControlManager) external;

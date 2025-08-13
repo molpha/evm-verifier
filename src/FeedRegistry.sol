@@ -8,7 +8,6 @@ import {ERC165Checker} from "./libs/ERC165Checker.sol";
 import {Feed} from "./Feed.sol";
 import {IAccessControlManager} from "./interfaces/IAccessControlManager.sol";
 import {IFeed} from "./interfaces/IFeed.sol";
-import {IFeedErrors} from "./interfaces/IFeedErrors.sol";
 import {IFeedRegistry} from "./interfaces/IFeedRegistry.sol";
 import {ISubscriptionRegistry} from "./interfaces/ISubscriptionRegistry.sol";
 import {IPricingHelper} from "./interfaces/IPricingHelper.sol";
@@ -55,7 +54,7 @@ contract FeedRegistry is IFeedRegistry, ERC165, Initializable {
             dataSourceParams.dataSource.owner == msg.sender ||
                 dataSourceParams.dataSource.dataSourceType ==
                 IDataSourceRegistry.DataSourceType.Public,
-            PrivateDataSource()
+            "Private data source"
         );
         bytes32 dataSourceId = _dataSourceRegistry.createDataSource(dataSourceParams.dataSource, dataSourceParams.signature);
 
@@ -74,7 +73,7 @@ contract FeedRegistry is IFeedRegistry, ERC165, Initializable {
             dataSource.owner == msg.sender ||
                 dataSource.dataSourceType ==
                 IDataSourceRegistry.DataSourceType.Public,
-            PrivateDataSource()
+            "Private data source"
         );
 
         _createFeed(params, dataSourceId);
@@ -83,12 +82,16 @@ contract FeedRegistry is IFeedRegistry, ERC165, Initializable {
     function updateFeed(
         address feed,
         uint256 frequency,
-        uint256 signaturesRequired
+        uint256 signaturesRequired,
+        bytes32 feedId,
+        string calldata ipfsCID
     ) external override {
-        require(signaturesRequired > 0, InvalidFeedConfig());
-        require(frequency > 0, InvalidFeedConfig());
+        require(signaturesRequired > 0, "Invalid feed config");
+        require(frequency > 0, "Invalid feed config");
+        require(feedId != bytes32(0), "Empty feed ID");
+        require(keccak256(bytes(ipfsCID)) != keccak256(bytes("")), "Empty IPFS CID");
 
-        IFeed(feed).updateFeedConfig(frequency, signaturesRequired);
+        IFeed(feed).updateFeedConfig(frequency, signaturesRequired, feedId, ipfsCID);
         _subscriptionRegistry.recalculateSubscription(feed);
     }
 
@@ -119,12 +122,12 @@ contract FeedRegistry is IFeedRegistry, ERC165, Initializable {
     }
 
     function _validateFeedConfig(CreateFeedParams calldata params) internal view {
-        require(params.minSignaturesThreshold > 0, InvalidFeedConfig());
-        require(params.frequency > 0, InvalidFeedConfig());
-        require(params.feedId != bytes32(0), InvalidFeedConfig());
+        require(params.minSignaturesThreshold > 0, "Invalid feed config");
+        require(params.frequency > 0, "Invalid feed config");
+        require(params.feedId != bytes32(0), "Invalid feed config");
         require(
             params.subscriptionDueTime > block.timestamp,
-            InvalidFeedConfig()
+            "Invalid feed config"
         );
     }
 
@@ -143,7 +146,8 @@ contract FeedRegistry is IFeedRegistry, ERC165, Initializable {
                     consumerPricePerSecondScaled: params
                         .consumerPricePerSecondScaled,
                     feedId: params.feedId,
-                    dataSourceId: dataSourceId
+                    dataSourceId: dataSourceId,
+                    ipfsCID: params.ipfsCID
                 })
             )
         );
@@ -163,7 +167,8 @@ contract FeedRegistry is IFeedRegistry, ERC165, Initializable {
             params.feedType,
             params.frequency,
             params.minSignaturesThreshold,
-            params.consumerPricePerSecondScaled
+            params.consumerPricePerSecondScaled,
+            params.ipfsCID
         );
     }
 }

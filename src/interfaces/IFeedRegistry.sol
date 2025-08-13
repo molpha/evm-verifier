@@ -23,6 +23,7 @@ interface IFeedRegistry
         uint128 consumerPricePerSecondScaled;
         address[] defaultConsumers;
         bytes32 feedId;
+        string ipfsCID;
     }
 
     /// @notice Parameters for creating a data source
@@ -47,14 +48,9 @@ interface IFeedRegistry
         IFeed.FeedType feedType,
         uint256 frequency, 
         uint256 minSignaturesThreshold, 
-        uint256 consumerPricePerSecondScaled
+        uint256 consumerPricePerSecondScaled,
+        string ipfsCID
     );
-
-    /// @notice thrown when feed config is invalid
-    error InvalidFeedConfig();
-
-    /// @notice thrown when data source is private and not owned by the caller
-    error PrivateDataSource();
 
     /// @notice Initialize the feed registry
     /// @param accessControlManager The access control manager address
@@ -75,7 +71,9 @@ interface IFeedRegistry
     /// @param feed The feed address
     /// @param frequency The frequency of the feed
     /// @param signaturesRequired The minimum number of signatures required
-    function updateFeed(address feed, uint256 frequency, uint256 signaturesRequired) external;
+    /// @param feedId The feed ID
+    /// @param ipfsCID The IPFS CID of the feed metadata
+    function updateFeed(address feed, uint256 frequency, uint256 signaturesRequired, bytes32 feedId, string calldata ipfsCID) external;
 
     /// @notice Set the access control manager
     /// @param accessControlManager The access control manager address

@@ -15,15 +15,6 @@ interface IRewardTracker {
     event RewardsClaimed(address indexed node, uint256 amount);
     event PricePerResponseUpdated(uint256 oldPrice, uint256 newPrice);
 
-    // Errors
-    error InvalidBitmap();
-    error NoRewardsToClaim();
-    error InvalidPricePerResponse();
-    error NoNewParticipations();
-    error InvalidBatchSize();
-    error NotNode(address node);
-    error InvalidIndex(uint256 index);
-
     /// @notice Record participation using a bitmap
     /// @param signersBitmap Bitmap representing which nodes participated (0-based positions)
     /// @return index The index in the bitmap array where this participation was stored

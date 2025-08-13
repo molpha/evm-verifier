@@ -18,11 +18,9 @@ library ERC165Checker {
     // As per the ERC-165 spec, no interface should ever match 0xffffffff
     bytes4 private constant INTERFACE_ID_INVALID = 0xffffffff;
 
-    error InterfaceNotSupported(address account, bytes4 interfaceId);
-
     function shouldSupport(address account, bytes4 interfaceId) internal view {
-        if (account == address(0) || !supportsInterface(account, interfaceId)) {
-            revert InterfaceNotSupported(account, interfaceId);
+        if (!supportsInterface(account, interfaceId)) {
+            revert("Interface not supported");
         }
     }
 

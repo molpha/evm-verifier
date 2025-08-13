@@ -6,6 +6,8 @@ import {ProxyAdmin} from "openzeppelin-contracts/contracts/proxy/transparent/Pro
 import {TransparentUpgradeableProxy} from "openzeppelin-contracts/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 import {Script} from "forge-std/Script.sol";
 
+import {LibSecp256k1} from "../src/libs/LibSecp256k1.sol";
+
 import {AccessControlManager} from "../src/AccessControlManager.sol";
 import {FeedRegistry} from "../src/FeedRegistry.sol";
 import {SubscriptionRegistry} from "../src/SubscriptionRegistry.sol";
@@ -91,6 +93,21 @@ contract Deploy is Script {
             SIGNERS_COEFFICIENT, 
             REWARD_PERCENTAGE
         );
+
+        // add nodes
+        INodeRegistry(nodesRegistry).addNode(
+            LibSecp256k1.Point({
+                x: 82736532059003432392633182570149173260984108975602191333563796533410150488363,
+                y: 2731131244337076789200646755548802147998927235804584501361233088743417311918
+        }));        INodeRegistry(nodesRegistry).addNode(
+            LibSecp256k1.Point({
+                x: 109662376061415432835526913144777084357352510490439677569664664666711661278731,
+                y: 34102494233018474759018060484637241906514180523497146441995129757852262776403
+        }));        INodeRegistry(nodesRegistry).addNode(
+            LibSecp256k1.Point({
+                x: 23291323678511451217772133928868366990746786347038015158807413032596505148183,
+                y: 47168895393257141911376575107721994933540642533810868803586352809270883649069
+        }));
 
         vm.stopBroadcast();
     }

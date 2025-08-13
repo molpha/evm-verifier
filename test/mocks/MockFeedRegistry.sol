@@ -42,7 +42,8 @@ contract MockFeedRegistry is IFeedRegistry {
             params.feedType,
             params.frequency,
             params.minSignaturesThreshold,
-            params.consumerPricePerSecondScaled
+            params.consumerPricePerSecondScaled,
+            params.ipfsCID
         );
     }
 
@@ -67,14 +68,17 @@ contract MockFeedRegistry is IFeedRegistry {
             params.feedType,
             params.frequency,
             params.minSignaturesThreshold,
-            params.consumerPricePerSecondScaled
+            params.consumerPricePerSecondScaled,
+            params.ipfsCID
         );
     }
 
     function updateFeed(
         address feed, 
         uint256 frequency, 
-        uint256 signaturesRequired
+        uint256 signaturesRequired,
+        bytes32 feedId,
+        string calldata ipfsCID
     ) external {
         // Mock implementation
     }

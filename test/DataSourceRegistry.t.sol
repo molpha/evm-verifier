@@ -171,7 +171,7 @@ contract DataSourceRegistryTest is Test {
 
         // Try to create the same data source again
         vm.prank(signer);
-        vm.expectRevert(abi.encodeWithSelector(IDataSourceRegistry.DataSourceAlreadyExists.selector, dataSourceId));
+        vm.expectRevert("DataSource exists");
         registry.createDataSource(dataSource, signature);
     }
 
@@ -198,7 +198,7 @@ contract DataSourceRegistryTest is Test {
 
     function test_getDataSource_RevertIfNotFound() public {
         bytes32 nonExistentId = keccak256("non-existent");
-        vm.expectRevert(abi.encodeWithSelector(IDataSourceRegistry.DataSourceNotFound.selector, nonExistentId));
+        vm.expectRevert("DataSource not found");
         registry.getDataSource(nonExistentId);
     }
 

@@ -10,13 +10,24 @@ interface IFeedEvents {
     event LogAnswerPublished(bytes value, uint64 indexed timestamp);
 
     /// @notice emitted when feed config is changed
-    /// @param frequency new frequency
+    /// @param feedId new feed ID
+    /// @param frequency new frequency  
     /// @param minSignaturesThreshold new minSignaturesThreshold
-    event LogFeedConfigChanged(uint256 frequency, uint256 minSignaturesThreshold);
+    /// @param ipfsCID new IPFS CID
+    event LogFeedConfigChanged(bytes32 indexed feedId, uint256 frequency, uint256 minSignaturesThreshold, string ipfsCID);
 
     /// @notice emitted when consumers are set
     /// @param consumersToAdd consumers to add
     /// @param dueTime due time
     /// @param consumersToRemove consumers to remove
     event LogConsumersSet(address[] consumersToAdd, uint256 dueTime, address[] consumersToRemove);
+
+    /// @notice emitted when consumer is added
+    /// @param consumer consumer address
+    /// @param dueTime due time
+    event LogConsumerAdded(address indexed consumer, uint256 dueTime);
+
+    /// @notice emitted when consumer is removed
+    /// @param consumer consumer address
+    event LogConsumerRemoved(address indexed consumer);
 }

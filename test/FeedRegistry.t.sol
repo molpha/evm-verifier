@@ -57,7 +57,8 @@ contract FeedRegistryTest is Test {
             feedId: bytes32(uint256(1)),
             defaultConsumers: new address[](1),
             subscriptionDueTime: uint64(block.timestamp + 30 days),
-            consumerPricePerSecondScaled: 0
+            consumerPricePerSecondScaled: 0,
+            ipfsCID: "test"
         });
 
         params.defaultConsumers[0] = defaultConsumer;
@@ -72,7 +73,7 @@ contract FeedRegistryTest is Test {
         
         // Check that the LogFeedCreated event was emitted with correct signature (second event)
         // LogFeedCreated signature should match IFeedRegistry interface
-        bytes32 expectedEventSignature = keccak256("LogFeedCreated(address,uint8,uint256,uint256,string)");
+        bytes32 expectedEventSignature = keccak256("LogFeedCreated(address,bytes32,bytes32,uint256,uint8,uint256,uint256,uint256,string)");
         assertEq(entries[1].topics[0], expectedEventSignature);
         
         address feedAddress = address(uint160(uint256(entries[1].topics[1])));
@@ -103,7 +104,8 @@ contract FeedRegistryTest is Test {
             feedId: bytes32(uint256(1)),
             defaultConsumers: new address[](1),
             subscriptionDueTime: uint64(block.timestamp + 30 days),
-            consumerPricePerSecondScaled: 0
+            consumerPricePerSecondScaled: 0,
+            ipfsCID: "test"
         });
         params.defaultConsumers[0] = defaultConsumer;
 
@@ -117,7 +119,8 @@ contract FeedRegistryTest is Test {
         assertEq(entries.length, 2); // DataSourceCreated and LogFeedCreated events
         
         // Check that the LogFeedCreated event was emitted with correct signature (second event)
-        bytes32 expectedEventSignature = keccak256("LogFeedCreated(address,uint8,uint256,uint256,string)");
+        // LogFeedCreated signature should match IFeedRegistry interface
+        bytes32 expectedEventSignature = keccak256("LogFeedCreated(address,bytes32,bytes32,uint256,uint8,uint256,uint256,uint256,string)");
         assertEq(entries[1].topics[0], expectedEventSignature);
         
         address feedAddress = address(uint160(uint256(entries[1].topics[1])));
@@ -146,11 +149,12 @@ contract FeedRegistryTest is Test {
             feedId: bytes32(uint256(1)),
             defaultConsumers: new address[](1),
             subscriptionDueTime: uint64(block.timestamp + 30 days),
-            consumerPricePerSecondScaled: 0
+            consumerPricePerSecondScaled: 0,
+            ipfsCID: "test"
         });
         params.defaultConsumers[0] = defaultConsumer;
         
-        vm.expectRevert(IFeedRegistry.InvalidFeedConfig.selector);
+        vm.expectRevert("Invalid feed config");
         registry.createFeedWithNewDataSource(params, dataSourceParams);
     }
 
@@ -165,6 +169,7 @@ contract FeedRegistryTest is Test {
             dataSource: dataSource,
             signature: ""
         });
+        
         IFeedRegistry.CreateFeedParams memory params = IFeedRegistry.CreateFeedParams({
             feedType: IFeed.FeedType.PUBLIC,
             frequency: 0, // Invalid
@@ -172,11 +177,12 @@ contract FeedRegistryTest is Test {
             feedId: bytes32(uint256(1)),
             defaultConsumers: new address[](1),
             subscriptionDueTime: uint64(block.timestamp + 30 days),
-            consumerPricePerSecondScaled: 0
+            consumerPricePerSecondScaled: 0,
+            ipfsCID: "test"
         });
         params.defaultConsumers[0] = defaultConsumer;
         
-        vm.expectRevert(IFeedRegistry.InvalidFeedConfig.selector);
+        vm.expectRevert("Invalid feed config");
         registry.createFeedWithNewDataSource(params, dataSourceParams);
     }
 
@@ -198,11 +204,12 @@ contract FeedRegistryTest is Test {
             feedId: bytes32(0), // Invalid
             defaultConsumers: new address[](1),
             subscriptionDueTime: uint64(block.timestamp + 30 days),
-            consumerPricePerSecondScaled: 0
+            consumerPricePerSecondScaled: 0,
+            ipfsCID: "test"
         });
         params.defaultConsumers[0] = defaultConsumer;
         
-        vm.expectRevert(IFeedRegistry.InvalidFeedConfig.selector);
+        vm.expectRevert("Invalid feed config");
         registry.createFeedWithNewDataSource(params, dataSourceParams);
     }
 
@@ -224,11 +231,12 @@ contract FeedRegistryTest is Test {
             feedId: bytes32(uint256(1)),
             defaultConsumers: new address[](1),
             subscriptionDueTime: uint64(block.timestamp - 1), // Invalid - past time
-            consumerPricePerSecondScaled: 0
+            consumerPricePerSecondScaled: 0,
+            ipfsCID: "test"
         });
         params.defaultConsumers[0] = defaultConsumer;
         
-        vm.expectRevert(IFeedRegistry.InvalidFeedConfig.selector);
+        vm.expectRevert("Invalid feed config");
         registry.createFeedWithNewDataSource(params, dataSourceParams);
     }
 
