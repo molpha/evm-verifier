@@ -15,7 +15,7 @@ contract DummyFeed is IFeed {
     IFeed.FeedType internal _feedType;
     string internal _ipfsCID;
     uint256 internal _pricePerSecondScaled;
-    bytes32 internal _feedId;
+    bytes32 internal _jobId;
     bytes32 internal _dataSourceId;
 
     mapping(address => uint256) internal _consumers;
@@ -26,7 +26,7 @@ contract DummyFeed is IFeed {
         _frequency = 3600;
         _ipfsCID = "QmTest";
         _pricePerSecondScaled = 1000;
-        _feedId = bytes32(uint256(1));
+        _jobId = bytes32(uint256(1));
         _dataSourceId = bytes32(uint256(2));
     }
 
@@ -68,10 +68,10 @@ contract DummyFeed is IFeed {
         _ipfsCID = cid;
     }
 
-    function updateFeedConfig(uint256 frequency, uint256 signaturesRequired, bytes32 feedId, string calldata ipfsCID) external {
+    function updateFeedConfig(uint256 frequency, uint256 signaturesRequired, bytes32 jobId, string calldata ipfsCID) external {
         _frequency = frequency;
         _minSignaturesThreshold = signaturesRequired;
-        _feedId = feedId;
+        _jobId = jobId;
         _ipfsCID = ipfsCID;
     }
 
@@ -91,8 +91,8 @@ contract DummyFeed is IFeed {
         return _feedType;
     }
 
-    function getFeedId() external view returns (bytes32) {
-        return _feedId;
+    function getJobId() external view returns (bytes32) {
+        return _jobId;
     }
 
     function getDataSourceId() external view returns (bytes32) {

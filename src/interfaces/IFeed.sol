@@ -12,6 +12,10 @@ interface IFeed is IFeedStructs, IFeedEvents {
     /// @notice Feed update configuration
     /// @param frequency The frequency of the feed
     /// @param signaturesRequired The minimum number of signatures required to verify an answer
+    /// @param jobId The job ID of the feed
+    /// @param dataSourceId The data source ID of the feed
+    /// @param ipfsCID The IPFS CID of the feed metadata
+    /// @param consumerPricePerSecondScaled The price per second of the feed
     struct CreateFeedParams {
         FeedType feedType;
         address accessControlManager;
@@ -19,7 +23,7 @@ interface IFeed is IFeedStructs, IFeedEvents {
         uint64 frequency;
         uint64 signaturesRequired;
         uint128 consumerPricePerSecondScaled;
-        bytes32 feedId;
+        bytes32 jobId;
         bytes32 dataSourceId;
         string ipfsCID;
     }
@@ -57,9 +61,9 @@ interface IFeed is IFeedStructs, IFeedEvents {
     /// @dev This function is only callable by the feed manager and only for personal feeds
     /// @param frequency The frequency of the feed
     /// @param signaturesRequired The minimum number of signatures required
-    /// @param feedId The feed ID
+    /// @param jobId The job ID
     /// @param ipfsCID The IPFS CID of the feed metadata
-    function updateFeedConfig(uint256 frequency, uint256 signaturesRequired, bytes32 feedId, string calldata ipfsCID) external;
+    function updateFeedConfig(uint256 frequency, uint256 signaturesRequired, bytes32 jobId, string calldata ipfsCID) external;
 
     /// @notice Returns the minimum number of signatures required to verify an answer
     /// @return signaturesRequired The minimum number of signatures required
@@ -77,9 +81,9 @@ interface IFeed is IFeedStructs, IFeedEvents {
     /// @return feedType The feed type
     function getFeedType() external view returns (FeedType feedType);
 
-    /// @notice Returns the feed ID
-    /// @return feedId The feed ID
-    function getFeedId() external view returns (bytes32 feedId);
+    /// @notice Returns the job ID
+    /// @return jobId The job ID
+    function getJobId() external view returns (bytes32 jobId);
 
     /// @notice Returns the data source ID
     /// @return dataSourceId The data source ID

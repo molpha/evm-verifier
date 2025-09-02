@@ -54,7 +54,7 @@ contract FeedRegistryTest is Test {
             feedType: IFeed.FeedType.PUBLIC,
             frequency: 3600,
             minSignaturesThreshold: 1,
-            feedId: bytes32(uint256(1)),
+            jobId: bytes32(uint256(1)),
             defaultConsumers: new address[](1),
             subscriptionDueTime: uint64(block.timestamp + 30 days),
             consumerPricePerSecondScaled: 0,
@@ -101,7 +101,7 @@ contract FeedRegistryTest is Test {
             feedType: IFeed.FeedType.PERSONAL,
             frequency: 3600,
             minSignaturesThreshold: 1,
-            feedId: bytes32(uint256(1)),
+            jobId: bytes32(uint256(1)),
             defaultConsumers: new address[](1),
             subscriptionDueTime: uint64(block.timestamp + 30 days),
             consumerPricePerSecondScaled: 0,
@@ -146,7 +146,7 @@ contract FeedRegistryTest is Test {
             feedType: IFeed.FeedType.PUBLIC,
             frequency: 3600,
             minSignaturesThreshold: 0, // Invalid
-            feedId: bytes32(uint256(1)),
+            jobId: bytes32(uint256(1)),
             defaultConsumers: new address[](1),
             subscriptionDueTime: uint64(block.timestamp + 30 days),
             consumerPricePerSecondScaled: 0,
@@ -174,7 +174,7 @@ contract FeedRegistryTest is Test {
             feedType: IFeed.FeedType.PUBLIC,
             frequency: 0, // Invalid
             minSignaturesThreshold: 1,
-            feedId: bytes32(uint256(1)),
+            jobId: bytes32(uint256(1)),
             defaultConsumers: new address[](1),
             subscriptionDueTime: uint64(block.timestamp + 30 days),
             consumerPricePerSecondScaled: 0,
@@ -201,7 +201,7 @@ contract FeedRegistryTest is Test {
             feedType: IFeed.FeedType.PUBLIC,
             frequency: 3600,
             minSignaturesThreshold: 1,
-            feedId: bytes32(0), // Invalid
+            jobId: bytes32(0), // Invalid
             defaultConsumers: new address[](1),
             subscriptionDueTime: uint64(block.timestamp + 30 days),
             consumerPricePerSecondScaled: 0,
@@ -228,7 +228,7 @@ contract FeedRegistryTest is Test {
             feedType: IFeed.FeedType.PUBLIC,
             frequency: 3600,
             minSignaturesThreshold: 1,
-            feedId: bytes32(uint256(1)),
+            jobId: bytes32(uint256(1)),
             defaultConsumers: new address[](1),
             subscriptionDueTime: uint64(block.timestamp - 1), // Invalid - past time
             consumerPricePerSecondScaled: 0,

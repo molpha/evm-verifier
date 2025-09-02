@@ -12,8 +12,9 @@ interface IFeedRegistry
     /// @param feedType The type of feed to create
     /// @param frequency The frequency of the feed
     /// @param minSignaturesThreshold The minimum number of signatures required
-    /// @param ipfsCID The ipfsCID of the feed
     /// @param defaultConsumers The default consumers of the feed
+    /// @param jobId The job ID of the feed
+    /// @param ipfsCID The IPFS CID of the feed metadata
     /// @param subscriptionDueTime The subscription due time
     struct CreateFeedParams {
         IFeed.FeedType feedType;
@@ -22,7 +23,7 @@ interface IFeedRegistry
         uint64 subscriptionDueTime;
         uint128 consumerPricePerSecondScaled;
         address[] defaultConsumers;
-        bytes32 feedId;
+        bytes32 jobId;
         string ipfsCID;
     }
 
@@ -39,11 +40,11 @@ interface IFeedRegistry
     /// @param feedType feed type
     /// @param frequency feed frequency
     /// @param minSignaturesThreshold minimum number of signatures required
-    /// @param feedId feed ID
+    /// @param jobId job ID
     event LogFeedCreated(
         address indexed feed, 
         bytes32 indexed dataSourceId,
-        bytes32 indexed feedId,
+        bytes32 indexed jobId,
         uint256 activeTill,
         IFeed.FeedType feedType,
         uint256 frequency, 
@@ -71,9 +72,9 @@ interface IFeedRegistry
     /// @param feed The feed address
     /// @param frequency The frequency of the feed
     /// @param signaturesRequired The minimum number of signatures required
-    /// @param feedId The feed ID
+    /// @param jobId The job ID
     /// @param ipfsCID The IPFS CID of the feed metadata
-    function updateFeed(address feed, uint256 frequency, uint256 signaturesRequired, bytes32 feedId, string calldata ipfsCID) external;
+    function updateFeed(address feed, uint256 frequency, uint256 signaturesRequired, bytes32 jobId, string calldata ipfsCID) external;
 
     /// @notice Set the access control manager
     /// @param accessControlManager The access control manager address

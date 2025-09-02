@@ -23,7 +23,7 @@ contract Feed is IFeed, ERC165 {
 
     uint256 internal _frequency;
     uint256 internal _signaturesRequired;
-    bytes32 internal _feedId;
+    bytes32 internal _jobId;
     string internal _ipfsCID;
 
     Answer[] internal _answers;
@@ -64,7 +64,7 @@ contract Feed is IFeed, ERC165 {
         _feedType = params.feedType;
         _frequency = params.frequency;
         _signaturesRequired = params.signaturesRequired;
-        _feedId = params.feedId;
+        _jobId = params.jobId;
         _ipfsCID = params.ipfsCID;
         _isFree = params.consumerPricePerSecondScaled == 0;
         _dataSourceId = params.dataSourceId;
@@ -128,7 +128,7 @@ contract Feed is IFeed, ERC165 {
     function updateFeedConfig(
         uint256 frequency,
         uint256 signaturesRequired,
-        bytes32 feedId,
+        bytes32 jobId,
         string calldata ipfsCID
     ) external override onlyFeedRegistry {
         require(
@@ -139,10 +139,10 @@ contract Feed is IFeed, ERC165 {
             signaturesRequired > 0,
             "Invalid signatures"
         );
-        require(feedId != bytes32(0), "Empty feed ID");
+        require(jobId != bytes32(0), "Empty job ID");
         require(keccak256(bytes(ipfsCID)) != keccak256(bytes("")), "Empty IPFS CID");
 
-        if (feedId != _feedId) _feedId = feedId;
+        if (jobId != _jobId) _jobId = jobId;
         if (keccak256(bytes(ipfsCID)) != keccak256(bytes(_ipfsCID))) _ipfsCID = ipfsCID;
 
         if (frequency != _frequency) _frequency = frequency;
@@ -151,7 +151,7 @@ contract Feed is IFeed, ERC165 {
         }
 
         emit LogFeedConfigChanged(
-            feedId,
+            jobId,
             frequency,
             signaturesRequired,
             ipfsCID
@@ -214,8 +214,8 @@ contract Feed is IFeed, ERC165 {
         owner = _owner;
     }
 
-    function getFeedId() external view override returns (bytes32 feedId) {
-        feedId = _feedId;
+    function getJobId() external view override returns (bytes32 jobId) {
+        jobId = _jobId;
     }
 
     function getDataSourceId() external view override returns (bytes32 dataSourceId) {
@@ -262,7 +262,7 @@ contract Feed is IFeed, ERC165 {
             params.signaturesRequired > 0,
             "Invalid signatures"
         );
-        require(params.feedId != bytes32(0), "Empty feed ID");
+        require(params.jobId != bytes32(0), "Empty job ID");
         require(params.dataSourceId != bytes32(0), "Empty data source ID");
     }
 }

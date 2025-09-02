@@ -79,7 +79,7 @@ contract FeedTest is Test {
                 frequency: 3600,
                 signaturesRequired: 1,
                 consumerPricePerSecondScaled: 0,
-                feedId: bytes32(uint256(1)),
+                jobId: bytes32(uint256(1)),
                 dataSourceId: publicDataSourceId,
                 ipfsCID: "test"
             })
@@ -94,7 +94,7 @@ contract FeedTest is Test {
                 frequency: 3600,
                 signaturesRequired: 1,
                 consumerPricePerSecondScaled: 0,
-                feedId: bytes32(uint256(1)),
+                jobId: bytes32(uint256(1)),
                 dataSourceId: personalDataSourceId,
                 ipfsCID: "test"
             })

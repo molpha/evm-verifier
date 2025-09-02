@@ -19,7 +19,7 @@ contract MockFeedRegistry is IFeedRegistry {
             params.feedType,
             params.frequency,
             params.minSignaturesThreshold,
-            params.feedId,
+            params.jobId,
             block.timestamp
         )))));
         
@@ -37,7 +37,7 @@ contract MockFeedRegistry is IFeedRegistry {
         emit LogFeedCreated(
             feed,
             dataSourceId,   
-            params.feedId,
+            params.jobId,
             params.subscriptionDueTime,
             params.feedType,
             params.frequency,
@@ -53,7 +53,7 @@ contract MockFeedRegistry is IFeedRegistry {
             params.feedType,
             params.frequency,
             params.minSignaturesThreshold,
-            params.feedId,
+            params.jobId,
             dataSourceId
         )))));
         
@@ -63,7 +63,7 @@ contract MockFeedRegistry is IFeedRegistry {
         emit LogFeedCreated(
             feed,
             dataSourceId,
-            params.feedId,
+            params.jobId,
             params.subscriptionDueTime,
             params.feedType,
             params.frequency,
@@ -77,7 +77,7 @@ contract MockFeedRegistry is IFeedRegistry {
         address feed, 
         uint256 frequency, 
         uint256 signaturesRequired,
-        bytes32 feedId,
+        bytes32 jobId,
         string calldata ipfsCID
     ) external {
         // Mock implementation
