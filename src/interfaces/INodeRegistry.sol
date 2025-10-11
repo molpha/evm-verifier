@@ -18,8 +18,8 @@ interface INodeRegistry is INodeRegistryStructs, INodeRegistryEvents {
     ) external;
 
     /// @notice Add a new node in the aggregator group
-    /// @param pubkey Public key of the node
-    function addNode(LibSecp256k1.Point memory pubkey) external;
+    /// @param compressedPubKey Compressed public key of the node
+    function addNode(bytes memory compressedPubKey) external;
 
     /// @notice Remove a node from the aggregator group
     /// @param node Address of the node to remove

@@ -16,6 +16,8 @@ interface IFeedRegistry
     /// @param jobId The job ID of the feed
     /// @param ipfsCID The IPFS CID of the feed metadata
     /// @param subscriptionDueTime The subscription due time
+    /// @param decimals The number of decimals for Chainlink compatibility
+    /// @param description The description of the feed for Chainlink compatibility
     struct CreateFeedParams {
         IFeed.FeedType feedType;
         uint64 frequency;
@@ -25,6 +27,8 @@ interface IFeedRegistry
         address[] defaultConsumers;
         bytes32 jobId;
         string ipfsCID;
+        uint8 decimals;
+        string description;
     }
 
     /// @notice Parameters for creating a data source

@@ -7,7 +7,7 @@ import {IFeedEvents} from "./IFeedEvents.sol";
 
 /// @title IFeed - Interface for a data feed contract
 /// @notice Handles feed metadata, update logic, and on-chain value access
-/// @dev Implemented by specific feed contracts
+/// @dev Implemented by specific feed contracts and extends Chainlink AggregatorV3Interface
 interface IFeed is IFeedStructs, IFeedEvents {
     /// @notice Feed update configuration
     /// @param frequency The frequency of the feed
@@ -16,6 +16,8 @@ interface IFeed is IFeedStructs, IFeedEvents {
     /// @param dataSourceId The data source ID of the feed
     /// @param ipfsCID The IPFS CID of the feed metadata
     /// @param consumerPricePerSecondScaled The price per second of the feed
+    /// @param decimals The number of decimals for Chainlink compatibility
+    /// @param description The description of the feed for Chainlink compatibility
     struct CreateFeedParams {
         FeedType feedType;
         address accessControlManager;
@@ -26,6 +28,8 @@ interface IFeed is IFeedStructs, IFeedEvents {
         bytes32 jobId;
         bytes32 dataSourceId;
         string ipfsCID;
+        uint8 decimals;
+        string description;
     }
 
     /// @notice Feed type

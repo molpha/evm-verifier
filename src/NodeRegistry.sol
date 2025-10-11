@@ -89,7 +89,8 @@ contract NodeRegistry is INodeRegistry, ERC165, Initializable {
     }
 
     /// @inheritdoc INodeRegistry
-    function addNode(LibSecp256k1.Point memory pubkey) external onlyProtocolAdmin {
+    function addNode(bytes memory compressedPubKey) external onlyProtocolAdmin {
+        LibSecp256k1.Point memory pubkey = LibSecp256k1.decompress(compressedPubKey);
         if (pubkey.isZeroPoint()) revert("Invalid public key");
         if (pubkey.toAddress() == address(0)) revert("Zero address");
 

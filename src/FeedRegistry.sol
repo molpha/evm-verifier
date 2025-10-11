@@ -129,6 +129,8 @@ contract FeedRegistry is IFeedRegistry, ERC165, Initializable {
             params.subscriptionDueTime > block.timestamp,
             "Invalid feed config"
         );
+        require(bytes(params.description).length > 0, "Empty description");
+        require(params.decimals <= 18, "Invalid decimals");
     }
 
     function _createFeed(
@@ -147,7 +149,9 @@ contract FeedRegistry is IFeedRegistry, ERC165, Initializable {
                         .consumerPricePerSecondScaled,
                     jobId: params.jobId,
                     dataSourceId: dataSourceId,
-                    ipfsCID: params.ipfsCID
+                    ipfsCID: params.ipfsCID,
+                    decimals: params.decimals,
+                    description: params.description
                 })
             )
         );

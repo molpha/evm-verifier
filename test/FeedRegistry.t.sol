@@ -58,7 +58,9 @@ contract FeedRegistryTest is Test {
             defaultConsumers: new address[](1),
             subscriptionDueTime: uint64(block.timestamp + 30 days),
             consumerPricePerSecondScaled: 0,
-            ipfsCID: "test"
+            ipfsCID: "test",
+            decimals: 8,
+            description: "Test Feed"
         });
 
         params.defaultConsumers[0] = defaultConsumer;
@@ -105,7 +107,9 @@ contract FeedRegistryTest is Test {
             defaultConsumers: new address[](1),
             subscriptionDueTime: uint64(block.timestamp + 30 days),
             consumerPricePerSecondScaled: 0,
-            ipfsCID: "test"
+            ipfsCID: "test",
+            decimals: 8,
+            description: "Test Feed"
         });
         params.defaultConsumers[0] = defaultConsumer;
 
@@ -150,7 +154,9 @@ contract FeedRegistryTest is Test {
             defaultConsumers: new address[](1),
             subscriptionDueTime: uint64(block.timestamp + 30 days),
             consumerPricePerSecondScaled: 0,
-            ipfsCID: "test"
+            ipfsCID: "test",
+            decimals: 8,
+            description: "Test Feed"
         });
         params.defaultConsumers[0] = defaultConsumer;
         
@@ -178,7 +184,9 @@ contract FeedRegistryTest is Test {
             defaultConsumers: new address[](1),
             subscriptionDueTime: uint64(block.timestamp + 30 days),
             consumerPricePerSecondScaled: 0,
-            ipfsCID: "test"
+            ipfsCID: "test",
+            decimals: 8,
+            description: "Test Feed"
         });
         params.defaultConsumers[0] = defaultConsumer;
         
@@ -205,7 +213,9 @@ contract FeedRegistryTest is Test {
             defaultConsumers: new address[](1),
             subscriptionDueTime: uint64(block.timestamp + 30 days),
             consumerPricePerSecondScaled: 0,
-            ipfsCID: "test"
+            ipfsCID: "test",
+            decimals: 8,
+            description: "Test Feed"
         });
         params.defaultConsumers[0] = defaultConsumer;
         
@@ -232,7 +242,9 @@ contract FeedRegistryTest is Test {
             defaultConsumers: new address[](1),
             subscriptionDueTime: uint64(block.timestamp - 1), // Invalid - past time
             consumerPricePerSecondScaled: 0,
-            ipfsCID: "test"
+            ipfsCID: "test",
+            decimals: 8,
+            description: "Test Feed"
         });
         params.defaultConsumers[0] = defaultConsumer;
         

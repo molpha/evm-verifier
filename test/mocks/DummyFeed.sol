@@ -6,6 +6,7 @@ import {IFeedStructs} from "../../src/interfaces/IFeedStructs.sol";
 import {ISubscriptionRegistry} from "../../src/interfaces/ISubscriptionRegistry.sol";
 import {INodeRegistry} from "../../src/interfaces/INodeRegistry.sol";
 import {INodeRegistryStructs} from "../../src/interfaces/INodeRegistryStructs.sol";
+import {AggregatorV3Interface} from "../../src/interfaces/chainlink/AggregatorV3Interface.sol";
 
 contract DummyFeed is IFeed {
     IFeedStructs.Answer[] internal answers;
@@ -145,6 +146,83 @@ contract DummyFeed is IFeed {
     }
 
     function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
-        return interfaceId == type(IFeed).interfaceId;
+        return interfaceId == type(IFeed).interfaceId ||
+               interfaceId == type(AggregatorV3Interface).interfaceId;
+    }
+
+    // Chainlink AggregatorV3Interface implementation
+    function decimals() external pure returns (uint8) {
+        return 8;
+    }
+
+    function description() external pure returns (string memory) {
+        return "Dummy Feed";
+    }
+
+    function version() external pure returns (uint256) {
+        return 1;
+    }
+
+    function getRoundData(uint80 _roundId)
+        external
+        view
+        returns (
+            uint80 roundId,
+            int256 answer,
+            uint256 startedAt,
+            uint256 updatedAt,
+            uint80 answeredInRound
+        )
+    {
+        require(_roundId < answers.length, "Invalid round ID");
+        
+        IFeedStructs.Answer memory answerData = answers[_roundId];
+        require(answerData.value.length >= 32, "Invalid answer format");
+        
+        bytes memory valueBytes = answerData.value;
+        int256 price;
+        assembly {
+            price := mload(add(valueBytes, 32))
+        }
+
+        return (
+            _roundId,
+            price,
+            answerData.timestamp,
+            answerData.timestamp,
+            _roundId
+        );
+    }
+
+    function latestRoundData()
+        external
+        view
+        returns (
+            uint80 roundId,
+            int256 answer,
+            uint256 startedAt,
+            uint256 updatedAt,
+            uint80 answeredInRound
+        )
+    {
+        require(answers.length > 0, "No data available");
+        
+        uint80 latestRoundId = uint80(answers.length - 1);
+        IFeedStructs.Answer memory answerData = answers[latestRoundId];
+        require(answerData.value.length >= 32, "Invalid answer format");
+        
+        bytes memory valueBytes = answerData.value;
+        int256 price;
+        assembly {
+            price := mload(add(valueBytes, 32))
+        }
+
+        return (
+            latestRoundId,
+            price,
+            answerData.timestamp,
+            answerData.timestamp,
+            latestRoundId
+        );
     }
 }

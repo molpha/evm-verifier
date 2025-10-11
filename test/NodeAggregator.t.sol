@@ -6,6 +6,7 @@ import {NodeRegistry} from "../src/NodeRegistry.sol";
 import {AccessControlManager} from "../src/AccessControlManager.sol";
 import {INodeRegistry, INodeRegistryStructs} from "../src/interfaces/INodeRegistry.sol";
 import {LibSecp256k1} from "../src/libs/LibSecp256k1.sol";
+import {console} from "forge-std/console.sol";
 
 contract NodeAggregatorTest is Test {
     using LibSecp256k1 for LibSecp256k1.Point;
@@ -27,15 +28,15 @@ contract NodeAggregatorTest is Test {
         registry.initialize(address(acl));
     }
 
-    function test_registerNode_InvalidKey_Revert() public {
-        LibSecp256k1.Point memory zero = LibSecp256k1.ZERO_POINT();
-        vm.expectRevert("Invalid public key");
+    function test_registerNode_InvalidKeyLength_Revert() public {
+        bytes memory zero = new bytes(0);
+        vm.expectRevert("invalid length");
         registry.addNode(zero);
     }
 
     function test_registerAndUnregisterNode_Works() public {
         LibSecp256k1.Point memory g = LibSecp256k1.G();
-        registry.addNode(g);
+        registry.addNode(LibSecp256k1.compress(g));
         assertTrue(registry.isNode(g.toAddress()));
         assertEq(registry.getTotalNodes(), 1);
 
@@ -46,7 +47,7 @@ contract NodeAggregatorTest is Test {
 
     function testFuzz_verifySignature_InvalidOrder(uint256 a, uint256 b) public {
         LibSecp256k1.Point memory g = LibSecp256k1.G();
-        registry.addNode(g);
+        registry.addNode(LibSecp256k1.compress(g));
         uint256[] memory signers = new uint256[](2);
         signers[0] = 1;
         signers[1] = 1; // not strictly increasing

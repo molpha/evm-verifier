@@ -26,7 +26,7 @@ contract MockNodeRegistry is INodeRegistry {
     function publish(
         INodeRegistryStructs.DataUpdate calldata dataUpdate,
         INodeRegistryStructs.SchnorrSignature calldata schnorrData
-    ) external {
+    ) external override {
         // Mock implementation - revert if verification should fail
         // verifySignature(dataUpdate.message, schnorrData, dataUpdate.minSignaturesThreshold);
     }
@@ -35,7 +35,7 @@ contract MockNodeRegistry is INodeRegistry {
         bytes32 /*message*/,
         INodeRegistryStructs.SchnorrSignature calldata /*schnorrData*/,
         uint256 /*minSignaturesThreshold*/
-    ) external view {
+    ) external view override {
         // Mock implementation - revert if verification should fail
         if (!verificationResult) {
             revert("Verification failed");
@@ -44,27 +44,28 @@ contract MockNodeRegistry is INodeRegistry {
         // lastMessage = message; // Can't modify state in view function
     }
 
-    function addNode(LibSecp256k1.Point memory pubkey) external {
+    function addNode(bytes memory compressedPubKey) external override {
+        LibSecp256k1.Point memory pubkey = LibSecp256k1.decompress(compressedPubKey);
         address node = pubkey.toAddress();
         nodes[node] = true;
         total += 1;
     }
 
-    function removeNode(address node) external {
+    function removeNode(address node) external override {
         require(nodes[node], "not node");
         nodes[node] = false;
         total -= 1;
     }
 
-    function isNode(address node) external view returns (bool) {
+    function isNode(address node) external view override returns (bool) {
         return nodes[node];
     }
 
-    function getTotalNodes() external view returns (uint256) {
+    function getTotalNodes() external view override returns (uint256) {
         return total;
     }
 
-    function getNodesSetHash() external pure returns (bytes32) {
+    function getNodesSetHash() external pure override returns (bytes32) {
         return bytes32(0);
     }
 
