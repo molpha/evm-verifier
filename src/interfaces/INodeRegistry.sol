@@ -4,17 +4,22 @@ pragma solidity ^0.8.29;
 import {LibSecp256k1} from "../libs/LibSecp256k1.sol";
 import {INodeRegistryStructs} from "./INodeRegistryStructs.sol";
 import {INodeRegistryEvents} from "./INodeRegistryEvents.sol";
-import {INodeRegistryErrors} from "./INodeRegistryErrors.sol";
 
 /// @title INodeRegistry
 /// @notice Interface for the NodeAggregator
-interface INodeRegistry is INodeRegistryStructs, INodeRegistryEvents, INodeRegistryErrors {
+interface INodeRegistry is INodeRegistryStructs, INodeRegistryEvents {
     /// @notice Initialize the node registry
-    function initialize() external;
+    /// @param accessControlManager The access control manager address
+    function initialize(address accessControlManager) external;
+
+    function publish(
+        DataUpdate calldata dataUpdate,
+        SchnorrSignature calldata schnorrData
+    ) external;
 
     /// @notice Add a new node in the aggregator group
-    /// @param pubkey Public key of the node
-    function addNode(LibSecp256k1.Point memory pubkey) external;
+    /// @param compressedPubKey Compressed public key of the node
+    function addNode(bytes memory compressedPubKey) external;
 
     /// @notice Remove a node from the aggregator group
     /// @param node Address of the node to remove

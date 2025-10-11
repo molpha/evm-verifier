@@ -29,6 +29,8 @@ library LibSecp256k1 {
     uint private constant _B = 7;
     uint private constant _P =
         0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFC2F;
+    // Because p % 4 == 3, sqrt(z) = z^((p+1)/4) mod p
+    uint256 private constant EXPONENT = (_P + 1) >> 2;
 
     /// @dev Returns the order of the group.
     function Q() internal pure returns (uint) {
@@ -39,10 +41,11 @@ library LibSecp256k1 {
     /// @dev Returns the generator G.
     ///      Note that the generator is also called base point.
     function G() internal pure returns (Point memory) {
-        return Point({
-            x: 0x79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798,
-            y: 0x483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8
-        });
+        return
+            Point({
+                x: 0x79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798,
+                y: 0x483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8
+            });
     }
 
     /// @dev Returns the zero point.
@@ -75,11 +78,9 @@ library LibSecp256k1 {
     }
 
     /// @dev Returns Affine point `self` in Jacobian coordinates.
-    function toJacobian(Point memory self)
-        internal
-        pure
-        returns (JacobianPoint memory)
-    {
+    function toJacobian(
+        Point memory self
+    ) internal pure returns (JacobianPoint memory) {
         return JacobianPoint({x: self.x, y: self.y, z: 1});
     }
 
@@ -97,8 +98,11 @@ library LibSecp256k1 {
     function isOnCurve(Point memory self) internal pure returns (bool) {
         uint left = mulmod(self.y, self.y, _P);
         // Note that adding a * x can be waived as ∀x: a * x = 0.
-        uint right =
-            addmod(mulmod(self.x, mulmod(self.x, self.x, _P), _P), _B, _P);
+        uint right = addmod(
+            mulmod(self.x, mulmod(self.x, self.x, _P), _P),
+            _B,
+            _P
+        );
 
         return left == right;
     }
@@ -126,11 +130,9 @@ library LibSecp256k1 {
     ///
     /// @custom:invariant Reverts iff out of gas.
     /// @custom:invariant Does not run into an infinite loop.
-    function toAffine(JacobianPoint memory self)
-        internal
-        pure
-        returns (Point memory)
-    {
+    function toAffine(
+        JacobianPoint memory self
+    ) internal pure returns (Point memory) {
         Point memory result;
 
         // Compute z⁻¹, i.e. the modular inverse of self.z.
@@ -168,10 +170,10 @@ library LibSecp256k1 {
     /// @custom:invariant Only mutates `self` memory variable.
     /// @custom:invariant Reverts iff out of gas.
     /// @custom:invariant Uses constant amount of gas.
-    function addAffinePoint(JacobianPoint memory self, Point memory p)
-        internal
-        pure
-    {
+    function addAffinePoint(
+        JacobianPoint memory self,
+        Point memory p
+    ) internal pure {
         // Addition formula:
         //      x = r² - j - (2 * v)             (mod P)
         //      y = (r * (v - x)) - (2 * y1 * j) (mod P)
@@ -302,6 +304,50 @@ library LibSecp256k1 {
         }
     }
 
+    /// @notice Decompress 33-byte compressed key into (x, y) coordinates
+    /// @param comp Compressed pubkey: 0x02/0x03 prefix + 32-byte x
+    /// @return point Struct with affine coordinates
+    function decompress(
+        bytes memory comp
+    ) internal view returns (Point memory point) {
+        require(comp.length == 33, "invalid length");
+        uint8 prefix = uint8(comp[0]);
+        require(prefix == 0x02 || prefix == 0x03, "bad prefix");
+
+        uint256 x;
+        assembly {
+            // load 32 bytes starting at comp+0x21 (first byte of X)
+            x := mload(add(comp, 0x21))
+        }
+        require(x < _P, "x>=p");
+
+        // y = sqrt(x^3+7) mod p
+        uint256 xx = mulmod(x, x, _P);
+        uint256 rhs = addmod(mulmod(xx, x, _P), _B, _P);
+        uint256 y = _modExp(rhs, EXPONENT, _P);
+
+        // pick root matching prefix (0x02 even, 0x03 odd)
+        if ((y & 1) != (prefix & 1)) y = _P - y;
+        if (rhs == 0) require(prefix == 0x02, "invalid zero parity");
+
+        point = Point(x, y);
+    }
+
+    /// @notice Compress affine point into 33-byte form (0x02/0x03 + X)
+    /// @dev Validates point is on secp256k1 curve
+    function compress(
+        Point memory p
+    ) internal pure returns (bytes memory comp) {
+        require(p.x < _P && p.y < _P, "coord>=p");
+        // y^2 == x^3 + 7 mod p
+        uint256 lhs = mulmod(p.y, p.y, _P);
+        uint256 rhs = addmod(mulmod(mulmod(p.x, p.x, _P), p.x, _P), _B, _P);
+        require(lhs == rhs, "not on curve");
+
+        bytes1 prefix = (p.y & 1 == 0) ? bytes1(0x02) : bytes1(0x03);
+        // ← avoids any ambiguity with mstore offsets
+        comp = abi.encodePacked(prefix, bytes32(p.x));
+    }
     // -- Private Helpers --
 
     /// @dev Returns the modular inverse of `x` for modulo `_P`.
@@ -357,5 +403,50 @@ library LibSecp256k1 {
         }
 
         return t;
+    }
+
+    function _modExp(
+        uint256 base,
+        uint256 exp,
+        uint256 mod
+    ) private view returns (uint256 result) {
+        // EIP-198 expects: |len(b)|len(e)|len(m)| b | e | m |
+        // We'll use 32-byte lengths and big-endian words.
+        uint256[6] memory input;
+        input[0] = 32; // len(b)
+        input[1] = 32; // len(e)
+        input[2] = 32; // len(m)
+        input[3] = base;
+        input[4] = exp;
+        input[5] = mod;
+
+        bytes memory callData = abi.encodePacked(
+            bytes32(input[0]),
+            bytes32(input[1]),
+            bytes32(input[2]),
+            bytes32(input[3]),
+            bytes32(input[4]),
+            bytes32(input[5])
+        );
+
+        bytes memory out = new bytes(32);
+        bool ok;
+        assembly {
+            // staticcall to 0x05 (bigModExp)
+            // gas stipend: just forward most of remaining gas
+            ok := staticcall(
+                gas(),
+                0x05,
+                add(callData, 0x20),
+                mload(callData),
+                add(out, 0x20),
+                32
+            )
+        }
+        require(ok, "modexp failed");
+        assembly {
+            result := mload(add(out, 0x20))
+        }
+        require(result < mod, "modexp>=mod");
     }
 }

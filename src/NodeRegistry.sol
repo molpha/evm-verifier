@@ -41,7 +41,17 @@ contract NodeRegistry is INodeRegistry, ERC165, Initializable {
     /// @notice pointer to signers array stored with SSTORE2, signers[0] is empty cause we use 1-based indexing
     address public pointer;
 
-    function initialize() external override initializer {
+    IAccessControlManager public _accessControlManager;
+
+    modifier onlyProtocolAdmin {
+        _accessControlManager.verifyProtocolAdmin(msg.sender);
+        _;
+    }
+
+    function initialize(address accessControlManager) external override initializer {
+        _accessControlManager = IAccessControlManager(accessControlManager);
+        _accessControlManager.verifyProtocolAdmin(msg.sender);
+
         // Initialize with empty array that has one empty slot at index 0
         LibSecp256k1.Point[] memory emptyArray = new LibSecp256k1.Point[](1);
         // emptyArray[0] remains zero point (default)
@@ -52,9 +62,11 @@ contract NodeRegistry is INodeRegistry, ERC165, Initializable {
         DataUpdate calldata dataUpdate,
         SchnorrSignature calldata schnorrData
     ) external {
-        require(dataUpdate.feed != address(0), ZeroAddress());
+        require(dataUpdate.feed != address(0), "Zero address");
 
         uint256 minSignaturesThreshold = IFeed(dataUpdate.feed).getMinSignaturesThreshold();
+        bytes32 jobId = IFeed(dataUpdate.feed).getJobId();
+        require(jobId == dataUpdate.jobId, "Invalid feed");
 
         bytes32 message = _constructMessage(dataUpdate);
         _verifySignature(message, schnorrData, minSignaturesThreshold);
@@ -77,18 +89,19 @@ contract NodeRegistry is INodeRegistry, ERC165, Initializable {
     }
 
     /// @inheritdoc INodeRegistry
-    function addNode(LibSecp256k1.Point memory pubkey) external {
-        if (pubkey.isZeroPoint()) revert InvalidPublicKey();
-        if (pubkey.toAddress() == address(0)) revert ZeroAddress();
+    function addNode(bytes memory compressedPubKey) external onlyProtocolAdmin {
+        LibSecp256k1.Point memory pubkey = LibSecp256k1.decompress(compressedPubKey);
+        if (pubkey.isZeroPoint()) revert("Invalid public key");
+        if (pubkey.toAddress() == address(0)) revert("Zero address");
 
         bytes memory pubKeys = SSTORE2.read(pointer); // encoded array of signer pubKeys
 
         uint256 nodesAmount = pubKeys.getNodesLength();
-        if (nodesAmount == MAX_NODES) revert MaxNodesReached();
+        if (nodesAmount == MAX_NODES) revert("Max nodes reached");
 
         address node = pubkey.toAddress();
 
-        if (nodeIndexes[node] != 0) revert NodeAlreadyAdded(node);
+        if (nodeIndexes[node] != 0) revert("Node already added");
 
         nodeIndexes[node] = nodesAmount;
 
@@ -101,9 +114,9 @@ contract NodeRegistry is INodeRegistry, ERC165, Initializable {
         emit LogNodeAdded(node, nodesAmount, newPointer);
     }
 
-    function removeNode(address node) external {
+    function removeNode(address node) external onlyProtocolAdmin {
         uint256 index = nodeIndexes[node];
-        if (index == 0) revert NotNode(node);
+        if (index == 0) revert("Not node");
 
         // encoded array of signer pubKeys
         bytes memory pubKeys = SSTORE2.read(pointer);
@@ -160,21 +173,21 @@ contract NodeRegistry is INodeRegistry, ERC165, Initializable {
         SchnorrSignature calldata schnorrData,
         uint256 minSignaturesThreshold
     ) internal view {
-        if (schnorrData.signature == bytes32(0)) revert InvalidSignature();
-        if (schnorrData.signers.length == 0) revert InvalidSignersOrder();
-        if (schnorrData.commitment == address(0)) revert InvalidCommitment();
+        if (schnorrData.signature == bytes32(0)) revert("Invalid signature");
+        if (schnorrData.signers.length == 0) revert("Invalid signers order");
+        if (schnorrData.commitment == address(0)) revert("Invalid commitment");
 
         uint256 numberSigners = schnorrData.signers.length;
 
         if (numberSigners < minSignaturesThreshold) {
-            revert NotEnoughSignatures(numberSigners, minSignaturesThreshold);
+            revert("Not enough signatures");
         }
 
         LibSecp256k1.Point[] memory pubKeys = _getPubKeys();
         uint256 signerSetLength = pubKeys.length;
         uint256 firstIndex = schnorrData.signers[0];
         if (firstIndex == 0 || firstIndex >= signerSetLength)
-            revert InvalidIndex(firstIndex);
+            revert("Invalid index");
         LibSecp256k1.JacobianPoint memory aggPubKey = pubKeys[
             schnorrData.signers[0]
         ].toJacobian();
@@ -183,9 +196,9 @@ contract NodeRegistry is INodeRegistry, ERC165, Initializable {
             uint256 signerIndex = schnorrData.signers[i];
 
             if (signerIndex == 0 || signerIndex >= signerSetLength)
-                revert InvalidIndex(signerIndex);
+                revert("Invalid index");
             if (signerIndex <= schnorrData.signers[i - 1])
-                revert InvalidSignersOrder();
+                revert("Invalid signers order");
 
             aggPubKey.addAffinePoint(pubKeys[schnorrData.signers[i]]);
         }
@@ -195,7 +208,7 @@ contract NodeRegistry is INodeRegistry, ERC165, Initializable {
             schnorrData.signature,
             schnorrData.commitment
         );
-        if (!isValid) revert InvalidSignature();
+        if (!isValid) revert("Invalid signature");
     }
 
     function _getPubKeys()
@@ -211,7 +224,7 @@ contract NodeRegistry is INodeRegistry, ERC165, Initializable {
     ) internal pure returns (bytes32 message) {
         message = keccak256(
             abi.encodePacked(
-                dataUpdate.feed,
+                dataUpdate.jobId,
                 dataUpdate.value,
                 dataUpdate.timestamp
             )

@@ -17,10 +17,12 @@ interface INodeRegistryStructs {
 
     /// @notice Data update struct containing feed address, value and timestamp
     /// @param feed The feed address
+    /// @param jobId The job ID
     /// @param value The value to update
     /// @param timestamp The timestamp of the update
     struct DataUpdate {
         address feed;
+        bytes32 jobId;
         bytes value;
         uint64 timestamp;
     }

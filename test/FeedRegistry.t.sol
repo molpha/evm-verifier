@@ -8,13 +8,14 @@ import {IFeedRegistry} from "../src/interfaces/IFeedRegistry.sol";
 import {IFeed} from "../src/interfaces/IFeed.sol";
 import {MockAccessControlManager} from "./mocks/MockAccessControlManager.sol";
 import {MockSubscriptionRegistry} from "./mocks/MockSubscriptionRegistry.sol";
-import {MockNodeRegistry} from "./mocks/MockNodeRegistry.sol";
+import {IDataSourceRegistry} from "../src/interfaces/IDataSourceRegistry.sol";
+import {MockDataSourceRegistry} from "./mocks/MockDataSourceRegistry.sol";
 
 contract FeedRegistryTest is Test {
     FeedRegistry registry;
     MockSubscriptionRegistry subRegistry;
-    MockNodeRegistry nodeRegistry;
     MockAccessControlManager acl;
+    MockDataSourceRegistry dataSourceRegistry;
 
     address manager;
     address notManager = address(999);
@@ -25,141 +26,233 @@ contract FeedRegistryTest is Test {
         manager = address(this); // Use the test contract as manager
         acl = new MockAccessControlManager(manager);
         subRegistry = new MockSubscriptionRegistry();
-        nodeRegistry = new MockNodeRegistry();
+        dataSourceRegistry = new MockDataSourceRegistry();
         
         // Set feed manager for proper access control
         acl.setFeedManager(manager);
         
         registry = new FeedRegistry();
-        registry.initialize(address(acl), address(subRegistry));
+        registry.initialize(address(acl), address(subRegistry), address(dataSourceRegistry));
+        
+        // Set the FeedRegistry address in the access control manager
+        acl.setFeedRegistry(address(registry));
     }
 
     function test_createFeed_PublicFeed() public {        
         vm.recordLogs();
-        
+        IDataSourceRegistry.DataSource memory dataSource = IDataSourceRegistry.DataSource({
+            owner: feedOwner,
+            dataSourceType: IDataSourceRegistry.DataSourceType.Public,
+            source: "test",
+            name: "test"
+        });
+        IFeedRegistry.CreateDataSourceParams memory dataSourceParams = IFeedRegistry.CreateDataSourceParams({
+            dataSource: dataSource,
+            signature: ""
+        });
         IFeedRegistry.CreateFeedParams memory params = IFeedRegistry.CreateFeedParams({
             feedType: IFeed.FeedType.PUBLIC,
             frequency: 3600,
             minSignaturesThreshold: 1,
-            ipfsCID: "test",
+            jobId: bytes32(uint256(1)),
             defaultConsumers: new address[](1),
-            subscriptionDueTime: block.timestamp + 30 days
+            subscriptionDueTime: uint64(block.timestamp + 30 days),
+            consumerPricePerSecondScaled: 0,
+            ipfsCID: "test",
+            decimals: 8,
+            description: "Test Feed"
         });
+
         params.defaultConsumers[0] = defaultConsumer;
-        
-        registry.createFeed(params);
+        vm.prank(feedOwner);
+        registry.createFeedWithNewDataSource(params, dataSourceParams);
         
         // Get the feed address from the last emitted event
-        Vm.Log[] memory logs = vm.getRecordedLogs();
-        assertTrue(logs.length > 0, "No events emitted");
+        Vm.Log[] memory entries = vm.getRecordedLogs();
         
-        // Check that the last event is LogFeedCreated
-        bytes32 expectedTopic = keccak256("LogFeedCreated(address,uint8,uint256,uint256,uint256,string)");
-        assertEq(logs[logs.length - 1].topics[0], expectedTopic, "Wrong event emitted");
+        // Now we expect 2 events: DataSourceCreated and LogFeedCreated
+        assertEq(entries.length, 2); // DataSourceCreated and LogFeedCreated events
         
-        // Decode the feed address from the event
-        address feedAddress = address(uint160(uint256(logs[logs.length - 1].topics[1])));
+        // Check that the LogFeedCreated event was emitted with correct signature (second event)
+        // LogFeedCreated signature should match IFeedRegistry interface
+        bytes32 expectedEventSignature = keccak256("LogFeedCreated(address,bytes32,bytes32,uint256,uint8,uint256,uint256,uint256,string)");
+        assertEq(entries[1].topics[0], expectedEventSignature);
         
-        // Verify the feed is registered
-        assertTrue(registry.isFeed(feedAddress), "Feed should be registered");
+        address feedAddress = address(uint160(uint256(entries[1].topics[1])));
+        IFeed feed = IFeed(feedAddress);
+        assertEq(uint8(feed.getFeedType()), uint8(IFeed.FeedType.PUBLIC));
+        assertEq(feed.getFrequency(), 3600);
+        assertEq(feed.getMinSignaturesThreshold(), 1);
+        assertEq(feed.getOwner(), feedOwner);
     }
 
-    function test_createFeed_PersonalFeed() public {        
+    function test_createFeed_PersonalFeed() public {
         vm.recordLogs();
+        IDataSourceRegistry.DataSource memory dataSource = IDataSourceRegistry.DataSource({
+            owner: feedOwner,
+            dataSourceType: IDataSourceRegistry.DataSourceType.Public,
+            source: "test",
+            name: "test"
+        });
+        IFeedRegistry.CreateDataSourceParams memory dataSourceParams = IFeedRegistry.CreateDataSourceParams({
+            dataSource: dataSource,
+            signature: ""
+        });
         
         IFeedRegistry.CreateFeedParams memory params = IFeedRegistry.CreateFeedParams({
             feedType: IFeed.FeedType.PERSONAL,
             frequency: 3600,
             minSignaturesThreshold: 1,
-            ipfsCID: "test",
+            jobId: bytes32(uint256(1)),
             defaultConsumers: new address[](1),
-            subscriptionDueTime: block.timestamp + 30 days
+            subscriptionDueTime: uint64(block.timestamp + 30 days),
+            consumerPricePerSecondScaled: 0,
+            ipfsCID: "test",
+            decimals: 8,
+            description: "Test Feed"
         });
         params.defaultConsumers[0] = defaultConsumer;
-        
-        registry.createFeed(params);
+
+        vm.prank(feedOwner);
+        registry.createFeedWithNewDataSource(params, dataSourceParams);
         
         // Get the feed address from the last emitted event
-        Vm.Log[] memory logs = vm.getRecordedLogs();
-        assertTrue(logs.length > 0, "No events emitted");
+        Vm.Log[] memory entries = vm.getRecordedLogs();
         
-        // Check that the last event is LogFeedCreated
-        bytes32 expectedTopic = keccak256("LogFeedCreated(address,uint8,uint256,uint256,uint256,string)");
-        assertEq(logs[logs.length - 1].topics[0], expectedTopic, "Wrong event emitted");
+        // Now we expect 2 events: DataSourceCreated and LogFeedCreated
+        assertEq(entries.length, 2); // DataSourceCreated and LogFeedCreated events
         
-        // Decode the feed address from the event
-        address feedAddress = address(uint160(uint256(logs[logs.length - 1].topics[1])));
+        // Check that the LogFeedCreated event was emitted with correct signature (second event)
+        // LogFeedCreated signature should match IFeedRegistry interface
+        bytes32 expectedEventSignature = keccak256("LogFeedCreated(address,bytes32,bytes32,uint256,uint8,uint256,uint256,uint256,string)");
+        assertEq(entries[1].topics[0], expectedEventSignature);
         
-        // Verify the feed is registered
-        assertTrue(registry.isFeed(feedAddress), "Feed should be registered");
+        address feedAddress = address(uint160(uint256(entries[1].topics[1])));
+        IFeed feed = IFeed(feedAddress);
+        assertEq(uint8(feed.getFeedType()), uint8(IFeed.FeedType.PERSONAL));
+        assertEq(feed.getFrequency(), 3600);
+        assertEq(feed.getMinSignaturesThreshold(), 1);
+        assertEq(feed.getOwner(), feedOwner);
     }
 
     function test_createFeed_InvalidConfig_ZeroThreshold() public {
+        IDataSourceRegistry.DataSource memory dataSource = IDataSourceRegistry.DataSource({
+            owner: feedOwner,
+            dataSourceType: IDataSourceRegistry.DataSourceType.Public,
+            source: "test",
+            name: "test"
+        });
+        IFeedRegistry.CreateDataSourceParams memory dataSourceParams = IFeedRegistry.CreateDataSourceParams({
+            dataSource: dataSource,
+            signature: ""
+        });
         IFeedRegistry.CreateFeedParams memory params = IFeedRegistry.CreateFeedParams({
             feedType: IFeed.FeedType.PUBLIC,
             frequency: 3600,
             minSignaturesThreshold: 0, // Invalid
-            ipfsCID: "test",
+            jobId: bytes32(uint256(1)),
             defaultConsumers: new address[](1),
-            subscriptionDueTime: block.timestamp + 30 days
+            subscriptionDueTime: uint64(block.timestamp + 30 days),
+            consumerPricePerSecondScaled: 0,
+            ipfsCID: "test",
+            decimals: 8,
+            description: "Test Feed"
         });
         params.defaultConsumers[0] = defaultConsumer;
         
-        vm.expectRevert(IFeedRegistry.InvalidFeedConfig.selector);
-        registry.createFeed(params);
+        vm.expectRevert("Invalid feed config");
+        registry.createFeedWithNewDataSource(params, dataSourceParams);
     }
 
     function test_createFeed_InvalidConfig_ZeroFrequency() public {
+        IDataSourceRegistry.DataSource memory dataSource = IDataSourceRegistry.DataSource({
+            owner: feedOwner,
+            dataSourceType: IDataSourceRegistry.DataSourceType.Public,
+            source: "test",
+            name: "test"
+        });
+        IFeedRegistry.CreateDataSourceParams memory dataSourceParams = IFeedRegistry.CreateDataSourceParams({
+            dataSource: dataSource,
+            signature: ""
+        });
+        
         IFeedRegistry.CreateFeedParams memory params = IFeedRegistry.CreateFeedParams({
             feedType: IFeed.FeedType.PUBLIC,
             frequency: 0, // Invalid
             minSignaturesThreshold: 1,
-            ipfsCID: "test",
+            jobId: bytes32(uint256(1)),
             defaultConsumers: new address[](1),
-            subscriptionDueTime: block.timestamp + 30 days
+            subscriptionDueTime: uint64(block.timestamp + 30 days),
+            consumerPricePerSecondScaled: 0,
+            ipfsCID: "test",
+            decimals: 8,
+            description: "Test Feed"
         });
         params.defaultConsumers[0] = defaultConsumer;
         
-        vm.expectRevert(IFeedRegistry.InvalidFeedConfig.selector);
-        registry.createFeed(params);
+        vm.expectRevert("Invalid feed config");
+        registry.createFeedWithNewDataSource(params, dataSourceParams);
     }
 
     function test_createFeed_InvalidConfig_EmptyCID() public {
+        IDataSourceRegistry.DataSource memory dataSource = IDataSourceRegistry.DataSource({
+            owner: feedOwner,
+            dataSourceType: IDataSourceRegistry.DataSourceType.Public,
+            source: "test",
+            name: "test"
+        });
+        IFeedRegistry.CreateDataSourceParams memory dataSourceParams = IFeedRegistry.CreateDataSourceParams({
+            dataSource: dataSource,
+            signature: ""
+        });
         IFeedRegistry.CreateFeedParams memory params = IFeedRegistry.CreateFeedParams({
             feedType: IFeed.FeedType.PUBLIC,
             frequency: 3600,
             minSignaturesThreshold: 1,
-            ipfsCID: "", // Invalid
+            jobId: bytes32(0), // Invalid
             defaultConsumers: new address[](1),
-            subscriptionDueTime: block.timestamp + 30 days
+            subscriptionDueTime: uint64(block.timestamp + 30 days),
+            consumerPricePerSecondScaled: 0,
+            ipfsCID: "test",
+            decimals: 8,
+            description: "Test Feed"
         });
         params.defaultConsumers[0] = defaultConsumer;
         
-        vm.expectRevert(IFeedRegistry.InvalidFeedConfig.selector);
-        registry.createFeed(params);
+        vm.expectRevert("Invalid feed config");
+        registry.createFeedWithNewDataSource(params, dataSourceParams);
     }
 
     function test_createFeed_InvalidConfig_PastDueTime() public {
+        IDataSourceRegistry.DataSource memory dataSource = IDataSourceRegistry.DataSource({
+            owner: feedOwner,
+            dataSourceType: IDataSourceRegistry.DataSourceType.Public,
+            source: "test",
+            name: "test"
+        });
+        IFeedRegistry.CreateDataSourceParams memory dataSourceParams = IFeedRegistry.CreateDataSourceParams({
+            dataSource: dataSource,
+            signature: ""
+        });
         IFeedRegistry.CreateFeedParams memory params = IFeedRegistry.CreateFeedParams({
             feedType: IFeed.FeedType.PUBLIC,
             frequency: 3600,
             minSignaturesThreshold: 1,
-            ipfsCID: "test",
+            jobId: bytes32(uint256(1)),
             defaultConsumers: new address[](1),
-            subscriptionDueTime: block.timestamp - 1 // Invalid - past time
+            subscriptionDueTime: uint64(block.timestamp - 1), // Invalid - past time
+            consumerPricePerSecondScaled: 0,
+            ipfsCID: "test",
+            decimals: 8,
+            description: "Test Feed"
         });
         params.defaultConsumers[0] = defaultConsumer;
         
-        vm.expectRevert(IFeedRegistry.InvalidFeedConfig.selector);
-        registry.createFeed(params);
+        vm.expectRevert("Invalid feed config");
+        registry.createFeedWithNewDataSource(params, dataSourceParams);
     }
 
-    function test_isFeed_UnregisteredFeed() public {
-        address randomFeed = address(0x123);
-        assertFalse(registry.isFeed(randomFeed), "Random address should not be a feed");
-    }
-
-    function test_supportsInterface() public {
+    function test_supportsInterface() public view {
         assertTrue(registry.supportsInterface(type(IFeedRegistry).interfaceId), "Should support IFeedRegistry interface");
     }
 }

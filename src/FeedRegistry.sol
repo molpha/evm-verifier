@@ -5,90 +5,174 @@ import {ERC165} from "openzeppelin-contracts/contracts/utils/introspection/ERC16
 import {Initializable} from "openzeppelin-contracts/contracts/proxy/utils/Initializable.sol";
 
 import {ERC165Checker} from "./libs/ERC165Checker.sol";
-import {PublicFeed} from "./PublicFeed.sol";
-import {PersonalFeed} from "./PersonalFeed.sol";
+import {Feed} from "./Feed.sol";
 import {IAccessControlManager} from "./interfaces/IAccessControlManager.sol";
 import {IFeed} from "./interfaces/IFeed.sol";
 import {IFeedRegistry} from "./interfaces/IFeedRegistry.sol";
 import {ISubscriptionRegistry} from "./interfaces/ISubscriptionRegistry.sol";
-import {PricingHelper} from "./libs/PricingHelper.sol";
+import {IPricingHelper} from "./interfaces/IPricingHelper.sol";
+import {IDataSourceRegistry} from "./interfaces/IDataSourceRegistry.sol";
 
 contract FeedRegistry is IFeedRegistry, ERC165, Initializable {
     using ERC165Checker for address;
 
     IAccessControlManager internal _accessControlManager;
     ISubscriptionRegistry internal _subscriptionRegistry;
-
-    mapping(address => bool) internal _isFeed;
+    IPricingHelper internal _pricingHelper;
+    IDataSourceRegistry internal _dataSourceRegistry;
 
     modifier onlyProtocolAdmin() {
         _accessControlManager.verifyProtocolAdmin(msg.sender);
         _;
     }
 
-    function initialize(address accessControlManager, address subscriptionRegistry) external override initializer {
-        accessControlManager.shouldSupport(type(IAccessControlManager).interfaceId);
-        subscriptionRegistry.shouldSupport(type(ISubscriptionRegistry).interfaceId);
+    function initialize(
+        address accessControlManager,
+        address subscriptionRegistry,
+        address dataSourceRegistry
+    ) external override initializer {
+        accessControlManager.shouldSupport(
+            type(IAccessControlManager).interfaceId
+        );
+        subscriptionRegistry.shouldSupport(
+            type(ISubscriptionRegistry).interfaceId
+        );
+        dataSourceRegistry.shouldSupport(type(IDataSourceRegistry).interfaceId);
 
         _accessControlManager = IAccessControlManager(accessControlManager);
         _subscriptionRegistry = ISubscriptionRegistry(subscriptionRegistry);
+        _dataSourceRegistry = IDataSourceRegistry(dataSourceRegistry);
     }
 
-    function createFeed(CreateFeedParams calldata params) external override {
-        require(params.minSignaturesThreshold > 0, InvalidFeedConfig());
-        require(params.frequency > 0, InvalidFeedConfig());
-        require(keccak256(bytes(params.ipfsCID)) != keccak256(bytes("")), InvalidFeedConfig());
-        require(params.subscriptionDueTime > block.timestamp, InvalidFeedConfig());
- 
-        address feed;
-        if (params.feedType == IFeed.FeedType.PUBLIC) {
-            feed = address(new PublicFeed(
-                address(_accessControlManager),
-                address(_subscriptionRegistry),
-                msg.sender,
-                params.frequency,
-                params.minSignaturesThreshold,
-                params.ipfsCID
-            ));
-        } else {
-            feed = address(new PersonalFeed(
-                address(_accessControlManager),
-                address(_subscriptionRegistry),
-                msg.sender,
-                params.frequency,
-                params.minSignaturesThreshold,
-                params.ipfsCID
-            ));
-        }
+    function createFeedWithNewDataSource(
+        CreateFeedParams calldata params,
+        CreateDataSourceParams calldata dataSourceParams
+    ) external override {
+        _validateFeedConfig(params);
 
-        _isFeed[feed] = true;
-        _subscriptionRegistry.subscribe(feed, msg.sender, params.subscriptionDueTime, params.defaultConsumers);
+        require(
+            dataSourceParams.dataSource.owner == msg.sender ||
+                dataSourceParams.dataSource.dataSourceType ==
+                IDataSourceRegistry.DataSourceType.Public,
+            "Private data source"
+        );
+        bytes32 dataSourceId = _dataSourceRegistry.createDataSource(dataSourceParams.dataSource, dataSourceParams.signature);
+
+        _createFeed(params, dataSourceId);
+    }
+
+    function createFeed(
+        CreateFeedParams calldata params,
+        bytes32 dataSourceId
+    ) external override {
+        _validateFeedConfig(params);
+
+        IDataSourceRegistry.DataSource
+            memory dataSource = _dataSourceRegistry.getDataSource(dataSourceId);
+        require(
+            dataSource.owner == msg.sender ||
+                dataSource.dataSourceType ==
+                IDataSourceRegistry.DataSourceType.Public,
+            "Private data source"
+        );
+
+        _createFeed(params, dataSourceId);
+    }
+
+    function updateFeed(
+        address feed,
+        uint256 frequency,
+        uint256 signaturesRequired,
+        bytes32 jobId,
+        string calldata ipfsCID
+    ) external override {
+        require(signaturesRequired > 0, "Invalid feed config");
+        require(frequency > 0, "Invalid feed config");
+        require(jobId != bytes32(0), "Empty job ID");
+        require(keccak256(bytes(ipfsCID)) != keccak256(bytes("")), "Empty IPFS CID");
+
+        IFeed(feed).updateFeedConfig(frequency, signaturesRequired, jobId, ipfsCID);
+        _subscriptionRegistry.recalculateSubscription(feed);
+    }
+
+    function setAccessControlManager(
+        address accessControlManager
+    ) external override onlyProtocolAdmin {
+        address(accessControlManager).shouldSupport(
+            type(IAccessControlManager).interfaceId
+        );
+        _accessControlManager = IAccessControlManager(accessControlManager);
+    }
+
+    function setSubscriptionRegistry(
+        address subscriptionRegistry
+    ) external override onlyProtocolAdmin {
+        address(subscriptionRegistry).shouldSupport(
+            type(ISubscriptionRegistry).interfaceId
+        );
+        _subscriptionRegistry = ISubscriptionRegistry(subscriptionRegistry);
+    }
+
+    function supportsInterface(
+        bytes4 interfaceId
+    ) public view override returns (bool) {
+        return
+            interfaceId == type(IFeedRegistry).interfaceId ||
+            super.supportsInterface(interfaceId);
+    }
+
+    function _validateFeedConfig(CreateFeedParams calldata params) internal view {
+        require(params.minSignaturesThreshold > 0, "Invalid feed config");
+        require(params.frequency > 0, "Invalid feed config");
+        require(params.jobId != bytes32(0), "Invalid feed config");
+        require(
+            params.subscriptionDueTime > block.timestamp,
+            "Invalid feed config"
+        );
+        require(bytes(params.description).length > 0, "Empty description");
+        require(params.decimals <= 18, "Invalid decimals");
+    }
+
+    function _createFeed(
+        CreateFeedParams calldata params,
+        bytes32 dataSourceId
+    ) internal {
+        address feed = address(
+            new Feed(
+                IFeed.CreateFeedParams({
+                    feedType: params.feedType,
+                    accessControlManager: address(_accessControlManager),
+                    owner: msg.sender,
+                    frequency: params.frequency,
+                    signaturesRequired: params.minSignaturesThreshold,
+                    consumerPricePerSecondScaled: params
+                        .consumerPricePerSecondScaled,
+                    jobId: params.jobId,
+                    dataSourceId: dataSourceId,
+                    ipfsCID: params.ipfsCID,
+                    decimals: params.decimals,
+                    description: params.description
+                })
+            )
+        );
+
+        _subscriptionRegistry.initFeedSubscription(
+            feed,
+            msg.sender,
+            params.subscriptionDueTime,
+            params.defaultConsumers
+        );
 
         emit LogFeedCreated(
-            feed, 
-            params.feedType, 
-            params.frequency, 
-            params.minSignaturesThreshold, 
-            IFeed(feed).getPricePerSecondScaled(),
+            feed,
+            dataSourceId,
+            params.jobId,
+            params.subscriptionDueTime,
+            params.feedType,
+            params.frequency,
+            params.minSignaturesThreshold,
+            params.consumerPricePerSecondScaled,
             params.ipfsCID
         );
-    }
-
-    function setAccessControlManager(address accessControlManager) external override onlyProtocolAdmin {
-        address(accessControlManager).shouldSupport(type(IAccessControlManager).interfaceId);
-        _accessControlManager = IAccessControlManager(accessControlManager);
-    }
-
-    function setSubscriptionRegistry(address subscriptionRegistry) external override onlyProtocolAdmin {
-        address(subscriptionRegistry).shouldSupport(type(ISubscriptionRegistry).interfaceId);
-        _subscriptionRegistry = ISubscriptionRegistry(subscriptionRegistry);
-    }
-
-    function isFeed(address feed) external view override returns (bool) {
-        return _isFeed[feed];
-    }
-
-    function supportsInterface(bytes4 interfaceId) public view override returns (bool) {
-        return interfaceId == type(IFeedRegistry).interfaceId || super.supportsInterface(interfaceId);
     }
 }

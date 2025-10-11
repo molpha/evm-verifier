@@ -13,13 +13,34 @@ contract MockSubscriptionRegistry is ISubscriptionRegistry {
         // Mock implementation - no actual initialization needed
     }
 
-    function subscribe(address feed, address owner, uint256 dueTime, address[] calldata consumers) external {
+    function subscribe(address feed, uint256 dueTime, address[] calldata consumers) external {
         for (uint256 i = 0; i < consumers.length; i++) {
             subscriptions[consumers[i]][feed] = true;
             subscriptionDueTimes[consumers[i]][feed] = dueTime;
             subscriptionData[consumers[i]][feed] = Subscription({
                 dueTime: uint64(dueTime),
-                owner: owner
+                owner: msg.sender,
+                subscriptionType: SubscriptionType.Consumer
+            });
+        }
+    }
+
+    function initFeedSubscription(address feed, address owner, uint256 dueTime, address[] calldata consumers) external {
+        subscriptions[owner][feed] = true;
+        subscriptionDueTimes[owner][feed] = dueTime;
+        subscriptionData[owner][feed] = Subscription({
+            dueTime: uint64(dueTime),
+            owner: owner,
+            subscriptionType: SubscriptionType.Owner
+        });
+
+        for (uint256 i = 0; i < consumers.length; i++) {
+            subscriptions[consumers[i]][feed] = true;
+            subscriptionDueTimes[consumers[i]][feed] = dueTime;
+            subscriptionData[consumers[i]][feed] = Subscription({
+                dueTime: uint64(dueTime),
+                owner: owner,
+                subscriptionType: SubscriptionType.Owner
             });
         }
     }
@@ -46,6 +67,13 @@ contract MockSubscriptionRegistry is ISubscriptionRegistry {
         delete subscriptionData[consumer][feed];
     }
 
+    function recalculateSubscription(address feed) external {
+        // Mock implementation
+    }
+
+    function setConsumerPricePerSecondScaled(address feed, uint256 consumerPricePerSecondScaled) external {
+        // Mock implementation
+    }
     function setFeedRegistry(address feedRegistry) external {
         // Mock implementation
     }
@@ -69,7 +97,8 @@ contract MockSubscriptionRegistry is ISubscriptionRegistry {
             subscriptionDueTimes[consumer][feed] = block.timestamp + 30 days;
             subscriptionData[consumer][feed] = Subscription({
                 dueTime: uint64(block.timestamp + 30 days),
-                owner: msg.sender
+                owner: msg.sender,
+                subscriptionType: SubscriptionType.Consumer
             });
         } else {
             subscriptionDueTimes[consumer][feed] = 0;
@@ -80,6 +109,14 @@ contract MockSubscriptionRegistry is ISubscriptionRegistry {
     function setSubscriptionDueTime(address consumer, address feed, uint256 dueTime) external {
         subscriptionDueTimes[consumer][feed] = dueTime;
         subscriptionData[consumer][feed].dueTime = uint64(dueTime);
+    }
+
+    function getPricePerSecondScaled(address /*feed*/) external pure returns (uint256) {
+        return 1;
+    }
+
+    function getConsumerPricePerSecondScaled(address /*feed*/) external pure returns (uint256) {
+        return 1;
     }
 
     function supportsInterface(bytes4 interfaceId) external pure returns (bool) {

@@ -9,24 +9,25 @@ interface IFeedEvents {
     /// @param timestamp new answer timestamp
     event LogAnswerPublished(bytes value, uint64 indexed timestamp);
 
-    /// @notice emitted when feed CID is changed
-    /// @param ipfsCID new ipfsCID
-    event LogCIDChanged(string ipfsCID);
-
-    /// @notice emitted when feed frequency is changed
-    /// @param frequency new frequency
-    /// @param pricePerSecondScaled new price per second scaled
-    event LogFrequencyChanged(uint256 frequency, uint256 pricePerSecondScaled);
-
-    /// @notice emitted when feed minSignaturesThreshold is changed
-    /// @param minSignaturesThreshold new minSignaturesThreshold
-    /// @param pricePerSecondScaled new price per second scaled
-    event LogMinSignaturesThresholdChanged(uint256 minSignaturesThreshold, uint256 pricePerSecondScaled);
-
     /// @notice emitted when feed config is changed
-    /// @param frequency new frequency
+    /// @param jobId new job ID
+    /// @param frequency new frequency  
     /// @param minSignaturesThreshold new minSignaturesThreshold
-    /// @param pricePerSecondScaled new price per second scaled
-    /// @param ipfsCID new ipfsCID
-    event LogFeedConfigChanged(uint256 frequency, uint256 minSignaturesThreshold, uint256 pricePerSecondScaled, string ipfsCID);
+    /// @param ipfsCID new IPFS CID
+    event LogFeedConfigChanged(bytes32 indexed jobId, uint256 frequency, uint256 minSignaturesThreshold, string ipfsCID);
+
+    /// @notice emitted when consumers are set
+    /// @param consumersToAdd consumers to add
+    /// @param dueTime due time
+    /// @param consumersToRemove consumers to remove
+    event LogConsumersSet(address[] consumersToAdd, uint256 dueTime, address[] consumersToRemove);
+
+    /// @notice emitted when consumer is added
+    /// @param consumer consumer address
+    /// @param dueTime due time
+    event LogConsumerAdded(address indexed consumer, uint256 dueTime);
+
+    /// @notice emitted when consumer is removed
+    /// @param consumer consumer address
+    event LogConsumerRemoved(address indexed consumer);
 }

@@ -8,7 +8,14 @@ interface ISubscriptionRegistryStructs {
     /// @param dueTime subscription due time
     /// @param owner subscription owner
     struct Subscription {
-        uint64 dueTime;
         address owner;
+        uint64 dueTime;
+        SubscriptionType subscriptionType;
+    }
+
+    /// @notice Subscription type
+    enum SubscriptionType {
+        Owner,
+        Consumer
     }
 }

@@ -28,7 +28,7 @@ contract Treasury is ITreasury, ERC165, ReentrancyGuard, Initializable {
     }
 
     constructor(IERC20 underlying) {
-        require(underlying.totalSupply() > 0, InvalidUnderlying());
+        require(underlying.totalSupply() > 0, "Invalid underlying");
 
         _underlying = underlying;
     }
@@ -43,8 +43,8 @@ contract Treasury is ITreasury, ERC165, ReentrancyGuard, Initializable {
     /// @param from Address to deposit from
     /// @param amount Amount to deposit
     function deposit(address from, uint256 amount) external {
-        if (amount == 0) revert ZeroAmount();
-        if (from == address(0)) revert ZeroAddress();
+        if (amount == 0) revert("Zero amount");
+        if (from == address(0)) revert("Zero address");
 
         // Transfer tokens from sender to treasury
         uint256 balanceBefore = _underlying.balanceOf(address(this));
@@ -56,11 +56,11 @@ contract Treasury is ITreasury, ERC165, ReentrancyGuard, Initializable {
     }
 
     function payReward(address recipient, uint256 amount) external {
-    //     if (amount == 0) revert ZeroAmount();
-    //     if (recipient == address(0)) revert ZeroAddress();
+    //     if (amount == 0) revert("Zero amount");
+    //     if (recipient == address(0)) revert("Zero address");
 
     //     uint256 balanceBefore = _underlying.balanceOf(address(this));
-    //     require(balanceBefore >= amount, InsufficientBalance());
+    //     require(balanceBefore >= amount, "Insufficient balance");
 
     //     _underlying.safeTransfer(recipient, amount);
     //     uint256 actualAmount = _underlying.balanceOf(address(this)) - balanceBefore;
@@ -77,13 +77,13 @@ contract Treasury is ITreasury, ERC165, ReentrancyGuard, Initializable {
         uint256 amount,
         address to
     ) external onlyProtocolAdmin {
-        if (amount == 0) revert ZeroAmount();
-        if (to == address(0)) revert ZeroAddress();
-        if (address(token) == address(0)) revert ZeroAddress();
+        if (amount == 0) revert("Zero amount");
+        if (to == address(0)) revert("Zero address");
+        if (address(token) == address(0)) revert("Zero address");
 
         // For emergency, we use actual balance instead of internal accounting
         uint256 actualBalance = _underlying.balanceOf(address(this));
-        if (actualBalance < amount) revert InsufficientBalance();
+        if (actualBalance < amount) revert("Insufficient balance");
 
         // Transfer tokens
         token.safeTransfer(to, amount);

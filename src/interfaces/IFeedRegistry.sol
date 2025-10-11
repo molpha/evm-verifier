@@ -2,6 +2,7 @@
 pragma solidity ^0.8.29;
 
 import {IFeed} from "./IFeed.sol";
+import {IDataSourceRegistry} from "./IDataSourceRegistry.sol";
 
 /// @title IFeedRegistry - Feed registration and lookup
 /// @notice Registry of active feeds on the Molpha protocol
@@ -11,16 +12,31 @@ interface IFeedRegistry
     /// @param feedType The type of feed to create
     /// @param frequency The frequency of the feed
     /// @param minSignaturesThreshold The minimum number of signatures required
-    /// @param ipfsCID The ipfsCID of the feed
     /// @param defaultConsumers The default consumers of the feed
+    /// @param jobId The job ID of the feed
+    /// @param ipfsCID The IPFS CID of the feed metadata
     /// @param subscriptionDueTime The subscription due time
+    /// @param decimals The number of decimals for Chainlink compatibility
+    /// @param description The description of the feed for Chainlink compatibility
     struct CreateFeedParams {
         IFeed.FeedType feedType;
-        uint256 frequency;
-        uint256 minSignaturesThreshold;
-        string ipfsCID;
+        uint64 frequency;
+        uint64 minSignaturesThreshold;
+        uint64 subscriptionDueTime;
+        uint128 consumerPricePerSecondScaled;
         address[] defaultConsumers;
-        uint256 subscriptionDueTime;
+        bytes32 jobId;
+        string ipfsCID;
+        uint8 decimals;
+        string description;
+    }
+
+    /// @notice Parameters for creating a data source
+    /// @param dataSource The data source to create
+    /// @param signature The signature of the data source owner
+    struct CreateDataSourceParams {
+        IDataSourceRegistry.DataSource dataSource;
+        bytes signature;
     }
 
     /// @notice emitted when new feed is added
@@ -28,23 +44,41 @@ interface IFeedRegistry
     /// @param feedType feed type
     /// @param frequency feed frequency
     /// @param minSignaturesThreshold minimum number of signatures required
-    /// @param ipfsCID ipfsCID
+    /// @param jobId job ID
     event LogFeedCreated(
         address indexed feed, 
+        bytes32 indexed dataSourceId,
+        bytes32 indexed jobId,
+        uint256 activeTill,
         IFeed.FeedType feedType,
         uint256 frequency, 
         uint256 minSignaturesThreshold, 
-        uint256 pricePerSecondScaled,
+        uint256 consumerPricePerSecondScaled,
         string ipfsCID
     );
-
-    /// @notice thrown when feed config is invalid
-    error InvalidFeedConfig();
 
     /// @notice Initialize the feed registry
     /// @param accessControlManager The access control manager address
     /// @param subscriptionRegistry The subscription registry address
-    function initialize(address accessControlManager, address subscriptionRegistry) external;
+    /// @param dataSourceRegistry The data source registry address
+    function initialize(address accessControlManager, address subscriptionRegistry, address dataSourceRegistry) external;
+
+    /// @notice Create a new feed with a new data source
+    /// @param params The parameters for creating a feed
+    function createFeedWithNewDataSource(CreateFeedParams calldata params, CreateDataSourceParams calldata dataSourceParams) external;
+
+    /// @notice Create a new feed with an existing data source
+    /// @param params The parameters for creating a feed
+    /// @param dataSourceId The ID of the data source
+    function createFeed(CreateFeedParams calldata params, bytes32 dataSourceId) external;
+
+    /// @notice Update the feed configuration
+    /// @param feed The feed address
+    /// @param frequency The frequency of the feed
+    /// @param signaturesRequired The minimum number of signatures required
+    /// @param jobId The job ID
+    /// @param ipfsCID The IPFS CID of the feed metadata
+    function updateFeed(address feed, uint256 frequency, uint256 signaturesRequired, bytes32 jobId, string calldata ipfsCID) external;
 
     /// @notice Set the access control manager
     /// @param accessControlManager The access control manager address
@@ -53,13 +87,4 @@ interface IFeedRegistry
     /// @notice Set the subscription registry
     /// @param subscriptionRegistry The subscription registry address
     function setSubscriptionRegistry(address subscriptionRegistry) external;
-
-    /// @notice Create a new feed
-    /// @param params The parameters for creating a feed
-    function createFeed(CreateFeedParams calldata params) external;
-
-    /// @notice Check if a feed exists
-    /// @param feed The feed address
-    /// @return True if the feed exists, false otherwise
-    function isFeed(address feed) external view returns (bool);
 }

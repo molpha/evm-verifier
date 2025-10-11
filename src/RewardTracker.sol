@@ -61,7 +61,7 @@ contract RewardTracker is IRewardTracker, ReentrancyGuard {
     function recordParticipation(
         uint256 signersBitmap
     ) external onlyNodeRegistry returns (uint256 index) {
-        if (signersBitmap == 0) revert InvalidBitmap();
+        if (signersBitmap == 0) revert("Invalid bitmap");
 
         // Add bitmap to the global array
         index = participationBitmaps.length;
@@ -79,17 +79,17 @@ contract RewardTracker is IRewardTracker, ReentrancyGuard {
         address node,
         uint256 maxBitmapsToProcess
     ) external returns (uint256 processed, uint256 remaining) {
-        if (maxBitmapsToProcess == 0) revert InvalidBatchSize();
+        if (maxBitmapsToProcess == 0) revert("Invalid batch size");
 
         // Get node index from registry (will revert if not a valid node)
-        if (!nodeRegistry.isNode(node)) revert NotNode(node);
+        if (!nodeRegistry.isNode(node)) revert("Not node");
 
         uint256 lastDistributed = nodeLastDistributedIndex[node];
         uint256 totalBitmaps = participationBitmaps.length;
 
         // Calculate how many to process
         uint256 unprocessed = totalBitmaps - lastDistributed;
-        if (unprocessed == 0) revert NoNewParticipations();
+        if (unprocessed == 0) revert("No new participations");
 
         uint256 toProcess = unprocessed > maxBitmapsToProcess
             ? maxBitmapsToProcess
@@ -135,7 +135,7 @@ contract RewardTracker is IRewardTracker, ReentrancyGuard {
     /// @param node Address of the node claiming rewards
     function _claimRewards(address node) internal {
         uint256 amount = pendingRewards[node];
-        if (amount == 0) revert NoRewardsToClaim();
+        if (amount == 0) revert("No rewards to claim");
 
         pendingRewards[node] = 0;
         
@@ -148,7 +148,7 @@ contract RewardTracker is IRewardTracker, ReentrancyGuard {
     /// @notice Update the price per response
     /// @param newPrice New price per response in reward tokens
     function setPricePerResponse(uint256 newPrice) external onlyNodeRegistry {
-        if (newPrice == 0) revert InvalidPricePerResponse();
+        if (newPrice == 0) revert("Invalid price");
 
         uint256 oldPrice = pricePerResponse;
         pricePerResponse = newPrice;
@@ -168,7 +168,7 @@ contract RewardTracker is IRewardTracker, ReentrancyGuard {
     function getParticipationBitmap(
         uint256 index
     ) external view returns (uint256 bitmap) {
-        if (index >= participationBitmaps.length) revert InvalidIndex(index);
+        if (index >= participationBitmaps.length) revert("Invalid index");
         return participationBitmaps[index];
     }
 
@@ -180,12 +180,12 @@ contract RewardTracker is IRewardTracker, ReentrancyGuard {
         uint256 from,
         uint256 to
     ) external view returns (uint256[] memory bitmaps) {
-        if (to > participationBitmaps.length) revert InvalidIndex(to);
-        if (from >= to) revert InvalidIndex(from);
+        if (to > participationBitmaps.length) revert("Invalid index");
+        if (from >= to) revert("Invalid index");
 
         bitmaps = new uint256[](to - from);
         for (uint256 i = 0; i < bitmaps.length; i++) {
-            bitmaps[i] = participationBitmaps[from + i];
+            bitmaps[from + i] = participationBitmaps[from + i];
         }
     }
 
@@ -222,7 +222,7 @@ contract RewardTracker is IRewardTracker, ReentrancyGuard {
     ) internal view returns (uint256 count) {
         // Get node index from registry (1-based)
         uint256 nodeIndex = nodeRegistry.getNodeIndex(node);
-        if (nodeIndex == 0) revert NotNode(node);
+        if (nodeIndex == 0) revert("Not node");
         
         // Convert to 0-based bitmap position
         uint256 bitmapPosition = nodeIndex - 1;

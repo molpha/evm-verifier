@@ -11,13 +11,6 @@ interface ITreasury {
     event RewardsPaid(address indexed to, uint256 amount);
     event FundsWithdrawn(address indexed token, address indexed to, uint256 amount);
 
-    // Errors
-    error InsufficientBalance();
-    error ZeroAmount();
-    error ZeroAddress();
-    error TransferFailed();
-    error InvalidUnderlying();
-
     /// @notice Initialize the treasury
     /// @param accessControlManager The access control manager
     function initialize(address accessControlManager) external;

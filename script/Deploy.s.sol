@@ -6,21 +6,33 @@ import {ProxyAdmin} from "openzeppelin-contracts/contracts/proxy/transparent/Pro
 import {TransparentUpgradeableProxy} from "openzeppelin-contracts/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 import {Script} from "forge-std/Script.sol";
 
+import {LibSecp256k1} from "../src/libs/LibSecp256k1.sol";
+
 import {AccessControlManager} from "../src/AccessControlManager.sol";
 import {FeedRegistry} from "../src/FeedRegistry.sol";
 import {SubscriptionRegistry} from "../src/SubscriptionRegistry.sol";
 import {NodeRegistry} from "../src/NodeRegistry.sol";
 import {Treasury} from "../src/Treasury.sol";
 import {MockedUSDC} from "../src/mocks/MockedUSDC.sol";
+import {PricingHelper} from "../src/PricingHelper.sol";
+import {DataSourceRegistry} from "../src/DataSourceRegistry.sol";
 
 import {IAccessControlManager} from "../src/interfaces/IAccessControlManager.sol";
 import {IFeedRegistry} from "../src/interfaces/IFeedRegistry.sol";
 import {ISubscriptionRegistry} from "../src/interfaces/ISubscriptionRegistry.sol";
 import {INodeRegistry} from "../src/interfaces/INodeRegistry.sol";
 import {ITreasury} from "../src/interfaces/ITreasury.sol";
+import {IPricingHelper} from "../src/interfaces/IPricingHelper.sol";
+import {IDataSourceRegistry} from "../src/interfaces/IDataSourceRegistry.sol";
 
 contract Deploy is Script {
     string private _addresses;
+
+    uint64 private constant BASE_PRICE_PER_SECOND_SCALED = 5787037; // 0.5 * 1ed6 * SCALAR / 1 days;
+    uint64 private constant FREQUENCY_COEFFICIENT = 3000;
+    uint64 private constant SIGNERS_COEFFICIENT = 4000;
+    uint64 private constant REWARD_PERCENTAGE = 5000; // 50% in basis points (out of 10000)
+
 
     constructor() {
         // Use a simpler approach - write to the current directory or a relative path
@@ -49,22 +61,55 @@ contract Deploy is Script {
         address feedRegistryImpl = address(new FeedRegistry());
         address nodeRegistryImpl = address(new NodeRegistry());
         address subscriptionRegistryImpl = address(new SubscriptionRegistry());
+        address pricingHelperImpl = address(new PricingHelper());
+        address dataSourceRegistryImpl = address(new DataSourceRegistry());
 
         address treasury = _deployProxy(treasuryImpl, proxyAdmin, type(Treasury).name);
         address feedRegistry = _deployProxy(feedRegistryImpl, proxyAdmin, type(FeedRegistry).name);
         address subscriptionsRegistry = _deployProxy(subscriptionRegistryImpl, proxyAdmin, type(SubscriptionRegistry).name);
         address nodesRegistry = _deployProxy(nodeRegistryImpl, proxyAdmin, type(NodeRegistry).name);
+        address pricingHelper = _deployProxy(pricingHelperImpl, proxyAdmin, type(PricingHelper).name);
+        address dataSourceRegistry = _deployProxy(dataSourceRegistryImpl, proxyAdmin, type(DataSourceRegistry).name);
 
         // initialize AccessControlManager first
         IAccessControlManager(accessControlManager).initialize(protocolAdmin);
 
         // then set roles
-        IAccessControlManager(accessControlManager).grantRole(IAccessControlManager(accessControlManager).NODE_REGISTRY(), nodesRegistry);
-        IAccessControlManager(accessControlManager).grantRole(IAccessControlManager(accessControlManager).PRICE_MANAGER(), protocolAdmin);
-        IFeedRegistry(feedRegistry).initialize(accessControlManager, subscriptionsRegistry);
-        ISubscriptionRegistry(subscriptionsRegistry).initialize(accessControlManager, feedRegistry, treasury);
+        IAccessControlManager acm = IAccessControlManager(accessControlManager);
+        acm.grantRole(acm.NODE_REGISTRY(), nodesRegistry);
+        acm.grantRole(acm.PRICE_MANAGER(), protocolAdmin);
+        acm.grantRole(acm.FEED_REGISTRY(), feedRegistry);
+        acm.grantRole(acm.SUBSCRIPTION_REGISTRY(), subscriptionsRegistry);
+
+        IFeedRegistry(feedRegistry).initialize(accessControlManager, subscriptionsRegistry, dataSourceRegistry);
+        ISubscriptionRegistry(subscriptionsRegistry).initialize(accessControlManager, treasury, pricingHelper);
+        IDataSourceRegistry(dataSourceRegistry).initialize(accessControlManager);
         ITreasury(treasury).initialize(accessControlManager);
-        INodeRegistry(nodesRegistry).initialize();
+        INodeRegistry(nodesRegistry).initialize(accessControlManager);
+        IPricingHelper(pricingHelper).initialize(
+            accessControlManager, 
+            BASE_PRICE_PER_SECOND_SCALED, 
+            FREQUENCY_COEFFICIENT, 
+            SIGNERS_COEFFICIENT, 
+            REWARD_PERCENTAGE
+        );
+
+        // add nodes
+        INodeRegistry(nodesRegistry).addNode(
+            LibSecp256k1.compress(LibSecp256k1.Point({
+                x: 82736532059003432392633182570149173260984108975602191333563796533410150488363,
+                y: 2731131244337076789200646755548802147998927235804584501361233088743417311918
+        })));        
+        INodeRegistry(nodesRegistry).addNode(
+            LibSecp256k1.compress(LibSecp256k1.Point({
+                x: 109662376061415432835526913144777084357352510490439677569664664666711661278731,
+                y: 34102494233018474759018060484637241906514180523497146441995129757852262776403
+        })));        
+        INodeRegistry(nodesRegistry).addNode(
+            LibSecp256k1.compress(LibSecp256k1.Point({
+                x: 23291323678511451217772133928868366990746786347038015158807413032596505148183,
+                y: 47168895393257141911376575107721994933540642533810868803586352809270883649069
+        })));
 
         vm.stopBroadcast();
     }
