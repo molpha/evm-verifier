@@ -1,0 +1,311 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.29;
+
+import {Test, console2} from "forge-std/Test.sol";
+import {MessageHashUtils} from "openzeppelin-contracts/contracts/utils/cryptography/MessageHashUtils.sol";
+
+import {NodeRegistry} from "../src/NodeRegistry.sol";
+import {Feed} from "../src/Feed.sol";
+import {IFeed} from "../src/interfaces/IFeed.sol";
+import {AccessControlManager} from "../src/AccessControlManager.sol";
+import {INodeRegistry, INodeRegistryStructs} from "../src/interfaces/INodeRegistry.sol";
+import {LibSecp256k1} from "../src/libs/LibSecp256k1.sol";
+import {LibSchnorrTestSign} from "./libs/LibSchnorrTestSign.sol";
+
+/// @title NodeRegistryPublishGasFullTest
+///
+/// Measures the TRUE on-chain cost to post one oracle round, including:
+///
+///   execution   — gasleft() delta around NodeRegistry.publish(), which captures the full
+///                 call tree: NodeRegistry → Feed.getJobId() → Feed.getMinSignaturesThreshold()
+///                 → AccessControlManager.verifyNodeRegistry() → Feed.publish() → event.
+///
+///   calldata    — computed in-test from abi.encodeCall(); priced at EIP-2028 rates
+///                 (4 gas/zero byte, 16 gas/nonzero byte).
+///
+///   base tx     — 21,000 gas (fixed per EIP-2 for every L1 transaction).
+///
+///   total est.  — execution + calldata + base tx.
+///
+/// Uses the real Feed.sol (not DummyFeed) so the full call tree is representative.
+///
+/// Run:
+///   forge test --match-path test/NodeRegistryPublishGasFull.t.sol -vv
+contract NodeRegistryPublishGasFullTest is Test {
+    using MessageHashUtils for bytes32;
+    using LibSecp256k1 for LibSecp256k1.Point;
+    using LibSecp256k1 for LibSecp256k1.JacobianPoint;
+
+    uint256 constant BASE_TX_GAS = 21_000;
+
+    struct Call {
+        INodeRegistryStructs.DataUpdate update;
+        INodeRegistryStructs.SchnorrSignature schnorr;
+        uint32[] participationMap;
+    }
+
+    // ─── Key helpers (mirrors NodeRegistryPublishGasTest) ─────────────────────
+
+    function _secret(uint256 slot) internal pure returns (uint256) {
+        return (uint256(keccak256(abi.encodePacked("MOLPHA_GAS_KEY", slot))) % (LibSecp256k1.Q() - 1)) + 1;
+    }
+
+    function _deriveBitmap(bytes32 seed, uint32 round, uint256 nodeCount, uint256 groupSize)
+        internal pure returns (uint256 bitmap)
+    {
+        uint256 selected; uint256 attempt;
+        while (selected < groupSize) {
+            uint256 pos = uint256(keccak256(abi.encodePacked(seed, uint256(round), attempt))) % nodeCount;
+            uint256 bit = uint256(1) << pos;
+            if (bitmap & bit == 0) { bitmap |= bit; ++selected; }
+            ++attempt;
+        }
+    }
+
+    function _sort(LibSecp256k1.Point[] memory pts) internal pure returns (LibSecp256k1.Point[] memory s) {
+        uint256 n = pts.length;
+        s = new LibSecp256k1.Point[](n);
+        for (uint256 i; i < n; ++i) s[i] = pts[i];
+        for (uint256 i = 1; i < n; ++i) {
+            LibSecp256k1.Point memory key = s[i];
+            uint256 j = i;
+            while (j > 0 && (s[j-1].x > key.x || (s[j-1].x == key.x && s[j-1].y > key.y))) {
+                s[j] = s[j-1]; --j;
+            }
+            s[j] = key;
+        }
+    }
+
+    function _lreg(LibSecp256k1.Point[] memory pts) internal pure returns (bytes32) {
+        LibSecp256k1.Point[] memory sorted = _sort(pts);
+        bytes memory buf;
+        for (uint256 i; i < sorted.length; ++i)
+            buf = abi.encodePacked(buf, bytes32(sorted[i].x), bytes32(sorted[i].y));
+        return keccak256(buf);
+    }
+
+    function _coeffModQ(bytes32 Lreg, LibSecp256k1.Point memory x) internal pure returns (uint256 a) {
+        a = uint256(keccak256(abi.encodePacked(bytes("MOLPHA_MUSIG2_COEFF_V1"), bytes32(Lreg), bytes32(x.x), bytes32(x.y)))) % LibSecp256k1.Q();
+        if (a == 0) a = 1;
+    }
+
+    function _combinedKey(
+        LibSecp256k1.Point[] memory allPubkeys,
+        LibSecp256k1.Point[] memory signerPts,
+        uint256[] memory signerSecrets
+    ) internal pure returns (uint256 sk) {
+        uint256 Q = LibSecp256k1.Q();
+        bytes32 Lreg = _lreg(allPubkeys);
+        for (uint256 i; i < signerPts.length; ++i)
+            sk = addmod(sk, mulmod(_coeffModQ(Lreg, signerPts[i]), signerSecrets[i], Q), Q);
+    }
+
+    function _buildCall(
+        NodeRegistry reg,
+        address feed,
+        bytes32 jobId,
+        LibSecp256k1.Point[] memory allPubkeys,
+        uint256[] memory allSecrets,
+        uint256 nodeCount,
+        uint256 threshold,
+        bytes32 seed,
+        uint32[] memory pm,
+        uint32 round
+    ) internal view returns (Call memory c) {
+        uint256 groupSize = threshold + reg.redundancyBuffer();
+        uint256 bitmap = _deriveBitmap(seed, round, nodeCount, groupSize);
+
+        uint256[] memory selected = new uint256[](groupSize);
+        uint256 cnt;
+        for (uint256 b; b < nodeCount && cnt < groupSize; ++b)
+            if (bitmap & (uint256(1) << b) != 0) selected[cnt++] = b + 1;
+
+        uint256 numSigners = threshold;
+        uint256[] memory signerIdxs   = new uint256[](numSigners);
+        LibSecp256k1.Point[] memory signerPts  = new LibSecp256k1.Point[](numSigners);
+        uint256[] memory signerSecrets = new uint256[](numSigners);
+        uint256 signerBits;
+        for (uint256 i; i < numSigners; ++i) {
+            uint256 regIdx = selected[i];
+            signerIdxs[i] = regIdx;
+            signerBits |= uint256(1) << (regIdx - 1);
+            signerPts[i] = allPubkeys[regIdx - 1];
+            signerSecrets[i] = allSecrets[regIdx - 1];
+        }
+
+        bytes32 Lreg = _lreg(allPubkeys);
+        LibSecp256k1.JacobianPoint memory accJac;
+        bool initAgg;
+        for (uint256 i; i < numSigners; ++i) {
+            LibSecp256k1.Point memory xi = signerPts[i];
+            LibSecp256k1.Point memory term = LibSecp256k1.mulAffine(xi, _coeffModQ(Lreg, xi));
+            if (!initAgg) { accJac = term.toJacobian(); initAgg = true; }
+            else accJac.addAffinePoint(term);
+        }
+        LibSecp256k1.Point memory aggKey = accJac.toAffine();
+        uint256 skEff = _combinedKey(allPubkeys, signerPts, signerSecrets);
+
+        bytes memory value = abi.encodePacked(uint256(round) * 1e18);
+        uint64 ts = uint64(block.timestamp) + round;
+
+        c.update = INodeRegistryStructs.DataUpdate({feed: feed, jobId: jobId, value: value, timestamp: ts, round: round});
+        bytes32 message = keccak256(abi.encodePacked(c.update.jobId, c.update.value, c.update.timestamp)).toEthSignedMessageHash();
+        (bytes32 sig, address cmt) = LibSchnorrTestSign.sign(aggKey, skEff, message, 0);
+        c.schnorr =
+            INodeRegistryStructs.SchnorrSignature({signature: sig, commitment: cmt, signersBitmap: bytes32(signerBits)});
+        c.participationMap = pm;
+    }
+
+    function _advancePm(uint32[] memory pm, bytes32 signerBitmap) internal pure returns (uint32[] memory next) {
+        next = new uint32[](pm.length);
+        for (uint256 i; i < pm.length; ++i) next[i] = pm[i];
+        uint256 sb = uint256(signerBitmap);
+        for (uint256 pos; pos < pm.length; ++pos) {
+            if (sb & (uint256(1) << pos) != 0) {
+                next[pos]++;
+            }
+        }
+    }
+
+    // ─── Calldata cost calculator ─────────────────────────────────────────────
+
+    /// @dev Prices calldata per EIP-2028: 4 gas per zero byte, 16 gas per nonzero byte.
+    function _calldataCost(bytes memory data) internal pure returns (uint256 cost) {
+        for (uint256 i; i < data.length; ++i)
+            cost += (data[i] == 0) ? 4 : 16;
+    }
+
+    // ─── Setup ────────────────────────────────────────────────────────────────
+
+    struct Scenario { uint256 nodeCount; uint256 threshold; }
+
+    struct FullSetup {
+        NodeRegistry reg;
+        Call call1;
+        Call call2;
+        uint256 calldataCost1;
+        uint256 calldataCost2;
+    }
+
+    function _setup(Scenario memory s) internal returns (FullSetup memory fs) {
+        vm.pauseGasMetering();
+
+        // Deploy contracts
+        AccessControlManager acl = new AccessControlManager();
+        acl.initialize(address(this));
+        acl.grantRole(acl.NODE_REGISTRY(), address(this)); // for addNode / initializeJob
+
+        fs.reg = new NodeRegistry();
+        fs.reg.initialize(address(acl));
+
+        // Add nodes
+        LibSecp256k1.Point[] memory allPubkeys = new LibSecp256k1.Point[](s.nodeCount);
+        uint256[] memory allSecrets = new uint256[](s.nodeCount);
+        for (uint256 i; i < s.nodeCount; ++i) {
+            allSecrets[i]  = _secret(i + 1);
+            allPubkeys[i]  = LibSecp256k1.mulAffine(LibSecp256k1.G(), allSecrets[i]);
+            fs.reg.addNode(LibSecp256k1.compress(allPubkeys[i]));
+        }
+
+        // Deploy real Feed — nodeRegistry is set as an immutable, no ACL role needed.
+        Feed feed = new Feed(
+            IFeed.CreateFeedParams({
+                feedType: IFeed.FeedType.PUBLIC,
+                accessControlManager: address(acl),
+                nodeRegistry: address(fs.reg),
+                owner: address(this),
+                frequency: 60,
+                signaturesRequired: uint64(s.threshold),
+                consumerPricePerSecondScaled: 0,
+                jobId: bytes32(uint256(1)),
+                dataSourceId: bytes32(uint256(2)),
+                ipfsCID: "QmTest"
+            })
+        );
+
+        (,, bytes32 jobId,) = feed.getFeedConfig();
+        vm.warp(1_000_000);
+        fs.reg.initializeJob(jobId);
+
+        uint32[] memory pm0 = new uint32[](s.nodeCount);
+        bytes32 seed0 = fs.reg.getJobSeed(jobId);
+
+        fs.call1 = _buildCall(fs.reg, address(feed), jobId, allPubkeys, allSecrets, s.nodeCount, s.threshold, seed0, pm0, 1);
+
+        bytes32 seed1 = bytes32(
+            uint256(keccak256(abi.encodePacked(seed0, fs.call1.update.value, fs.call1.update.timestamp)))
+            & ~uint256(type(uint32).max)
+        );
+        uint32[] memory pm1 = _advancePm(pm0, fs.call1.schnorr.signersBitmap);
+        fs.call2 = _buildCall(fs.reg, address(feed), jobId, allPubkeys, allSecrets, s.nodeCount, s.threshold, seed1, pm1, 2);
+
+        // Warp past the latest answer timestamp so Feed's "Future timestamp" check passes.
+        // Both calls have ts = block.timestamp + round (1 or 2), so warp beyond that.
+        vm.warp(1_000_000 + 100);
+
+        // Pre-compute calldata bytes for each call (for cost estimation)
+        fs.calldataCost1 = _calldataCost(
+            abi.encodeCall(INodeRegistry.publish, (fs.call1.update, fs.call1.schnorr))
+        );
+        fs.calldataCost2 = _calldataCost(
+            abi.encodeCall(INodeRegistry.publish, (fs.call2.update, fs.call2.schnorr))
+        );
+
+        vm.resumeGasMetering();
+    }
+
+    // ─── Benchmark runner ─────────────────────────────────────────────────────
+
+    function _runBench(Scenario memory s) internal {
+        FullSetup memory fs = _setup(s);
+
+        // ── Round 1: cold storage ──────────────────────────────────────────────
+        uint256 gasBefore = gasleft();
+        fs.reg.publish(fs.call1.update, fs.call1.schnorr);
+        uint256 exec1 = gasBefore - gasleft();
+
+        // ── Round 2: warm/dirty storage ───────────────────────────────────────
+        gasBefore = gasleft();
+        fs.reg.publish(fs.call2.update, fs.call2.schnorr);
+        uint256 exec2 = gasBefore - gasleft();
+
+        vm.pauseGasMetering();
+
+        uint256 total1 = exec1  + fs.calldataCost1 + BASE_TX_GAS;
+        uint256 total2 = exec2  + fs.calldataCost2 + BASE_TX_GAS;
+
+        console2.log(string.concat(
+            "nodes=", vm.toString(s.nodeCount),
+            "  signers=", vm.toString(s.threshold)
+        ));
+        console2.log(string.concat(
+            "  Round 1 (cold)  | exec: ", vm.toString(exec1),
+            "  calldata: ", vm.toString(fs.calldataCost1),
+            "  base: ", vm.toString(BASE_TX_GAS),
+            "  TOTAL: ", vm.toString(total1)
+        ));
+        console2.log(string.concat(
+            "  Round 2 (warm)  | exec: ", vm.toString(exec2),
+            "  calldata: ", vm.toString(fs.calldataCost2),
+            "  base: ", vm.toString(BASE_TX_GAS),
+            "  TOTAL: ", vm.toString(total2)
+        ));
+
+        vm.resumeGasMetering();
+    }
+
+    // ─── Scenarios ────────────────────────────────────────────────────────────
+
+    function test_full_nodes03_signers01() public { _runBench(Scenario({nodeCount:  3, threshold: 1})); }
+    function test_full_nodes05_signers01() public { _runBench(Scenario({nodeCount:  5, threshold: 1})); }
+    function test_full_nodes10_signers01() public { _runBench(Scenario({nodeCount: 10, threshold: 1})); }
+    function test_full_nodes10_signers03() public { _runBench(Scenario({nodeCount: 10, threshold: 3})); }
+    function test_full_nodes10_signers05() public { _runBench(Scenario({nodeCount: 10, threshold: 5})); }
+    function test_full_nodes10_signers08() public { _runBench(Scenario({nodeCount: 10, threshold: 8})); }
+    function test_full_nodes20_signers01() public { _runBench(Scenario({nodeCount: 20, threshold:  1})); }
+    function test_full_nodes20_signers10() public { _runBench(Scenario({nodeCount: 20, threshold: 10})); }
+    function test_full_nodes20_signers18() public { _runBench(Scenario({nodeCount: 20, threshold: 18})); }
+    function test_full_nodes40_signers10() public { _runBench(Scenario({nodeCount: 40, threshold: 10})); }
+    function test_full_nodes60_signers10() public { _runBench(Scenario({nodeCount: 60, threshold: 10})); }
+    function test_full_nodes100_signers10() public { _runBench(Scenario({nodeCount: 100, threshold: 10})); }
+}

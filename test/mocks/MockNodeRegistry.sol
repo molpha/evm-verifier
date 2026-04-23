@@ -39,8 +39,7 @@ contract MockNodeRegistry is INodeRegistry {
 
     function publish(
         INodeRegistryStructs.DataUpdate calldata,
-        INodeRegistryStructs.SchnorrSignature calldata,
-        uint32[] calldata
+        INodeRegistryStructs.SchnorrSignature calldata
     ) external pure override {}
 
     function verifySignature(
@@ -79,6 +78,10 @@ contract MockNodeRegistry is INodeRegistry {
 
     function getNodesSetHash() external pure override returns (bytes32) {
         return bytes32(0);
+    }
+
+    function participationCounts(uint256) external pure override returns (uint256) {
+        return 0;
     }
 
     function getMuSigAggregateKey() external pure override returns (uint256, uint256) {

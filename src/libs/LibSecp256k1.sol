@@ -152,6 +152,72 @@ library LibSecp256k1 {
         return result;
     }
 
+    /// @dev toAffine variant using the modexp precompile (0x05) for the field inversion
+    ///      instead of the extended-Euclidean _invMod. Costs ~1,350 gas vs ~3,500 gas,
+    ///      saving ~2,100 gas per call. Requires a view context (precompile staticcall).
+    function toAffineModexp(
+        JacobianPoint memory self
+    ) internal view returns (Point memory) {
+        // z⁻¹ = z^(P−2) mod P  (Fermat's little theorem, since P is prime)
+        uint zInv = _modExp(self.z, _P - 2, _P);
+        uint zInv_2 = mulmod(zInv, zInv, _P);
+        return Point({
+            x: mulmod(self.x, zInv_2, _P),
+            y: mulmod(self.y, mulmod(zInv, zInv_2, _P), _P)
+        });
+    }
+
+    /// @dev Scalar-input variant of toAffineModexp.  Accepts the Jacobian coordinates
+    ///      as plain scalars so the caller can avoid allocating a JacobianPoint memory
+    ///      struct and the three MLOADs that would follow.
+    function toAffineModexpXYZ(
+        uint256 jx, uint256 jy, uint256 jz
+    ) internal view returns (Point memory result) {
+        uint zInv = _modExp(jz, _P - 2, _P);
+        uint zInv2 = mulmod(zInv, zInv, _P);
+        result.x = mulmod(jx, zInv2, _P);
+        result.y = mulmod(jy, mulmod(zInv, zInv2, _P), _P);
+    }
+
+    /// @dev Mixed Jacobian+Affine EC addition with all inputs and outputs as plain
+    ///      scalars rather than memory structs (madd-2007-bl, z₂=1).
+    ///
+    ///      This eliminates the 3-MLOAD / 3-MSTORE round-trip that the struct-based
+    ///      addAffinePoint incurs on every loop iteration, and lets the compiler (with
+    ///      via-ir) keep the accumulator entirely in Yul stack slots.
+    ///
+    ///      Uses sub(P, x) for negation throughout; this is safe because all intermediate
+    ///      values produced by mulmod/addmod lie in [0, P-1] so P-x ≥ 1.
+    ///
+    ///      Reference: https://hyperelliptic.org/EFD/g1p/auto-shortw-jacobian.html#addition-madd-2007-bl
+    function addAffinePointToXYZ(
+        uint256 jx, uint256 jy, uint256 jz,
+        uint256 px, uint256 py
+    ) internal pure returns (uint256 nax, uint256 nay, uint256 naz) {
+        assembly ("memory-safe") {
+            let P  := 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFC2F
+            let z2 := mulmod(jz, jz, P)                                   // z₁²
+            let z3 := mulmod(z2, jz, P)                                   // z₁³
+            let h  := addmod(mulmod(px, z2, P), sub(P, jx), P)            // u − x₁
+            let h2 := mulmod(h, h, P)                                      // h²
+            let i2 := mulmod(4, h2, P)                                     // 4h²
+            let v  := mulmod(jx, i2, P)                                    // x₁·i
+            let j  := mulmod(h,  i2, P)                                    // h·i
+            let r  := mulmod(2, addmod(mulmod(py, z3, P), sub(P, jy), P), P) // 2(s−y₁)
+            // z = (z₁+h)² − z₁² − h²
+            let azh := addmod(jz, h, P)
+            naz     := addmod(mulmod(azh, azh, P), addmod(sub(P, z2), sub(P, h2), P), P)
+            // x = r² − j − 2v
+            nax     := addmod(mulmod(r, r, P), addmod(sub(P, j), sub(P, mulmod(2, v, P)), P), P)
+            // y = r·(v − x_new) − 2·y₁·j
+            nay     := addmod(
+                mulmod(r, addmod(v, sub(P, nax), P), P),
+                sub(P, mulmod(2, mulmod(jy, j, P), P)),
+                P
+            )
+        }
+    }
+
     /// @dev Adds Affine point `p` to Jacobian point `self`.
     ///
     ///      It is the caller's responsibility to ensure given points are on the

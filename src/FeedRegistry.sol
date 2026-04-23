@@ -79,22 +79,6 @@ contract FeedRegistry is IFeedRegistry, ERC165, Initializable {
         _createFeed(params, dataSourceId);
     }
 
-    function updateFeed(
-        address feed,
-        uint256 frequency,
-        uint256 signaturesRequired,
-        bytes32 jobId,
-        string calldata ipfsCID
-    ) external override {
-        require(signaturesRequired > 0, "Invalid feed config");
-        require(frequency > 0, "Invalid feed config");
-        require(jobId != bytes32(0), "Empty job ID");
-        require(keccak256(bytes(ipfsCID)) != keccak256(bytes("")), "Empty IPFS CID");
-
-        IFeed(feed).updateFeedConfig(frequency, signaturesRequired, jobId, ipfsCID);
-        _subscriptionRegistry.recalculateSubscription(feed);
-    }
-
     function setAccessControlManager(
         address accessControlManager
     ) external override onlyProtocolAdmin {
@@ -122,15 +106,11 @@ contract FeedRegistry is IFeedRegistry, ERC165, Initializable {
     }
 
     function _validateFeedConfig(CreateFeedParams calldata params) internal view {
+        require(params.nodeRegistry != address(0), "Zero node registry");
         require(params.minSignaturesThreshold > 0, "Invalid feed config");
         require(params.frequency > 0, "Invalid feed config");
         require(params.jobId != bytes32(0), "Invalid feed config");
-        require(
-            params.subscriptionDueTime > block.timestamp,
-            "Invalid feed config"
-        );
-        require(bytes(params.description).length > 0, "Empty description");
-        require(params.decimals <= 18, "Invalid decimals");
+        require(params.subscriptionDueTime > block.timestamp, "Invalid feed config");
     }
 
     function _createFeed(
@@ -142,16 +122,14 @@ contract FeedRegistry is IFeedRegistry, ERC165, Initializable {
                 IFeed.CreateFeedParams({
                     feedType: params.feedType,
                     accessControlManager: address(_accessControlManager),
+                    nodeRegistry: params.nodeRegistry,
                     owner: msg.sender,
                     frequency: params.frequency,
                     signaturesRequired: params.minSignaturesThreshold,
-                    consumerPricePerSecondScaled: params
-                        .consumerPricePerSecondScaled,
+                    consumerPricePerSecondScaled: params.consumerPricePerSecondScaled,
                     jobId: params.jobId,
                     dataSourceId: dataSourceId,
-                    ipfsCID: params.ipfsCID,
-                    decimals: params.decimals,
-                    description: params.description
+                    ipfsCID: params.ipfsCID
                 })
             )
         );

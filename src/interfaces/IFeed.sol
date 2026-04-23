@@ -9,18 +9,11 @@ import {IFeedEvents} from "./IFeedEvents.sol";
 /// @notice Handles feed metadata, update logic, and on-chain value access
 /// @dev Implemented by specific feed contracts and extends Chainlink AggregatorV3Interface
 interface IFeed is IFeedStructs, IFeedEvents {
-    /// @notice Feed update configuration
-    /// @param frequency The frequency of the feed
-    /// @param signaturesRequired The minimum number of signatures required to verify an answer
-    /// @param jobId The job ID of the feed
-    /// @param dataSourceId The data source ID of the feed
-    /// @param ipfsCID The IPFS CID of the feed metadata
-    /// @param consumerPricePerSecondScaled The price per second of the feed
-    /// @param decimals The number of decimals for Chainlink compatibility
-    /// @param description The description of the feed for Chainlink compatibility
+    /// @notice Feed creation configuration — all fields are set once at construction
     struct CreateFeedParams {
         FeedType feedType;
         address accessControlManager;
+        address nodeRegistry;
         address owner;
         uint64 frequency;
         uint64 signaturesRequired;
@@ -28,8 +21,6 @@ interface IFeed is IFeedStructs, IFeedEvents {
         bytes32 jobId;
         bytes32 dataSourceId;
         string ipfsCID;
-        uint8 decimals;
-        string description;
     }
 
     /// @notice Feed type
@@ -61,21 +52,7 @@ interface IFeed is IFeedStructs, IFeedEvents {
     /// @param consumer The consumer to remove
     function removeConsumer(address consumer) external;
 
-    /// @notice Update the feed configuration
-    /// @dev This function is only callable by the feed manager and only for personal feeds
-    /// @param frequency The frequency of the feed
-    /// @param signaturesRequired The minimum number of signatures required
-    /// @param jobId The job ID
-    /// @param ipfsCID The IPFS CID of the feed metadata
-    function updateFeedConfig(uint256 frequency, uint256 signaturesRequired, bytes32 jobId, string calldata ipfsCID) external;
-
-    /// @notice Returns the minimum number of signatures required to verify an answer
-    /// @return signaturesRequired The minimum number of signatures required
-    function getMinSignaturesThreshold() external view returns (uint256 signaturesRequired);
-
-    /// @notice Returns the frequency of the feed
-    /// @return frequency The frequency of the feed
-    function getFrequency() external view returns (uint256 frequency);
+    function getFeedConfig() external view returns (uint256 frequency, uint256 signaturesRequired, bytes32 jobId, bytes32 dataSourceId);
 
     /// @notice Returns the feed owner
     /// @return owner The feed owner
@@ -84,14 +61,6 @@ interface IFeed is IFeedStructs, IFeedEvents {
     /// @notice Returns the feed type
     /// @return feedType The feed type
     function getFeedType() external view returns (FeedType feedType);
-
-    /// @notice Returns the job ID
-    /// @return jobId The job ID
-    function getJobId() external view returns (bytes32 jobId);
-
-    /// @notice Returns the data source ID
-    /// @return dataSourceId The data source ID
-    function getDataSourceId() external view returns (bytes32 dataSourceId);
 
     /// @notice Returns the latest feed data
     /// @return value The latest value

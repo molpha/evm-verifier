@@ -73,16 +73,6 @@ contract MockFeedRegistry is IFeedRegistry {
         );
     }
 
-    function updateFeed(
-        address feed, 
-        uint256 frequency, 
-        uint256 signaturesRequired,
-        bytes32 jobId,
-        string calldata ipfsCID
-    ) external {
-        // Mock implementation
-    }
-
     function setAccessControlManager(address accessControlManager) external {
         // Mock implementation
     }

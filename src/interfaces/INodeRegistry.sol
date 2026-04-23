@@ -13,11 +13,9 @@ interface INodeRegistry is INodeRegistryStructs, INodeRegistryEvents {
     function initialize(address accessControlManager) external;
 
     /// @notice Publish a signed answer; verifies round, participation map, Schnorr, and selection bitmap
-    /// @param participationMap Current global participation counters (length must equal node count)
     function publish(
         DataUpdate calldata dataUpdate,
-        SchnorrSignature calldata schnorrData,
-        uint32[] calldata participationMap
+        SchnorrSignature calldata schnorrData
     ) external;
 
     /// @notice Initialize per-job seed and round counter (round 0)
@@ -53,6 +51,9 @@ interface INodeRegistry is INodeRegistryStructs, INodeRegistryEvents {
     /// @notice Get the hash of the nodes set
     /// @return hash The hash of the nodes set
     function getNodesSetHash() external view returns (bytes32 hash);
+
+    /// @notice Cumulative successful `publish` count for the node at 1-based registry index
+    function participationCounts(uint256 nodeIndex) external view returns (uint256);
 
     /// @notice MuSig2 delinearized aggregate pubkey over the full registered signer set (uncompressed x, y)
     function getMuSigAggregateKey() external view returns (uint256 x, uint256 y);

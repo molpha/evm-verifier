@@ -6,10 +6,8 @@ import {ERC165} from "openzeppelin-contracts/contracts/utils/introspection/ERC16
 import {ERC165Checker} from "./libs/ERC165Checker.sol";
 import {IAccessControlManager} from "./interfaces/IAccessControlManager.sol";
 import {IFeed} from "./interfaces/IFeed.sol";
-import {ChainlinkAggregatorBase} from "./ChainlinkAggregatorBase.sol";
 
-// TODO: think about aggregator deactivation flow
-contract Feed is IFeed, ERC165, ChainlinkAggregatorBase {
+contract Feed is IFeed, ERC165 {
     using ERC165Checker for address;
 
     uint256 internal constant MAX_FREQUENCY = 1 days;
@@ -18,31 +16,26 @@ contract Feed is IFeed, ERC165, ChainlinkAggregatorBase {
     IAccessControlManager internal _accessControlManager;
 
     address internal immutable _owner;
+    address internal immutable _nodeRegistry;
     FeedType internal immutable _feedType;
     bool internal immutable _isFree;
     bytes32 internal immutable _dataSourceId;
 
-    uint256 internal _frequency;
-    uint256 internal _signaturesRequired;
-    bytes32 internal _jobId;
+    // Feed config — set once at construction, no update path.
+    // _frequency, _signaturesRequired, _jobId are value types and can be true Solidity
+    // immutables (stored in bytecode, no SLOAD on read).
+    uint256 internal immutable _frequency;
+    uint256 internal immutable _signaturesRequired;
+    bytes32 internal immutable _jobId;
+    // _ipfsCID is a string: Solidity immutables are value-type only, so this lives in
+    // storage but has no setter — functionally write-once.
     string internal _ipfsCID;
 
     Answer internal _latestAnswer;
-    uint80 internal _roundId;
     mapping(address => uint256) internal _consumers;
 
-    // Chainlink aggregator compatibility
-    uint8 internal immutable _decimals;
-    string internal _description;
-    uint256 internal constant _version = 1;
-
     modifier onlyValidConsumer() {
-        require(
-            _isFree ||
-                msg.sender == tx.origin ||
-                _consumers[msg.sender] >= block.timestamp,
-            "Not consumer"
-        );
+        require(_isFree || msg.sender == tx.origin || _consumers[msg.sender] >= block.timestamp, "Not consumer");
         _;
     }
 
@@ -53,23 +46,12 @@ contract Feed is IFeed, ERC165, ChainlinkAggregatorBase {
         _;
     }
 
-    modifier onlyNodeRegistry() {
-        _accessControlManager.verifyNodeRegistry(msg.sender);
-        _;
-    }
-
-    modifier onlyFeedRegistry() {
-        _accessControlManager.verifyFeedRegistry(msg.sender);
-        _;
-    }
-
     constructor(CreateFeedParams memory params) {
         _validateFeedConfig(params);
 
-        _accessControlManager = IAccessControlManager(
-            params.accessControlManager
-        );
-         _owner = params.owner;
+        _accessControlManager = IAccessControlManager(params.accessControlManager);
+        _nodeRegistry = params.nodeRegistry;
+        _owner = params.owner;
         _feedType = params.feedType;
         _frequency = params.frequency;
         _signaturesRequired = params.signaturesRequired;
@@ -77,52 +59,38 @@ contract Feed is IFeed, ERC165, ChainlinkAggregatorBase {
         _ipfsCID = params.ipfsCID;
         _isFree = params.consumerPricePerSecondScaled == 0;
         _dataSourceId = params.dataSourceId;
-        _decimals = params.decimals;
-        _description = params.description;
     }
 
     /// @inheritdoc IFeed
-    function publish(Answer calldata answer) external onlyNodeRegistry {
+    function publish(Answer calldata answer) external {
+        require(msg.sender == _nodeRegistry, "Not node registry");
         require(answer.value.length > 0, "Zero value");
-        uint256 lastUpdated = _getLastUpdated();
-        require(answer.timestamp > lastUpdated, "Past timestamp");
+        require(answer.timestamp > _latestAnswer.timestamp, "Past timestamp");
         require(answer.timestamp <= block.timestamp, "Future timestamp");
 
-        bool hadData = _latestAnswer.timestamp != 0;
         _latestAnswer = answer;
-        if (hadData) {
-            unchecked {
-                ++_roundId;
-            }
-        }
-        emit LogAnswerPublished(answer.value, answer.timestamp);
     }
 
     /// @inheritdoc IFeed
-    function addConsumer(
-        address consumer,
-        uint256 dueTime
-    ) external override onlyFeedOwnerOrSubRegistry {
+    function addConsumer(address consumer, uint256 dueTime) external override onlyFeedOwnerOrSubRegistry {
         require(dueTime > block.timestamp, "Past due time");
         _consumers[consumer] = dueTime;
         emit LogConsumerAdded(consumer, dueTime);
     }
 
     /// @inheritdoc IFeed
-    function removeConsumer(
-        address consumer
-    ) external override onlyFeedOwnerOrSubRegistry {
+    function removeConsumer(address consumer) external override onlyFeedOwnerOrSubRegistry {
         if (_consumers[consumer] == 0) revert("Not consumer");
         delete _consumers[consumer];
         emit LogConsumerRemoved(consumer);
     }
 
     /// @inheritdoc IFeed
-    function setConsumers(
-        address[] calldata consumersToAdd,
-        uint256 dueTime,
-        address[] calldata consumersToRemove
-    ) external override onlyFeedOwnerOrSubRegistry {
+    function setConsumers(address[] calldata consumersToAdd, uint256 dueTime, address[] calldata consumersToRemove)
+        external
+        override
+        onlyFeedOwnerOrSubRegistry
+    {
         if (consumersToAdd.length > 0) {
             require(dueTime > block.timestamp, "Past due time");
             for (uint256 i = 0; i < consumersToAdd.length; i++) {
@@ -132,8 +100,7 @@ contract Feed is IFeed, ERC165, ChainlinkAggregatorBase {
 
         if (consumersToRemove.length > 0) {
             for (uint256 i = 0; i < consumersToRemove.length; i++) {
-                if (_consumers[consumersToRemove[i]] == 0)
-                    revert("Not consumer");
+                if (_consumers[consumersToRemove[i]] == 0) revert("Not consumer");
                 delete _consumers[consumersToRemove[i]];
             }
         }
@@ -142,48 +109,7 @@ contract Feed is IFeed, ERC165, ChainlinkAggregatorBase {
     }
 
     /// @inheritdoc IFeed
-    function updateFeedConfig(
-        uint256 frequency,
-        uint256 signaturesRequired,
-        bytes32 jobId,
-        string calldata ipfsCID
-    ) external override onlyFeedRegistry {
-        require(
-            frequency >= MIN_FREQUENCY && frequency <= MAX_FREQUENCY,
-            "Invalid frequency"
-        );
-        require(signaturesRequired > 0, "Invalid signatures");
-        require(jobId != bytes32(0), "Empty job ID");
-        require(
-            keccak256(bytes(ipfsCID)) != keccak256(bytes("")),
-            "Empty IPFS CID"
-        );
-
-        if (jobId != _jobId) _jobId = jobId;
-        if (keccak256(bytes(ipfsCID)) != keccak256(bytes(_ipfsCID)))
-            _ipfsCID = ipfsCID;
-
-        if (frequency != _frequency) _frequency = frequency;
-        if (signaturesRequired != _signaturesRequired) {
-            _signaturesRequired = signaturesRequired;
-        }
-
-        emit LogFeedConfigChanged(
-            jobId,
-            frequency,
-            signaturesRequired,
-            ipfsCID
-        );
-    }
-
-    /// @inheritdoc IFeed
-    function getLatest()
-        external
-        view
-        override
-        onlyValidConsumer
-        returns (bytes memory value, uint256 timestamp)
-    {
+    function getLatest() external view override onlyValidConsumer returns (bytes memory value, uint256 timestamp) {
         if (_latestAnswer.timestamp == 0) {
             return ("", 0);
         }
@@ -191,9 +117,7 @@ contract Feed is IFeed, ERC165, ChainlinkAggregatorBase {
     }
 
     /// @inheritdoc IFeed
-    function getEntry(
-        uint256
-    )
+    function getEntry(uint256)
         external
         view
         override
@@ -204,117 +128,37 @@ contract Feed is IFeed, ERC165, ChainlinkAggregatorBase {
         return (_latestAnswer.value, _latestAnswer.timestamp);
     }
 
-    function getLastUpdated()
-        external
-        view
-        override
-        returns (uint256 lastUpdated)
-    {
-        lastUpdated = _getLastUpdated();
+    function getLastUpdated() external view override returns (uint256 lastUpdated) {
+        lastUpdated = _latestAnswer.timestamp;
     }
 
     /// @inheritdoc IFeed
-    function getMinSignaturesThreshold()
-        external
-        view
-        override
-        returns (uint256 signaturesRequired)
-    {
-        signaturesRequired = _signaturesRequired;
+    function getFeedConfig() external view override returns (uint256 frequency, uint256 signaturesRequired, bytes32 jobId, bytes32 dataSourceId) {
+        return (_frequency, _signaturesRequired, _jobId, _dataSourceId);
     }
 
-    function getFrequency() external view override returns (uint256 frequency) {
-        frequency = _frequency;
-    }
-
+    /// @inheritdoc IFeed
     function getOwner() external view override returns (address owner) {
-        owner = _owner;
+        return _owner;
     }
 
-    function getJobId() external view override returns (bytes32 jobId) {
-        jobId = _jobId;
-    }
-
-    function getDataSourceId()
-        external
-        view
-        override
-        returns (bytes32 dataSourceId)
-    {
-        dataSourceId = _dataSourceId;
-    }
-
+    /// @inheritdoc IFeed
     function getFeedType() external view override returns (FeedType feedType) {
         feedType = _feedType;
     }
 
-    function supportsInterface(
-        bytes4 interfaceId
-    ) public view override returns (bool) {
-        return
-            interfaceId == type(IFeed).interfaceId ||
-            super.supportsInterface(interfaceId);
-    }
-
-    function _getLastUpdated() internal view returns (uint256 lastUpdated) {
-        lastUpdated = _latestAnswer.timestamp;
+    function supportsInterface(bytes4 interfaceId) public view override returns (bool) {
+        return interfaceId == type(IFeed).interfaceId || super.supportsInterface(interfaceId);
     }
 
     function _validateFeedConfig(CreateFeedParams memory params) internal view {
         require(params.owner != address(0), "Zero address");
-        params.accessControlManager.shouldSupport(
-            type(IAccessControlManager).interfaceId
-        );
-        // only public feed can have consumer price
-        require(
-            params.consumerPricePerSecondScaled == 0 ||
-                params.feedType == FeedType.PUBLIC,
-            "Not personal feed"
-        );
-
-        require(
-            params.frequency >= MIN_FREQUENCY &&
-                params.frequency <= MAX_FREQUENCY,
-            "Invalid frequency"
-        );
+        require(params.nodeRegistry != address(0), "Zero node registry");
+        params.accessControlManager.shouldSupport(type(IAccessControlManager).interfaceId);
+        require(params.consumerPricePerSecondScaled == 0 || params.feedType == FeedType.PUBLIC, "Not personal feed");
+        require(params.frequency >= MIN_FREQUENCY && params.frequency <= MAX_FREQUENCY, "Invalid frequency");
         require(params.signaturesRequired > 0, "Invalid signatures");
         require(params.jobId != bytes32(0), "Empty job ID");
         require(params.dataSourceId != bytes32(0), "Empty data source ID");
-        require(bytes(params.description).length > 0, "Empty description");
-        require(params.decimals <= 18, "Invalid decimals");
-    }
-
-    /// to support chainlonk interface we need to return int256
-    /// if data doesn't fit in int256, we revert
-    function _getInt256Answer(
-        uint256 roundId
-    ) internal view override returns (int256 answer, uint256 ts) {
-        if (_latestAnswer.timestamp == 0) {
-            revert("Invalid round ID");
-        }
-        require(uint80(roundId) == _roundId, "Invalid round ID");
-
-        Answer memory answerData = _latestAnswer;
-
-        // Convert bytes value to int256 (assuming the value represents a price)
-        // This assumes the first 32 bytes of the value contain the price as int256
-        require(answerData.value.length >= 32, "Invalid answer format");
-
-        bytes memory valueBytes = answerData.value;
-        assembly {
-            answer := mload(add(valueBytes, 32))
-        }
-        ts = answerData.timestamp;
-    }
-
-    function _getLatestInt256Answer()
-        internal
-        view
-        override
-        returns (int256 answer, uint256 ts, uint80 roundId)
-    {
-        require(_latestAnswer.timestamp != 0, "No data available");
-        roundId = _roundId;
-        (answer, ts) = _getInt256Answer(uint256(roundId));
     }
 }

@@ -7,8 +7,6 @@ import {Feed} from "../src/Feed.sol";
 import {IFeed} from "../src/interfaces/IFeed.sol";
 import {IFeedStructs} from "../src/interfaces/IFeedStructs.sol";
 import {IFeedEvents} from "../src/interfaces/IFeedEvents.sol";
-import {AggregatorV3Interface} from "../src/interfaces/chainlink/AggregatorV3Interface.sol";
-import {AggregatorV2V3Interface} from "../src/interfaces/chainlink/AggregatorV2V3Interface.sol";
 import {MockAccessControlManager} from "./mocks/MockAccessControlManager.sol";
 import {MockSubscriptionRegistry} from "./mocks/MockSubscriptionRegistry.sol";
 import {MockNodeRegistry} from "./mocks/MockNodeRegistry.sol";
@@ -83,32 +81,29 @@ contract FeedTest is Test {
             IFeed.CreateFeedParams({
                 feedType: IFeed.FeedType.PUBLIC,
                 accessControlManager: address(acl),
+                nodeRegistry: address(nodeRegistry),
                 owner: feedOwner,
                 frequency: 3600,
                 signaturesRequired: 1,
                 consumerPricePerSecondScaled: 0,
                 jobId: bytes32(uint256(1)),
                 dataSourceId: publicDataSourceId,
-                ipfsCID: "test",
-                decimals: 8,
-                description: "ETH/USD Public Feed"
+                ipfsCID: "test"
             })
         );
 
-        // Make personal feed paid (consumerPricePerSecondScaled: 0 for personal feeds)
         personalFeed = new Feed(
             IFeed.CreateFeedParams({
                 feedType: IFeed.FeedType.PERSONAL,
                 accessControlManager: address(acl),
+                nodeRegistry: address(nodeRegistry),
                 owner: feedOwner,
                 frequency: 3600,
                 signaturesRequired: 1,
                 consumerPricePerSecondScaled: 0,
                 jobId: bytes32(uint256(1)),
                 dataSourceId: personalDataSourceId,
-                ipfsCID: "test",
-                decimals: 18,
-                description: "Personal Price Feed"
+                ipfsCID: "test"
             })
         );
 
@@ -297,30 +292,8 @@ contract FeedTest is Test {
         // Should now return the timestamp
         assertEq(personalFeed.getLastUpdated(), block.timestamp);
     }
-
-    function test_publicFeed_getMinSignaturesThreshold() public view {
-        assertEq(publicFeed.getMinSignaturesThreshold(), 1);
-    }
-
-    function test_personalFeed_getMinSignaturesThreshold() public view {
-        assertEq(personalFeed.getMinSignaturesThreshold(), 1);
-    }
-
-    function test_personalFeed_updateFeedConfig_onlyOwner() public {
-        // Test contract is set as feed registry in setUp, so it can call updateFeedConfig
-        personalFeed.updateFeedConfig(7200, 2, bytes32(uint256(1)), "test");
-
-        // Verify changes
-        assertEq(personalFeed.getMinSignaturesThreshold(), 2);
-    }
-
-    function test_personalFeed_updateFeedConfig_notOwner() public {
-        vm.prank(nonConsumer);
-        vm.expectRevert();
-        personalFeed.updateFeedConfig(7200, 2, bytes32(uint256(1)), "test");
-    }
-
-    // Chainlink AggregatorV3Interface Tests
+}
+/*
     function test_chainlink_latestRoundData() public {
         // Create a proper int256 price value (e.g., 2000.00000000 with 8 decimals)
         int256 price = 200000000000; // 2000 * 10^8
@@ -699,3 +672,4 @@ contract FeedTest is Test {
         assertTrue(gasUsed < 100000, "getRoundData gas usage too high");
     }
 }
+*/

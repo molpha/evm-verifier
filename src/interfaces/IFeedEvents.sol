@@ -9,13 +9,6 @@ interface IFeedEvents {
     /// @param timestamp new answer timestamp
     event LogAnswerPublished(bytes value, uint64 indexed timestamp);
 
-    /// @notice emitted when feed config is changed
-    /// @param jobId new job ID
-    /// @param frequency new frequency  
-    /// @param minSignaturesThreshold new minSignaturesThreshold
-    /// @param ipfsCID new IPFS CID
-    event LogFeedConfigChanged(bytes32 indexed jobId, uint256 frequency, uint256 minSignaturesThreshold, string ipfsCID);
-
     /// @notice emitted when consumers are set
     /// @param consumersToAdd consumers to add
     /// @param dueTime due time

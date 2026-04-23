@@ -9,17 +9,9 @@ import {IDataSourceRegistry} from "./IDataSourceRegistry.sol";
 interface IFeedRegistry
 {
     /// @notice Parameters for creating a feed
-    /// @param feedType The type of feed to create
-    /// @param frequency The frequency of the feed
-    /// @param minSignaturesThreshold The minimum number of signatures required
-    /// @param defaultConsumers The default consumers of the feed
-    /// @param jobId The job ID of the feed
-    /// @param ipfsCID The IPFS CID of the feed metadata
-    /// @param subscriptionDueTime The subscription due time
-    /// @param decimals The number of decimals for Chainlink compatibility
-    /// @param description The description of the feed for Chainlink compatibility
     struct CreateFeedParams {
         IFeed.FeedType feedType;
+        address nodeRegistry;
         uint64 frequency;
         uint64 minSignaturesThreshold;
         uint64 subscriptionDueTime;
@@ -27,8 +19,6 @@ interface IFeedRegistry
         address[] defaultConsumers;
         bytes32 jobId;
         string ipfsCID;
-        uint8 decimals;
-        string description;
     }
 
     /// @notice Parameters for creating a data source
@@ -71,14 +61,6 @@ interface IFeedRegistry
     /// @param params The parameters for creating a feed
     /// @param dataSourceId The ID of the data source
     function createFeed(CreateFeedParams calldata params, bytes32 dataSourceId) external;
-
-    /// @notice Update the feed configuration
-    /// @param feed The feed address
-    /// @param frequency The frequency of the feed
-    /// @param signaturesRequired The minimum number of signatures required
-    /// @param jobId The job ID
-    /// @param ipfsCID The IPFS CID of the feed metadata
-    function updateFeed(address feed, uint256 frequency, uint256 signaturesRequired, bytes32 jobId, string calldata ipfsCID) external;
 
     /// @notice Set the access control manager
     /// @param accessControlManager The access control manager address

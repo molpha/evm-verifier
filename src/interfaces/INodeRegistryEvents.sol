@@ -25,7 +25,7 @@ interface INodeRegistryEvents {
         address indexed feed,
         bytes value,
         uint64 timestamp,
-        uint256[] signers,
+        bytes32 signersBitmap,
         uint32 round,
         bytes32 seed
     );

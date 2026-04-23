@@ -52,15 +52,14 @@ contract FeedRegistryTest is Test {
         });
         IFeedRegistry.CreateFeedParams memory params = IFeedRegistry.CreateFeedParams({
             feedType: IFeed.FeedType.PUBLIC,
+            nodeRegistry: address(1),
             frequency: 3600,
             minSignaturesThreshold: 1,
             jobId: bytes32(uint256(1)),
             defaultConsumers: new address[](1),
             subscriptionDueTime: uint64(block.timestamp + 30 days),
             consumerPricePerSecondScaled: 0,
-            ipfsCID: "test",
-            decimals: 8,
-            description: "Test Feed"
+            ipfsCID: "test"
         });
 
         params.defaultConsumers[0] = defaultConsumer;
@@ -81,8 +80,9 @@ contract FeedRegistryTest is Test {
         address feedAddress = address(uint160(uint256(entries[1].topics[1])));
         IFeed feed = IFeed(feedAddress);
         assertEq(uint8(feed.getFeedType()), uint8(IFeed.FeedType.PUBLIC));
-        assertEq(feed.getFrequency(), 3600);
-        assertEq(feed.getMinSignaturesThreshold(), 1);
+        (uint256 frequency, uint256 signaturesRequired, ,) = feed.getFeedConfig();
+        assertEq(frequency, 3600);
+        assertEq(signaturesRequired, 1);
         assertEq(feed.getOwner(), feedOwner);
     }
 
@@ -101,15 +101,14 @@ contract FeedRegistryTest is Test {
         
         IFeedRegistry.CreateFeedParams memory params = IFeedRegistry.CreateFeedParams({
             feedType: IFeed.FeedType.PERSONAL,
+            nodeRegistry: address(1),
             frequency: 3600,
             minSignaturesThreshold: 1,
             jobId: bytes32(uint256(1)),
             defaultConsumers: new address[](1),
             subscriptionDueTime: uint64(block.timestamp + 30 days),
             consumerPricePerSecondScaled: 0,
-            ipfsCID: "test",
-            decimals: 8,
-            description: "Test Feed"
+            ipfsCID: "test"
         });
         params.defaultConsumers[0] = defaultConsumer;
 
@@ -130,8 +129,9 @@ contract FeedRegistryTest is Test {
         address feedAddress = address(uint160(uint256(entries[1].topics[1])));
         IFeed feed = IFeed(feedAddress);
         assertEq(uint8(feed.getFeedType()), uint8(IFeed.FeedType.PERSONAL));
-        assertEq(feed.getFrequency(), 3600);
-        assertEq(feed.getMinSignaturesThreshold(), 1);
+        (uint256 frequency, uint256 signaturesRequired, ,) = feed.getFeedConfig();
+        assertEq(frequency, 3600);
+        assertEq(signaturesRequired, 1);
         assertEq(feed.getOwner(), feedOwner);
     }
 
@@ -148,15 +148,14 @@ contract FeedRegistryTest is Test {
         });
         IFeedRegistry.CreateFeedParams memory params = IFeedRegistry.CreateFeedParams({
             feedType: IFeed.FeedType.PUBLIC,
+            nodeRegistry: address(1),
             frequency: 3600,
             minSignaturesThreshold: 0, // Invalid
             jobId: bytes32(uint256(1)),
             defaultConsumers: new address[](1),
             subscriptionDueTime: uint64(block.timestamp + 30 days),
             consumerPricePerSecondScaled: 0,
-            ipfsCID: "test",
-            decimals: 8,
-            description: "Test Feed"
+            ipfsCID: "test"
         });
         params.defaultConsumers[0] = defaultConsumer;
         
@@ -178,15 +177,14 @@ contract FeedRegistryTest is Test {
         
         IFeedRegistry.CreateFeedParams memory params = IFeedRegistry.CreateFeedParams({
             feedType: IFeed.FeedType.PUBLIC,
+            nodeRegistry: address(1),
             frequency: 0, // Invalid
             minSignaturesThreshold: 1,
             jobId: bytes32(uint256(1)),
             defaultConsumers: new address[](1),
             subscriptionDueTime: uint64(block.timestamp + 30 days),
             consumerPricePerSecondScaled: 0,
-            ipfsCID: "test",
-            decimals: 8,
-            description: "Test Feed"
+            ipfsCID: "test"
         });
         params.defaultConsumers[0] = defaultConsumer;
         
@@ -207,15 +205,14 @@ contract FeedRegistryTest is Test {
         });
         IFeedRegistry.CreateFeedParams memory params = IFeedRegistry.CreateFeedParams({
             feedType: IFeed.FeedType.PUBLIC,
+            nodeRegistry: address(1),
             frequency: 3600,
             minSignaturesThreshold: 1,
             jobId: bytes32(0), // Invalid
             defaultConsumers: new address[](1),
             subscriptionDueTime: uint64(block.timestamp + 30 days),
             consumerPricePerSecondScaled: 0,
-            ipfsCID: "test",
-            decimals: 8,
-            description: "Test Feed"
+            ipfsCID: "test"
         });
         params.defaultConsumers[0] = defaultConsumer;
         
@@ -236,15 +233,14 @@ contract FeedRegistryTest is Test {
         });
         IFeedRegistry.CreateFeedParams memory params = IFeedRegistry.CreateFeedParams({
             feedType: IFeed.FeedType.PUBLIC,
+            nodeRegistry: address(1),
             frequency: 3600,
             minSignaturesThreshold: 1,
             jobId: bytes32(uint256(1)),
             defaultConsumers: new address[](1),
             subscriptionDueTime: uint64(block.timestamp - 1), // Invalid - past time
             consumerPricePerSecondScaled: 0,
-            ipfsCID: "test",
-            decimals: 8,
-            description: "Test Feed"
+            ipfsCID: "test"
         });
         params.defaultConsumers[0] = defaultConsumer;
         

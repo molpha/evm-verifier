@@ -81,8 +81,7 @@ contract PricingHelper is IPricingHelper, Initializable, ERC165 {
      * @return pricePerSecondScaled Price per second scaled by SCALAR
      */
     function calculatePrice(address feed) public view returns (uint256 pricePerSecondScaled) {
-        uint256 frequency = IFeed(feed).getFrequency();
-        uint256 signaturesRequired = IFeed(feed).getMinSignaturesThreshold();
+        (uint256 frequency, uint256 signaturesRequired, ,) = IFeed(feed).getFeedConfig();
 
         // Calculate updates per day for frequency scaling
         uint256 updatesPerDay = 1 days / frequency;
@@ -123,8 +122,7 @@ contract PricingHelper is IPricingHelper, Initializable, ERC165 {
      * @return rewardPerAnswerScaled Reward per answer for a node, scaled by SCALAR
      */
     function getRewardPrice(address feed) public view returns (uint256 rewardPerAnswerScaled) {
-        uint256 frequency = IFeed(feed).getFrequency();
-        uint256 signaturesRequired = IFeed(feed).getMinSignaturesThreshold();
+        (uint256 frequency, uint256 signaturesRequired, ,) = IFeed(feed).getFeedConfig();
 
         require(frequency > 0, "Frequency = 0");
         require(signaturesRequired > 0, "Signatures = 0");

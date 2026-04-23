@@ -5,14 +5,15 @@ pragma solidity ^0.8.29;
 /// @notice Structs for the NodeRegistry
 interface INodeRegistryStructs {
     /// @notice Schnorr signature data struct containing aggregated signature information
-    /// @dev signers indexes array must be sorted in ascending order to prevent replay attacks
+    /// @dev `signersBitmap` uses 0-based bit positions: bit (i-1) set iff 1-based signer index i signed.
+    ///      At most 256 nodes; bits outside the active node count must be zero.
     /// @param signature The aggregated Schnorr signature
     /// @param commitment The commitment point used in the signature
-    /// @param signers Array of signer indices that participated in the signature
+    /// @param signersBitmap Bitmap of participating signer indices (1-based index i → bit i-1)
     struct SchnorrSignature {
         bytes32 signature;
         address commitment;
-        uint256[] signers; 
+        bytes32 signersBitmap;
     }
 
     /// @notice Data update struct containing feed address, value and timestamp
