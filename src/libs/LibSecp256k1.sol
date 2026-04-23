@@ -304,6 +304,63 @@ library LibSecp256k1 {
         }
     }
 
+    /// @dev Field modulus p for the short Weierstrass curve (public for companion libraries).
+    function fieldP() internal pure returns (uint256) {
+        return _P;
+    }
+
+    /// @dev Jacobian point doubling (a = 0), dbl-2009-l; mutates `self` in place.
+    function jacobianDouble(JacobianPoint memory self) internal pure {
+        uint256 z1 = self.z;
+        if (z1 == 0) {
+            return;
+        }
+        uint256 x1 = self.x;
+        uint256 y1 = self.y;
+        unchecked {
+            uint256 a = mulmod(x1, x1, _P);
+            uint256 b = mulmod(y1, y1, _P);
+            uint256 c = mulmod(b, b, _P);
+            uint256 d = addmod(x1, b, _P);
+            d = mulmod(d, d, _P);
+            d = addmod(addmod(d, _P - a, _P), _P - c, _P);
+            d = mulmod(2, d, _P);
+            uint256 e = mulmod(3, a, _P);
+            uint256 f = mulmod(e, e, _P);
+            uint256 x3 = addmod(f, _P - mulmod(2, d, _P), _P);
+            uint256 y3 = mulmod(e, addmod(d, _P - x3, _P), _P);
+            y3 = addmod(y3, _P - mulmod(8, c, _P), _P);
+            uint256 z3 = mulmod(2, mulmod(y1, z1, _P), _P);
+            self.x = x3;
+            self.y = y3;
+            self.z = z3;
+        }
+    }
+
+    /// @dev Scalar multiplication in the secp256k1 group (affine non-zero point, scalar mod order domain handled by caller).
+    function mulAffine(Point memory p, uint256 scalar) internal pure returns (Point memory) {
+        if (scalar == 0 || isZeroPoint(p)) {
+            return ZERO_POINT();
+        }
+        uint256 msb = 255;
+        while (msb > 0 && ((scalar >> msb) & 1) == 0) {
+            unchecked {
+                msb--;
+            }
+        }
+        JacobianPoint memory r = p.toJacobian();
+        unchecked {
+            for (uint256 i = msb; i > 0; ) {
+                --i;
+                jacobianDouble(r);
+                if (((scalar >> i) & 1) == 1) {
+                    addAffinePoint(r, p);
+                }
+            }
+        }
+        return r.toAffine();
+    }
+
     /// @notice Decompress 33-byte compressed key into (x, y) coordinates
     /// @param comp Compressed pubkey: 0x02/0x03 prefix + 32-byte x
     /// @return point Struct with affine coordinates

@@ -9,7 +9,7 @@ import {MessageHashUtils} from "openzeppelin-contracts/contracts/utils/cryptogra
 import {ERC165Checker} from "./libs/ERC165Checker.sol";
 import {LibSecp256k1} from "./libs/LibSecp256k1.sol";
 import {LibSchnorr} from "./libs/LibSchnorr.sol";
-import {SchnorrSetVerifierLib} from "./libs/SchnorrSetVerifierLib.sol";
+import {LibMuSig2KeyAgg} from "./libs/LibMuSig2KeyAgg.sol";
 import {INodeRegistry} from "./interfaces/INodeRegistry.sol";
 import {IFeed} from "./interfaces/IFeed.sol";
 import {IFeedStructs} from "./interfaces/IFeedStructs.sol";
@@ -24,8 +24,6 @@ contract NodeRegistry is INodeRegistry, ERC165, Initializable {
     using LibSchnorr for LibSecp256k1.Point;
     using LibSecp256k1 for LibSecp256k1.Point;
     using LibSecp256k1 for LibSecp256k1.JacobianPoint;
-    using SchnorrSetVerifierLib for bytes;
-
     /// @notice Per-job round state stored via SSTORE2 (seed + last completed round).
     struct JobState {
         bytes32 seed;
@@ -58,6 +56,12 @@ contract NodeRegistry is INodeRegistry, ERC165, Initializable {
 
     IAccessControlManager public _accessControlManager;
 
+    /// @notice SSTORE2 blob: signer list (index 0 unused) plus full-set MuSig2 aggregate key
+    struct PubkeysBlob {
+        LibSecp256k1.Point[] keys;
+        LibSecp256k1.Point muSigXAgg;
+    }
+
     modifier onlyProtocolAdmin() {
         _accessControlManager.verifyProtocolAdmin(msg.sender);
         _;
@@ -70,10 +74,15 @@ contract NodeRegistry is INodeRegistry, ERC165, Initializable {
         redundancyBuffer = 2;
         participationMapHash = _zeroParticipationMapHash(0);
 
-        // Initialize with empty array that has one empty slot at index 0
         LibSecp256k1.Point[] memory emptyArray = new LibSecp256k1.Point[](1);
-        // emptyArray[0] remains zero point (default)
-        pointer = SSTORE2.write(abi.encode(emptyArray));
+        pointer = SSTORE2.write(
+            abi.encode(
+                PubkeysBlob({
+                    keys: emptyArray,
+                    muSigXAgg: LibSecp256k1.ZERO_POINT()
+                })
+            )
+        );
     }
 
     /// @inheritdoc INodeRegistry
@@ -176,48 +185,57 @@ contract NodeRegistry is INodeRegistry, ERC165, Initializable {
         if (pubkey.isZeroPoint()) revert("Invalid public key");
         if (pubkey.toAddress() == address(0)) revert("Zero address");
 
-        bytes memory pubKeys = SSTORE2.read(pointer); // encoded array of signer pubKeys
-
-        uint256 nodesAmount = pubKeys.getNodesLength();
-        if (nodesAmount == MAX_NODES) revert("Max nodes reached");
+        PubkeysBlob memory blob = abi.decode(SSTORE2.read(pointer), (PubkeysBlob));
+        uint256 nextIndex = blob.keys.length;
+        if (blob.keys.length - START_INDEX >= MAX_NODES) revert("Max nodes reached");
 
         address node = pubkey.toAddress();
 
         if (nodeIndexes[node] != 0) revert("Node already added");
 
-        nodeIndexes[node] = nodesAmount;
+        LibSecp256k1.Point[] memory newKeys = new LibSecp256k1.Point[](nextIndex + 1);
+        for (uint256 i; i < blob.keys.length; ++i) {
+            newKeys[i] = blob.keys[i];
+        }
+        newKeys[blob.keys.length] = pubkey;
+        blob.keys = newKeys;
+        blob.muSigXAgg = LibMuSig2KeyAgg.aggregateRegistryKeys(blob.keys);
 
-        // add signer to array and update length
-        pubKeys.addNode(pubkey);
-
-        address newPointer = SSTORE2.write(pubKeys);
+        address newPointer = SSTORE2.write(abi.encode(blob));
         pointer = newPointer;
 
-        participationMapHash = _zeroParticipationMapHash(pubKeys.getNodesLength() - START_INDEX);
+        nodeIndexes[node] = nextIndex;
 
-        emit LogNodeAdded(node, nodesAmount, newPointer);
+        participationMapHash = _zeroParticipationMapHash(blob.keys.length - START_INDEX);
+
+        emit LogNodeAdded(node, nextIndex, newPointer);
     }
 
     function removeNode(address node) external onlyProtocolAdmin {
         uint256 index = nodeIndexes[node];
         if (index == 0) revert("Not node");
 
-        // encoded array of signer pubKeys
-        bytes memory pubKeys = SSTORE2.read(pointer);
+        PubkeysBlob memory blob = abi.decode(SSTORE2.read(pointer), (PubkeysBlob));
+        uint256 len = blob.keys.length;
+        if (index >= len) revert("Bad index");
 
-        // remove signer from array and update length
-        bool orderChanged = pubKeys.removeNode(index);
-
-        if (orderChanged) {
-            address movedNode = pubKeys.getNode(index).toAddress();
-            nodeIndexes[movedNode] = index;
+        if (index != len - 1) {
+            blob.keys[index] = blob.keys[len - 1];
+            nodeIndexes[blob.keys[index].toAddress()] = index;
         }
 
-        address newPointer = SSTORE2.write(pubKeys);
+        LibSecp256k1.Point[] memory shorter = new LibSecp256k1.Point[](len - 1);
+        for (uint256 i; i < len - 1; ++i) {
+            shorter[i] = blob.keys[i];
+        }
+        blob.keys = shorter;
+        blob.muSigXAgg = LibMuSig2KeyAgg.aggregateRegistryKeys(blob.keys);
+
+        address newPointer = SSTORE2.write(abi.encode(blob));
         pointer = newPointer;
         delete nodeIndexes[node];
 
-        participationMapHash = _zeroParticipationMapHash(pubKeys.getNodesLength() - START_INDEX);
+        participationMapHash = _zeroParticipationMapHash(blob.keys.length - START_INDEX);
 
         emit LogNodeRemoved(node, index, newPointer);
     }
@@ -238,6 +256,13 @@ contract NodeRegistry is INodeRegistry, ERC165, Initializable {
 
     function getNodesSetHash() external view override returns (bytes32 hash) {
         hash = keccak256(SSTORE2.read(pointer));
+    }
+
+    /// @inheritdoc INodeRegistry
+    function getMuSigAggregateKey() external view override returns (uint256 x, uint256 y) {
+        PubkeysBlob memory blob = abi.decode(SSTORE2.read(pointer), (PubkeysBlob));
+        x = blob.muSigXAgg.x;
+        y = blob.muSigXAgg.y;
     }
 
     /// @inheritdoc INodeRegistry
@@ -338,8 +363,8 @@ contract NodeRegistry is INodeRegistry, ERC165, Initializable {
         if (firstIndex == 0 || firstIndex >= signerSetLength) revert("Invalid index");
         if (bm & (uint256(1) << (firstIndex - 1)) == 0) revert("Signer not selected");
 
-        LibSecp256k1.JacobianPoint memory aggPubKey = pubKeys[firstIndex].toJacobian();
-
+        LibSecp256k1.Point[] memory signerPts = new LibSecp256k1.Point[](numberSigners);
+        signerPts[0] = pubKeys[firstIndex];
         for (uint256 i = START_INDEX; i < numberSigners; i++) {
             uint256 signerIndex = schnorrData.signers[i];
 
@@ -347,10 +372,12 @@ contract NodeRegistry is INodeRegistry, ERC165, Initializable {
             if (signerIndex <= schnorrData.signers[i - 1]) revert("Invalid signers order");
             if (bm & (uint256(1) << (signerIndex - 1)) == 0) revert("Signer not selected");
 
-            aggPubKey.addAffinePoint(pubKeys[signerIndex]);
+            signerPts[i] = pubKeys[signerIndex];
         }
 
-        bool isValid = aggPubKey.toAffine().verifySignature(
+        LibSecp256k1.Point memory aggPubKey = LibMuSig2KeyAgg.aggregateKeys(signerPts);
+
+        bool isValid = aggPubKey.verifySignature(
             message,
             schnorrData.signature,
             schnorrData.commitment
@@ -363,12 +390,13 @@ contract NodeRegistry is INodeRegistry, ERC165, Initializable {
         view
         returns (LibSecp256k1.Point[] memory pubKeys)
     {
-        pubKeys = abi.decode(SSTORE2.read(pointer), (LibSecp256k1.Point[]));
+        PubkeysBlob memory blob = abi.decode(SSTORE2.read(pointer), (PubkeysBlob));
+        pubKeys = blob.keys;
     }
 
     function _getNodeCount() internal view returns (uint256 nodeCount) {
-        bytes memory pubKeys = SSTORE2.read(pointer);
-        nodeCount = pubKeys.getNodesLength() - START_INDEX;
+        PubkeysBlob memory blob = abi.decode(SSTORE2.read(pointer), (PubkeysBlob));
+        nodeCount = blob.keys.length - START_INDEX;
     }
 
     function _constructMessage(

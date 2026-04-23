@@ -81,6 +81,10 @@ contract MockNodeRegistry is INodeRegistry {
         return bytes32(0);
     }
 
+    function getMuSigAggregateKey() external pure override returns (uint256, uint256) {
+        return (0, 0);
+    }
+
     function getNodeIndex(address /*node*/) external pure override returns (uint256 index) {
         return 0;
     }

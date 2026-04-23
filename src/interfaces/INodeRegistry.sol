@@ -54,6 +54,9 @@ interface INodeRegistry is INodeRegistryStructs, INodeRegistryEvents {
     /// @return hash The hash of the nodes set
     function getNodesSetHash() external view returns (bytes32 hash);
 
+    /// @notice MuSig2 delinearized aggregate pubkey over the full registered signer set (uncompressed x, y)
+    function getMuSigAggregateKey() external view returns (uint256 x, uint256 y);
+
     /// @notice Verify a Schnorr signature
     /// @param message The message to verify
     /// @param schnorrData The Schnorr signature data
