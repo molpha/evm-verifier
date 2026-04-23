@@ -205,36 +205,37 @@ contract ChainlinkInterfaceTest is Test {
             feed.publish(answer);
         }
         
-        // Verify round sequence
+        // Only the latest round is stored; historical getRoundData calls revert
         vm.prank(consumer);
-        for (uint80 i = 0; i < numRounds; i++) {
-            (
-                uint80 roundId,
-                int256 returnedPrice,
-                uint256 startedAt,
-                uint256 updatedAt,
-                uint80 answeredInRound
-            ) = AggregatorV3Interface(address(feed)).getRoundData(i);
-            
-            assertEq(roundId, i);
-            assertEq(returnedPrice, prices[i]);
-            assertEq(answeredInRound, i);
-            assertEq(startedAt, updatedAt); // In our implementation, these are the same
-        }
-        
-        // Verify latestRoundData returns the last round
+        vm.expectRevert("Invalid round ID");
+        AggregatorV3Interface(address(feed)).getRoundData(0);
+
         vm.prank(consumer);
         (
             uint80 latestRoundId,
             int256 latestPrice,
-            ,
-            ,
+            uint256 startedAt,
+            uint256 updatedAt,
             uint80 latestAnsweredInRound
         ) = AggregatorV3Interface(address(feed)).latestRoundData();
-        
+
         assertEq(latestRoundId, uint80(numRounds - 1));
         assertEq(latestPrice, prices[numRounds - 1]);
         assertEq(latestAnsweredInRound, uint80(numRounds - 1));
+        assertEq(startedAt, updatedAt);
+
+        vm.prank(consumer);
+        (
+            uint80 roundId,
+            int256 returnedPrice,
+            uint256 sa,
+            uint256 ua,
+            uint80 answeredInRound
+        ) = AggregatorV3Interface(address(feed)).getRoundData(uint80(numRounds - 1));
+        assertEq(roundId, uint80(numRounds - 1));
+        assertEq(returnedPrice, prices[numRounds - 1]);
+        assertEq(answeredInRound, uint80(numRounds - 1));
+        assertEq(sa, ua);
     }
 
     function test_roundBoundaryConditions() public {
@@ -458,23 +459,36 @@ contract ChainlinkInterfaceTest is Test {
             feed.publish(answer);
         }
         
-        // Access historical data
+        uint80 lastIdx = uint80(historicalPrices.length - 1);
+
         vm.prank(consumer);
-        for (uint80 i = 0; i < historicalPrices.length; i++) {
-            (
-                uint80 roundId,
-                int256 price,
-                uint256 startedAt,
-                uint256 updatedAt,
-                uint80 answeredInRound
-            ) = priceFeed.getRoundData(i);
-            
-            assertEq(roundId, i);
-            assertEq(price, historicalPrices[i]);
-            assertEq(answeredInRound, i);
-            // Note: updatedAt is 0 due to contract implementation - this is expected
-            // assertTrue(updatedAt > 0);
-            assertEq(startedAt, updatedAt);
-        }
+        vm.expectRevert("Invalid round ID");
+        priceFeed.getRoundData(0);
+
+        vm.prank(consumer);
+        (
+            uint80 latestRoundId,
+            int256 latestPrice,
+            uint256 startedAt,
+            uint256 updatedAt,
+            uint80 latestAnsweredInRound
+        ) = priceFeed.latestRoundData();
+        assertEq(latestRoundId, lastIdx);
+        assertEq(latestPrice, historicalPrices[lastIdx]);
+        assertEq(latestAnsweredInRound, lastIdx);
+        assertEq(startedAt, updatedAt);
+
+        vm.prank(consumer);
+        (
+            uint80 roundId,
+            int256 price,
+            uint256 sa,
+            uint256 ua,
+            uint80 answeredInRound
+        ) = priceFeed.getRoundData(lastIdx);
+        assertEq(roundId, lastIdx);
+        assertEq(price, historicalPrices[lastIdx]);
+        assertEq(answeredInRound, lastIdx);
+        assertEq(sa, ua);
     }
 }

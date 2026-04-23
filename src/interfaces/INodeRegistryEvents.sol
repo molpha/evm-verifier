@@ -19,4 +19,20 @@ interface INodeRegistryEvents {
     /// @notice Emitted when the minimum signatures threshold is updated
     /// @param newThreshold The new minimum number of signatures required
     event LogThresholdUpdated(uint256 newThreshold);
+
+    /// @notice Emitted after a successful publish to a feed
+    event LogAnswerPublished(
+        address indexed feed,
+        bytes value,
+        uint64 timestamp,
+        uint256[] signers,
+        uint32 round,
+        bytes32 seed
+    );
+
+    /// @notice Emitted when the global participation map hash is updated
+    event LogParticipationUpdated(bytes32 newHash, uint32[] updatedMap);
+
+    /// @notice Emitted when per-job oracle state is first initialized
+    event LogJobInitialized(bytes32 indexed jobId, bytes32 initialSeed);
 }

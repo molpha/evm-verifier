@@ -57,7 +57,8 @@ contract NodeAggregatorTest is Test {
             signers: signers
         });
         bytes32 msgHash = keccak256(abi.encodePacked(a, b));
+        // nodeCount must be >= minSignaturesThreshold + redundancyBuffer (1 + 2) or _deriveBitmap reverts first
         vm.expectRevert("Invalid signers order");
-        registry.verifySignature(msgHash, s, 1);
+        registry.verifySignature(msgHash, s, 1, uint32(0), bytes32(0), 3);
     }
 }

@@ -23,25 +23,37 @@ contract MockNodeRegistry is INodeRegistry {
 
     function initialize(address accessControlManager) external override {}
 
-    function publish(
-        INodeRegistryStructs.DataUpdate calldata dataUpdate,
-        INodeRegistryStructs.SchnorrSignature calldata schnorrData
-    ) external override {
-        // Mock implementation - revert if verification should fail
-        // verifySignature(dataUpdate.message, schnorrData, dataUpdate.minSignaturesThreshold);
+    function initializeJob(bytes32) external override {}
+
+    function getJobRound(bytes32) external pure override returns (uint32) {
+        return 0;
     }
+
+    function getJobSeed(bytes32) external pure override returns (bytes32) {
+        return bytes32(0);
+    }
+
+    function getGroupSize(uint256 signaturesRequired) external pure override returns (uint256) {
+        return signaturesRequired + 2;
+    }
+
+    function publish(
+        INodeRegistryStructs.DataUpdate calldata,
+        INodeRegistryStructs.SchnorrSignature calldata,
+        uint32[] calldata
+    ) external pure override {}
 
     function verifySignature(
         bytes32 /*message*/,
         INodeRegistryStructs.SchnorrSignature calldata /*schnorrData*/,
-        uint256 /*minSignaturesThreshold*/
+        uint256 /*minSignaturesThreshold*/,
+        uint32 /*round*/,
+        bytes32 /*seed*/,
+        uint256 /*nodeCount*/
     ) external view override {
-        // Mock implementation - revert if verification should fail
         if (!verificationResult) {
             revert("Verification failed");
         }
-        // Store the message for testing (in real implementation this would be view)
-        // lastMessage = message; // Can't modify state in view function
     }
 
     function addNode(bytes memory compressedPubKey) external override {

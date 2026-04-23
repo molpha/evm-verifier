@@ -430,66 +430,6 @@ contract FeedTest is Test {
     }
 
     // Comprehensive Chainlink Interface Tests
-
-    function test_chainlink_multipleRounds() public {
-        // Publish multiple rounds of data
-        int256[] memory prices = new int256[](3);
-        prices[0] = 200000000000; // 2000 * 10^8
-        prices[1] = 210000000000; // 2100 * 10^8
-        prices[2] = 195000000000; // 1950 * 10^8
-
-        uint256[] memory timestamps = new uint256[](3);
-
-        nodeRegistry.setVerificationResult(true);
-
-        for (uint i = 0; i < prices.length; i++) {
-            uint256 publishTime = block.timestamp + i * 100;
-            timestamps[i] = publishTime;
-            vm.warp(publishTime);
-
-            bytes memory valueBytes = abi.encode(prices[i]);
-            IFeedStructs.Answer memory answer = IFeedStructs.Answer({
-                value: valueBytes,
-                timestamp: uint64(publishTime)
-            });
-
-            vm.prank(address(nodeRegistry));
-            publicFeed.publish(answer);
-        }
-
-        // Test getRoundData for each round
-        vm.prank(consumer);
-        for (uint80 i = 0; i < prices.length; i++) {
-            (
-                uint80 returnedRoundId,
-                int256 returnedPrice,
-                uint256 startedAt,
-                uint256 updatedAt,
-                uint80 answeredInRound
-            ) = AggregatorV3Interface(address(publicFeed)).getRoundData(i);
-
-            assertEq(returnedRoundId, i);
-            assertEq(returnedPrice, prices[i]);
-            assertEq(answeredInRound, i);
-            assertEq(updatedAt, timestamps[i]);
-            assertEq(startedAt, timestamps[i]);
-        }
-
-        // Test latestRoundData returns the last round
-        vm.prank(consumer);
-        (
-            uint80 latestRoundId,
-            int256 latestPrice,
-            ,
-            ,
-            uint80 latestAnsweredInRound
-        ) = AggregatorV3Interface(address(publicFeed)).latestRoundData();
-
-        assertEq(latestRoundId, 2); // Last round index
-        assertEq(latestPrice, prices[2]); // Last price
-        assertEq(latestAnsweredInRound, 2);
-    }
-
     function test_chainlink_dataConversion_differentSizes() public {
         nodeRegistry.setVerificationResult(true);
 
@@ -695,22 +635,37 @@ contract FeedTest is Test {
             publicFeed.publish(answer);
         }
 
-        // Verify data integrity by checking all rounds
+        // Only latest round is stored; verify latest and that stale round ids revert
         vm.prank(consumer);
-        for (uint80 i = 0; i < 5; i++) {
-            (
-                uint80 roundId,
-                int256 returnedPrice,
-                ,
-                uint256 updatedAt,
-                uint80 answeredInRound
-            ) = AggregatorV3Interface(address(publicFeed)).getRoundData(i);
+        (
+            uint80 latestRoundId,
+            int256 latestPrice,
+            ,
+            uint256 latestUpdatedAt,
+            uint80 latestAnsweredInRound
+        ) = AggregatorV3Interface(address(publicFeed)).latestRoundData();
 
-            assertEq(roundId, i);
-            assertEq(returnedPrice, prices[i]);
-            assertEq(updatedAt, timestamps[i]);
-            assertEq(answeredInRound, i);
-        }
+        assertEq(latestRoundId, 4);
+        assertEq(latestPrice, prices[4]);
+        assertEq(latestUpdatedAt, timestamps[4]);
+        assertEq(latestAnsweredInRound, 4);
+
+        vm.prank(consumer);
+        vm.expectRevert("Invalid round ID");
+        AggregatorV3Interface(address(publicFeed)).getRoundData(0);
+
+        vm.prank(consumer);
+        (
+            uint80 roundId,
+            int256 returnedPrice,
+            ,
+            uint256 updatedAt,
+            uint80 answeredInRound
+        ) = AggregatorV3Interface(address(publicFeed)).getRoundData(4);
+        assertEq(roundId, 4);
+        assertEq(returnedPrice, prices[4]);
+        assertEq(updatedAt, timestamps[4]);
+        assertEq(answeredInRound, 4);
     }
 
     function test_chainlink_gasUsage() public {

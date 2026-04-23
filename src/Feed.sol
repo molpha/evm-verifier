@@ -27,7 +27,8 @@ contract Feed is IFeed, ERC165, ChainlinkAggregatorBase {
     bytes32 internal _jobId;
     string internal _ipfsCID;
 
-    Answer[] internal _answers;
+    Answer internal _latestAnswer;
+    uint80 internal _roundId;
     mapping(address => uint256) internal _consumers;
 
     // Chainlink aggregator compatibility
@@ -68,7 +69,7 @@ contract Feed is IFeed, ERC165, ChainlinkAggregatorBase {
         _accessControlManager = IAccessControlManager(
             params.accessControlManager
         );
-        _owner = params.owner;
+         _owner = params.owner;
         _feedType = params.feedType;
         _frequency = params.frequency;
         _signaturesRequired = params.signaturesRequired;
@@ -87,7 +88,13 @@ contract Feed is IFeed, ERC165, ChainlinkAggregatorBase {
         require(answer.timestamp > lastUpdated, "Past timestamp");
         require(answer.timestamp <= block.timestamp, "Future timestamp");
 
-        _answers.push(answer);
+        bool hadData = _latestAnswer.timestamp != 0;
+        _latestAnswer = answer;
+        if (hadData) {
+            unchecked {
+                ++_roundId;
+            }
+        }
         emit LogAnswerPublished(answer.value, answer.timestamp);
     }
 
@@ -177,16 +184,15 @@ contract Feed is IFeed, ERC165, ChainlinkAggregatorBase {
         onlyValidConsumer
         returns (bytes memory value, uint256 timestamp)
     {
-        uint256 length = _answers.length;
-        if (length == 0) {
+        if (_latestAnswer.timestamp == 0) {
             return ("", 0);
         }
-        return _getAnswer(length - 1);
+        return (_latestAnswer.value, _latestAnswer.timestamp);
     }
 
     /// @inheritdoc IFeed
     function getEntry(
-        uint256 roundId
+        uint256
     )
         external
         view
@@ -194,8 +200,8 @@ contract Feed is IFeed, ERC165, ChainlinkAggregatorBase {
         onlyValidConsumer
         returns (bytes memory value, uint256 timestamp)
     {
-        require(roundId < _answers.length, "Invalid round ID");
-        return _getAnswer(roundId);
+        require(_latestAnswer.timestamp != 0, "No data");
+        return (_latestAnswer.value, _latestAnswer.timestamp);
     }
 
     function getLastUpdated()
@@ -250,16 +256,8 @@ contract Feed is IFeed, ERC165, ChainlinkAggregatorBase {
             super.supportsInterface(interfaceId);
     }
 
-    function _getAnswer(
-        uint256 roundId
-    ) internal view returns (bytes memory value, uint256 timestamp) {
-        Answer memory a = _answers[roundId];
-        return (a.value, a.timestamp);
-    }
-
     function _getLastUpdated() internal view returns (uint256 lastUpdated) {
-        uint256 length = _answers.length;
-        lastUpdated = length > 0 ? _answers[length - 1].timestamp : 0;
+        lastUpdated = _latestAnswer.timestamp;
     }
 
     function _validateFeedConfig(CreateFeedParams memory params) internal view {
@@ -291,9 +289,12 @@ contract Feed is IFeed, ERC165, ChainlinkAggregatorBase {
     function _getInt256Answer(
         uint256 roundId
     ) internal view override returns (int256 answer, uint256 ts) {
-        require(roundId < _answers.length, "Invalid round ID");
+        if (_latestAnswer.timestamp == 0) {
+            revert("Invalid round ID");
+        }
+        require(uint80(roundId) == _roundId, "Invalid round ID");
 
-        Answer memory answerData = _answers[roundId];
+        Answer memory answerData = _latestAnswer;
 
         // Convert bytes value to int256 (assuming the value represents a price)
         // This assumes the first 32 bytes of the value contain the price as int256
@@ -312,9 +313,8 @@ contract Feed is IFeed, ERC165, ChainlinkAggregatorBase {
         override
         returns (int256 answer, uint256 ts, uint80 roundId)
     {
-        uint256 length = _answers.length;
-        require(length > 0, "No data available");
-        roundId = uint80(length - 1);
-        (answer, ts) = _getInt256Answer(length - 1);
+        require(_latestAnswer.timestamp != 0, "No data available");
+        roundId = _roundId;
+        (answer, ts) = _getInt256Answer(uint256(roundId));
     }
 }

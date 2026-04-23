@@ -105,9 +105,9 @@ interface IFeed is IFeedStructs, IFeedEvents {
     /// @return timestamp UNIX timestamp of last update
     function getLastUpdated() external view returns (uint256 timestamp);
 
-    /// @notice Returns the entry at a specific index
-    /// @param index The index of the entry
-    /// @return value The value at the index
-    /// @return timestamp The timestamp at the index
+    /// @notice Returns the latest stored answer (only the latest answer is kept on-chain)
+    /// @param index Kept for ABI compatibility; ignored — use Chainlink `getRoundData` with the current round id for round-scoped reads
+    /// @return value The latest value
+    /// @return timestamp The latest update timestamp
     function getEntry(uint256 index) external view returns (bytes memory value, uint256 timestamp);
 }

@@ -20,10 +20,12 @@ interface INodeRegistryStructs {
     /// @param jobId The job ID
     /// @param value The value to update
     /// @param timestamp The timestamp of the update
+    /// @param round The job round counter for this publish (must equal stored round + 1)
     struct DataUpdate {
         address feed;
         bytes32 jobId;
         bytes value;
         uint64 timestamp;
+        uint32 round;
     }
 }

@@ -12,10 +12,26 @@ interface INodeRegistry is INodeRegistryStructs, INodeRegistryEvents {
     /// @param accessControlManager The access control manager address
     function initialize(address accessControlManager) external;
 
+    /// @notice Publish a signed answer; verifies round, participation map, Schnorr, and selection bitmap
+    /// @param participationMap Current global participation counters (length must equal node count)
     function publish(
         DataUpdate calldata dataUpdate,
-        SchnorrSignature calldata schnorrData
+        SchnorrSignature calldata schnorrData,
+        uint32[] calldata participationMap
     ) external;
+
+    /// @notice Initialize per-job seed and round counter (round 0)
+    /// @param jobId The job identifier
+    function initializeJob(bytes32 jobId) external;
+
+    /// @notice Round counter for a job (from stored job state)
+    function getJobRound(bytes32 jobId) external view returns (uint32 round);
+
+    /// @notice Current seed for a job (from stored job state)
+    function getJobSeed(bytes32 jobId) external view returns (bytes32 seed);
+
+    /// @notice Selection group size for a feed's signature requirement
+    function getGroupSize(uint256 signaturesRequired) external view returns (uint256 groupSize);
 
     /// @notice Add a new node in the aggregator group
     /// @param compressedPubKey Compressed public key of the node
@@ -42,10 +58,16 @@ interface INodeRegistry is INodeRegistryStructs, INodeRegistryEvents {
     /// @param message The message to verify
     /// @param schnorrData The Schnorr signature data
     /// @param minSignaturesThreshold The minimum number of signatures required
+    /// @param round Job round
+    /// @param seed Job seed
+    /// @param nodeCount Number of nodes in the set
     function verifySignature(
         bytes32 message,
         SchnorrSignature calldata schnorrData,
-        uint256 minSignaturesThreshold
+        uint256 minSignaturesThreshold,
+        uint32 round,
+        bytes32 seed,
+        uint256 nodeCount
     ) external view;
 
     /// @notice Get the index of a node (alternative name for compatibility)
