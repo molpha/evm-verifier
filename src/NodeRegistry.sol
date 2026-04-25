@@ -9,11 +9,12 @@ import {MessageHashUtils} from "openzeppelin-contracts/contracts/utils/cryptogra
 import {ERC165Checker} from "./libs/ERC165Checker.sol";
 import {LibSecp256k1} from "./libs/LibSecp256k1.sol";
 import {LibSchnorr} from "./libs/LibSchnorr.sol";
-import {LibMuSig2KeyAgg} from "./libs/LibMuSig2KeyAgg.sol";
 import {INodeRegistry} from "./interfaces/INodeRegistry.sol";
 import {IFeed} from "./interfaces/IFeed.sol";
 import {IFeedStructs} from "./interfaces/IFeedStructs.sol";
 import {IAccessControlManager} from "./interfaces/IAccessControlManager.sol";
+import {PubkeyBlobLib} from "./libs/PubkeyBlobLib.sol";
+import {BitmapLib} from "./libs/BitmapLib.sol";
 
 /// @title NodeRegistry
 /// @notice Registry for managing nodes and verifying Schnorr signatures
@@ -24,59 +25,38 @@ contract NodeRegistry is INodeRegistry, ERC165, Initializable {
     using LibSchnorr for LibSecp256k1.Point;
     using LibSecp256k1 for LibSecp256k1.Point;
     using LibSecp256k1 for LibSecp256k1.JacobianPoint;
+    using PubkeyBlobLib for bytes;
+    using BitmapLib for uint256;
 
-    /// @notice Maximum number of allowed signers that can be stored in the signer set.
-    /// with SSTORE2 we can store up to 382 signers, but we limit to 256 to use bitmaps
     uint256 constant MAX_NODES = 256;
-
-    /// @notice Index from which valid signer entries start.
-    /// @dev We use 1-based indexing, so index 0 is reserved and unused.
-    ///      This helps avoid confusion with default zero values.
     uint256 constant START_INDEX = 1;
 
-    /// @notice mapping of signer addresses to their indexes in the signers array
+    bytes32 private constant POP_DOMAIN = keccak256("MOLPHA_NODE_REGISTRATION_V1");
+
     mapping(address node => uint256 index) public nodeIndexes;
-
-    /// @notice pointer to signers array stored with SSTORE2, signers[0] is empty cause we use 1-based indexing
-    address public pointer;
-
-    /// @notice Per-job state packed into one 32-byte slot.
-    ///         Layout: [high 224 bits = seed] [low 32 bits = round]
-    ///         Seed is the 256-bit keccak output with its low 32 bits zeroed (224 bits of entropy
-    ///         is more than sufficient). A zero slot means the job has not been initialized.
-    ///         Use getJobSeed() / getJobRound() for unpacked reads.
     mapping(bytes32 jobId => bytes32) public jobState;
-
-    /// @dev Bitmask for the round portion of a packed jobState slot (low 32 bits).
-    uint256 private constant ROUND_MASK = type(uint32).max;
-
-    /// @dev Byte offset in `abi.encode(LibSecp256k1.Point[])` where point words start
-    ///      (32-byte head offset + 32-byte array length).
-    uint256 private constant EFFECTIVE_KEYS_ARRAY_HEAD = 64;
-
-    /// @dev `abi.encode(PubkeysBlob)` layout (Solidity ABI): 128-byte head (offset to keys + `muSigXAgg`
-    ///      x|y), then `keys` as length word + 64·L coordinate words. User payload = `code.length - 1`
-    ///      = 160 + 64·L bytes for `keys.length == L`.
-    uint256 private constant PUBKEYS_ABI_HEAD_BYTES = 128;
-    uint256 private constant PUBKEYS_KEYS_LEN_WORD = 32;
-
-    /// @notice Cumulative publish participation count per 1-based registry node index (aligns with effective key index).
     mapping(uint256 nodeIndex => uint256) public participationCounts;
 
-    /// @notice Redundancy buffer added to signaturesRequired for selection group size
+    /// @notice Pointer to `abi.encode(LibSecp256k1.Point[])` raw keys with index 0 placeholder.
+    address public rawKeysPointer;
+    uint256 public nodeCount;
+
+    /// @notice Per-index coordinates for O(1) removal aggregate update.
+    mapping(uint256 index => uint256 x) public nodeKeyX;
+    mapping(uint256 index => uint256 y) public nodeKeyY;
+
     uint256 public redundancyBuffer;
 
     IAccessControlManager public _accessControlManager;
 
-    /// @notice SSTORE2 pointer to abi.encode(LibSecp256k1.Point[] effectiveKeys) only.
-    ///         Kept separate from `pointer` so publish() reads the smallest possible blob.
-    address public effectiveKeysPointer;
+    uint256 private constant ROUND_MASK = type(uint32).max;
+    uint256 private constant KEYS_ARRAY_HEAD = 64;
+    uint256 private constant SSTORE2_DATA_OFFSET = 1;
+    uint256 private constant POINT_COORD_BYTES = 64;
 
-    /// @notice SSTORE2 blob: raw signer keys (index 0 unused) and MuSig2 aggregate key.
-    ///         effectiveKeys are stored separately under effectiveKeysPointer.
-    struct PubkeysBlob {
-        LibSecp256k1.Point[] keys;
-        LibSecp256k1.Point muSigXAgg;
+    struct BitmapValidation {
+        uint256 bitmap;
+        uint256 signerCount;
     }
 
     modifier onlyProtocolAdmin() {
@@ -91,15 +71,15 @@ contract NodeRegistry is INodeRegistry, ERC165, Initializable {
         redundancyBuffer = 2;
 
         LibSecp256k1.Point[] memory emptyArray = new LibSecp256k1.Point[](1);
-        pointer = SSTORE2.write(abi.encode(PubkeysBlob({keys: emptyArray, muSigXAgg: LibSecp256k1.ZERO_POINT()})));
-        effectiveKeysPointer = SSTORE2.write(abi.encode(emptyArray));
+        emptyArray[0] = LibSecp256k1.ZERO_POINT();
+        rawKeysPointer = SSTORE2.write(abi.encode(emptyArray));
     }
 
     /// @inheritdoc INodeRegistry
-    function initializeJob(bytes32 jobId) external override onlyProtocolAdmin {
+    function initializeJob(bytes32 jobId, uint64 startTime) external override onlyProtocolAdmin {
         if (jobState[jobId] != bytes32(0)) revert("Already initialized");
 
-        bytes32 initialSeed = keccak256(abi.encodePacked(jobId, block.chainid, block.timestamp));
+        bytes32 initialSeed = keccak256(abi.encodePacked(jobId, uint256(0), startTime));
         // round = 0 packed in low 32 bits; seed truncated to 224 bits in high bits
         bytes32 packedInitial = _packJobState(initialSeed, 0);
         jobState[jobId] = packedInitial;
@@ -130,16 +110,22 @@ contract NodeRegistry is INodeRegistry, ERC165, Initializable {
         require(jobId == dataUpdate.jobId, "Invalid feed");
 
         (bytes32 prevSeed, uint32 prevRound) = _readJobState(jobId);
-        require(uint256(dataUpdate.round) == uint256(prevRound) + 1, "Invalid round");
+        require(dataUpdate.round == prevRound + 1, "Invalid round");
 
-        uint256 _nodeCount = _nodeCountFromPointer(pointer);
+        uint256 _nodeCount = nodeCount;
         require(_nodeCount > 0, "No nodes");
 
         _verifySignature(
-            _constructMessage(dataUpdate), schnorrData, minSignaturesThreshold, dataUpdate.round, prevSeed, _nodeCount
+            _constructMessage(dataUpdate),
+            schnorrData,
+            minSignaturesThreshold,
+            dataUpdate.round,
+            prevSeed,
+            _nodeCount,
+            true
         );
 
-        bytes32 newSeed = _commitParticipationAndJobRound(jobId, prevSeed, dataUpdate, schnorrData);
+        bytes32 newSeed = _advanceJobRound(jobId, prevSeed, dataUpdate);
 
         IFeed(feed).publish(IFeedStructs.Answer({value: dataUpdate.value, timestamp: dataUpdate.timestamp}));
 
@@ -156,40 +142,46 @@ contract NodeRegistry is INodeRegistry, ERC165, Initializable {
         uint32 round,
         bytes32 seed,
         uint256 nCount
-    ) external view {
-        _verifySignature(message, schnorrData, minSignaturesThreshold, round, seed, nCount);
+    ) external {
+        _verifySignature(message, schnorrData, minSignaturesThreshold, round, seed, nCount, false);
     }
 
     /// @inheritdoc INodeRegistry
-    function addNode(bytes memory compressedPubKey) external onlyProtocolAdmin {
+    function addNode(bytes memory compressedPubKey, bytes memory popSignature) external onlyProtocolAdmin {
         LibSecp256k1.Point memory pubkey = LibSecp256k1.decompress(compressedPubKey);
         if (pubkey.isZeroPoint()) revert("Invalid public key");
         if (pubkey.toAddress() == address(0)) revert("Zero address");
+        _verifyPop(pubkey, compressedPubKey, popSignature);
 
-        PubkeysBlob memory blob = abi.decode(SSTORE2.read(pointer), (PubkeysBlob));
-        uint256 nextIndex = blob.keys.length;
+        bytes memory keysBlob = SSTORE2.read(rawKeysPointer);
+        uint256 nextIndex = keysBlob.getNodesLength();
         if (nextIndex - START_INDEX >= MAX_NODES) revert("Max nodes reached");
 
         address node = pubkey.toAddress();
 
         if (nodeIndexes[node] != 0) revert("Node already added");
 
-        LibSecp256k1.Point[] memory newKeys = new LibSecp256k1.Point[](nextIndex + 1);
-        for (uint256 i; i < blob.keys.length; ++i) {
-            newKeys[i] = blob.keys[i];
+        LibSecp256k1.Point memory agg;
+        if (nextIndex == START_INDEX) {
+            agg = pubkey;
+        } else {
+            LibSecp256k1.Point memory currAgg = keysBlob.getNode(0);
+            (uint256 ax, uint256 ay, uint256 az) =
+                LibSecp256k1.addAffinePointToXYZ(currAgg.x, currAgg.y, 1, pubkey.x, pubkey.y);
+            agg = LibSecp256k1.toAffineModexpXYZ(ax, ay, az);
         }
-        newKeys[blob.keys.length] = pubkey;
-        blob.keys = newKeys;
 
-        LibSecp256k1.Point[] memory newEffectiveKeys;
-        (newEffectiveKeys, blob.muSigXAgg) = LibMuSig2KeyAgg.computeEffectiveKeysAndAggregate(blob.keys);
-
-        address newPointer = SSTORE2.write(abi.encode(blob));
-        pointer = newPointer;
-        effectiveKeysPointer = SSTORE2.write(abi.encode(newEffectiveKeys));
+        keysBlob.addPubkeyWithAggregate(pubkey, agg);
+        address newPointer = SSTORE2.write(keysBlob);
+        rawKeysPointer = newPointer;
 
         nodeIndexes[node] = nextIndex;
+        nodeKeyX[nextIndex] = pubkey.x;
+        nodeKeyY[nextIndex] = pubkey.y;
         participationCounts[nextIndex] = 1; // to avoid cold sstore in publish()
+        unchecked {
+            ++nodeCount;
+        }
 
         emit LogNodeAdded(node, nextIndex, newPointer);
     }
@@ -198,28 +190,40 @@ contract NodeRegistry is INodeRegistry, ERC165, Initializable {
         uint256 index = nodeIndexes[node];
         if (index == 0) revert("Not node");
 
-        PubkeysBlob memory blob = abi.decode(SSTORE2.read(pointer), (PubkeysBlob));
-        uint256 len = blob.keys.length;
+        bytes memory keysBlob = SSTORE2.read(rawKeysPointer);
+        uint256 len = keysBlob.getNodesLength();
         if (index >= len) revert("Bad index");
 
+        uint256 px = nodeKeyX[index];
+        uint256 py = nodeKeyY[index];
+        LibSecp256k1.Point memory nextAgg;
+        if (len == START_INDEX + 1) {
+            nextAgg = LibSecp256k1.ZERO_POINT();
+        } else {
+            uint256 negY = LibSecp256k1.fieldP() - py;
+            LibSecp256k1.Point memory currAgg = keysBlob.getNode(0);
+            (uint256 ax, uint256 ay, uint256 az) =
+                LibSecp256k1.addAffinePointToXYZ(currAgg.x, currAgg.y, 1, px, negY);
+            nextAgg = LibSecp256k1.toAffineModexpXYZ(ax, ay, az);
+        }
+
         if (index != len - 1) {
-            blob.keys[index] = blob.keys[len - 1];
-            nodeIndexes[blob.keys[index].toAddress()] = index;
+            LibSecp256k1.Point memory swappedNode = keysBlob.getNode(len - 1);
+            keysBlob.setNode(index, swappedNode);
+            nodeIndexes[swappedNode.toAddress()] = index;
+            nodeKeyX[index] = swappedNode.x;
+            nodeKeyY[index] = swappedNode.y;
         }
 
-        LibSecp256k1.Point[] memory shorter = new LibSecp256k1.Point[](len - 1);
-        for (uint256 i; i < len - 1; ++i) {
-            shorter[i] = blob.keys[i];
-        }
-        blob.keys = shorter;
-
-        LibSecp256k1.Point[] memory newEffectiveKeys;
-        (newEffectiveKeys, blob.muSigXAgg) = LibMuSig2KeyAgg.computeEffectiveKeysAndAggregate(blob.keys);
-
-        address newPointer = SSTORE2.write(abi.encode(blob));
-        pointer = newPointer;
-        effectiveKeysPointer = SSTORE2.write(abi.encode(newEffectiveKeys));
+        keysBlob.removePubkeyWithAggregate(index, nextAgg);
+        address newPointer = SSTORE2.write(keysBlob);
+        rawKeysPointer = newPointer;
+        delete nodeKeyX[len - 1];
+        delete nodeKeyY[len - 1];
         delete nodeIndexes[node];
+        unchecked {
+            --nodeCount;
+        }
 
         emit LogNodeRemoved(node, index, newPointer);
     }
@@ -230,18 +234,19 @@ contract NodeRegistry is INodeRegistry, ERC165, Initializable {
 
     /// @inheritdoc INodeRegistry
     function getTotalNodes() external view override returns (uint256 totalSigners) {
-        totalSigners = _nodeCountFromPointer(pointer);
+        totalSigners = nodeCount;
     }
 
     function getNodesSetHash() external view override returns (bytes32 hash) {
-        hash = keccak256(SSTORE2.read(pointer));
+        hash = keccak256(SSTORE2.read(rawKeysPointer));
     }
 
     /// @inheritdoc INodeRegistry
-    function getMuSigAggregateKey() external view override returns (uint256 x, uint256 y) {
-        PubkeysBlob memory blob = abi.decode(SSTORE2.read(pointer), (PubkeysBlob));
-        x = blob.muSigXAgg.x;
-        y = blob.muSigXAgg.y;
+    function getAggregateKey() external view override returns (uint256 x, uint256 y) {
+        bytes memory keysBlob = SSTORE2.read(rawKeysPointer);
+        LibSecp256k1.Point memory aggregate = keysBlob.getNode(0);
+        x = aggregate.x;
+        y = aggregate.y;
     }
 
     /// @inheritdoc INodeRegistry
@@ -251,23 +256,6 @@ contract NodeRegistry is INodeRegistry, ERC165, Initializable {
 
     function supportsInterface(bytes4 interfaceId) public view override returns (bool) {
         return interfaceId == type(INodeRegistry).interfaceId || super.supportsInterface(interfaceId);
-    }
-
-    /// @dev Active node count from SSTORE2 `pointer` runtime size (no stored `nodeCount` slot).
-    ///      Matches `keys.length - 1` for `PubkeysBlob` written by this contract.
-    function _nodeCountFromPointer(address ptr) private view returns (uint256 n) {
-        uint256 len = ptr.code.length;
-        // SSTORE2: 1-byte STOP prefix + abi.encode(PubkeysBlob). Minimum L=1 (placeholder only) → payload 224.
-        unchecked {
-            uint256 payload = len - 1;
-            if (payload < PUBKEYS_ABI_HEAD_BYTES + PUBKEYS_KEYS_LEN_WORD + 64) revert("Bad pubkey blob");
-            uint256 coordBytes = payload - PUBKEYS_ABI_HEAD_BYTES - PUBKEYS_KEYS_LEN_WORD;
-            if (coordBytes % 64 != 0) revert("Bad pubkey blob");
-            uint256 keysLen = coordBytes / 64;
-            if (keysLen < START_INDEX) revert("Bad pubkey blob");
-            if (keysLen > MAX_NODES + START_INDEX) revert("Bad pubkey blob");
-            n = keysLen - START_INDEX;
-        }
     }
 
     function _readJobState(bytes32 jobId) internal view returns (bytes32 seed, uint32 round) {
@@ -293,23 +281,11 @@ contract NodeRegistry is INodeRegistry, ERC165, Initializable {
         return uint32(uint256(packed));
     }
 
-    /// @dev Updates participation counters + hash, advances job seed/round; returns new seed.
-    function _commitParticipationAndJobRound(
-        bytes32 jobId,
-        bytes32 prevSeed,
-        DataUpdate calldata dataUpdate,
-        SchnorrSignature calldata schnorrData
-    ) internal returns (bytes32 newSeed) {
-        uint256 sb = uint256(schnorrData.signersBitmap);
-        uint256 pos;
-        while (sb != 0) {
-            pos = _ctz256(sb);
-            unchecked {
-                ++participationCounts[pos + 1];
-            }
-            sb ^= uint256(1) << pos;
-        }
-
+    /// @dev Updates packed job seed/round after a successful publish (participation is applied in `_verifySignature`).
+    function _advanceJobRound(bytes32 jobId, bytes32 prevSeed, DataUpdate calldata dataUpdate)
+        internal
+        returns (bytes32 newSeed)
+    {
         bytes32 rawSeed = keccak256(abi.encodePacked(prevSeed, dataUpdate.value, dataUpdate.timestamp));
         bytes32 packedJob = _packJobState(rawSeed, dataUpdate.round);
         jobState[jobId] = packedJob;
@@ -337,116 +313,68 @@ contract NodeRegistry is INodeRegistry, ERC165, Initializable {
         }
     }
 
-    /// @dev Hamming weight for 256 bits (parallel SWAR).
-    function _popCount(uint256 x) private pure returns (uint256 c) {
-        unchecked {
-            x -= (x >> 1) & 0x5555555555555555555555555555555555555555555555555555555555555555;
-            x = (x & 0x3333333333333333333333333333333333333333333333333333333333333333)
-                + ((x >> 2) & 0x3333333333333333333333333333333333333333333333333333333333333333);
-            x = (x + (x >> 4)) & 0x0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f;
-            // 16-byte horizontal add per 128-bit lane (max sum 16 * 8 = 128)
-            uint256 rep16 = 0x01010101010101010101010101010101;
-            uint256 lo = x & ((uint256(1) << 128) - 1);
-            uint256 hi = x >> 128;
-            c = ((lo * rep16) >> 120) + ((hi * rep16) >> 120);
-        }
-    }
-
-    /// @dev Trailing zero count (index of lowest set bit). `x` must be nonzero.
-    function _ctz256(uint256 x) private pure returns (uint256 r) {
-        unchecked {
-            if ((x & type(uint128).max) == 0) {
-                r += 128;
-                x >>= 128;
-            }
-            if ((x & type(uint64).max) == 0) {
-                r += 64;
-                x >>= 64;
-            }
-            if ((x & type(uint32).max) == 0) {
-                r += 32;
-                x >>= 32;
-            }
-            if ((x & type(uint16).max) == 0) {
-                r += 16;
-                x >>= 16;
-            }
-            if ((x & type(uint8).max) == 0) {
-                r += 8;
-                x >>= 8;
-            }
-            if ((x & 0xf) == 0) {
-                r += 4;
-                x >>= 4;
-            }
-            if ((x & 0x3) == 0) {
-                r += 2;
-                x >>= 2;
-            }
-            if ((x & 0x1) == 0) {
-                ++r;
-            }
-        }
-    }
-
-    /// @dev Reads one effective public key (x, y) from the SSTORE2 blob written as
-    ///      `abi.encode(LibSecp256k1.Point[])`, using a 64-byte slice only (no full decode).
-    function _readEffectiveKeyXY(address ptr, uint256 idx) private view returns (uint256 x, uint256 y) {
-        bytes memory chunk =
-            SSTORE2.read(ptr, EFFECTIVE_KEYS_ARRAY_HEAD + idx * 64, EFFECTIVE_KEYS_ARRAY_HEAD + (idx + 1) * 64);
+    /// @dev Copies one affine key (64 bytes) from the SSTORE2 `abi.encode(LibSecp256k1.Point[])` blob into
+    ///      `out64` (must be `new bytes(64)` from the caller) to avoid per-signer `bytes` allocation.
+    function _readNodeKeyXYInto(address ptr, uint256 idx, bytes memory out64) private view {
+        uint256 codeStart = SSTORE2_DATA_OFFSET + KEYS_ARRAY_HEAD + idx * 64;
         assembly ("memory-safe") {
-            x := mload(add(chunk, 0x20))
-            y := mload(add(chunk, 0x40))
+            extcodecopy(ptr, add(out64, 32), codeStart, 64)
         }
     }
 
-    /// @dev Verifies a Schnorr signature against the MuSig2 aggregate of the declared
-    ///      signing coalition. Reads effectiveKeysPointer (the smaller, split blob) rather
-    ///      than the full PubkeysBlob.
+    /// @dev Verifies a Schnorr signature against the plain-sum aggregate of the declared
+    ///      signing coalition. Reads signer keys directly from `rawKeysPointer` blob.
+    /// @param recordParticipation If true (publish path), increment `participationCounts` for each signer bit in the same loop as key aggregation.
     function _verifySignature(
         bytes32 message,
         SchnorrSignature calldata schnorrData,
         uint256 minSignaturesThreshold,
         uint32 round,
         bytes32 seed,
-        uint256 _nodeCount
-    ) internal view {
+        uint256 _nodeCount,
+        bool recordParticipation
+    ) internal {
         if (schnorrData.signature == bytes32(0)) revert("Invalid signature");
         if (schnorrData.commitment == address(0)) revert("Invalid commitment");
 
-        uint256 sb = uint256(schnorrData.signersBitmap);
-        if (sb == 0) revert("Invalid signers bitmap");
-
-        // Bits may only be set for 1-based indices 1.._nodeCount (0-based positions 0.._nodeCount-1).
-        uint256 validMask = _nodeCount >= 256 ? type(uint256).max : (uint256(1) << _nodeCount) - 1;
-        if (sb & ~validMask != 0) revert("Invalid signers bitmap");
-
-        uint256 numberSigners = _popCount(sb);
-        if (numberSigners < minSignaturesThreshold) revert("Not enough signatures");
+        BitmapValidation memory validation = _validateSignersBitmap(schnorrData.signersBitmap, _nodeCount);
+        if (validation.signerCount < minSignaturesThreshold) revert("Not enough signatures");
 
         uint256 grpSize = minSignaturesThreshold + redundancyBuffer;
         uint256 bm = _deriveBitmap(seed, round, _nodeCount, grpSize);
 
-        address keysPtr = effectiveKeysPointer;
+        address keysPtr = rawKeysPointer;
+        bytes memory keyScratch = new bytes(64);
 
         // Ascending 1-based index order: peel lowest set bit from `rem` each iteration.
         bool aggInit;
         uint256 ax;
         uint256 ay;
         uint256 az;
-        uint256 rem = sb;
+        uint256 rem = validation.bitmap;
         while (rem != 0) {
             uint256 bit;
             uint256 pos;
             unchecked {
                 bit = rem & (~rem + 1);
-                pos = _ctz256(bit);
+                pos = bit.ctz256();
                 rem ^= bit;
             }
             if (bm & bit == 0) revert("Signer not selected");
 
             uint256 signerIndex = pos + 1;
-            (uint256 epx, uint256 epy) = _readEffectiveKeyXY(keysPtr, signerIndex);
+            _readNodeKeyXYInto(keysPtr, signerIndex, keyScratch);
+            uint256 epx;
+            uint256 epy;
+            assembly ("memory-safe") {
+                epx := mload(add(keyScratch, 32))
+                epy := mload(add(keyScratch, 64))
+            }
+            if (recordParticipation) {
+                unchecked {
+                    ++participationCounts[signerIndex];
+                }
+            }
             if (!aggInit) {
                 (ax, ay, az) = (epx, epy, 1);
                 aggInit = true;
@@ -461,8 +389,51 @@ contract NodeRegistry is INodeRegistry, ERC165, Initializable {
         if (!isValid) revert("Invalid signature");
     }
 
+    /// @dev Ensures signer bitmap is non-empty, within node bounds and returns signer count.
+    function _validateSignersBitmap(bytes32 signersBitmap, uint256 _nodeCount)
+        private
+        pure
+        returns (BitmapValidation memory result)
+    {
+        uint256 sb = uint256(signersBitmap);
+        if (sb == 0) revert("Invalid signers bitmap");
+
+        // Bits may only be set for 1-based indices 1.._nodeCount (0-based positions 0.._nodeCount-1).
+        uint256 validMask = _nodeCount >= 256 ? type(uint256).max : (uint256(1) << _nodeCount) - 1;
+        if (sb & ~validMask != 0) revert("Invalid signers bitmap");
+
+        result.bitmap = sb;
+        result.signerCount = sb.popCount();
+    }
+
     function _constructMessage(DataUpdate calldata dataUpdate) internal pure returns (bytes32 message) {
-        message = keccak256(abi.encodePacked(dataUpdate.jobId, dataUpdate.value, dataUpdate.timestamp))
+        message = keccak256(abi.encodePacked(dataUpdate.jobId, dataUpdate.value, dataUpdate.timestamp, dataUpdate.round))
             .toEthSignedMessageHash();
+    }
+
+    function _verifyPop(LibSecp256k1.Point memory pubkey, bytes memory compressedPubKey, bytes memory popSignature)
+        private
+        view
+    {
+        bytes32 digest = keccak256(abi.encodePacked(POP_DOMAIN, address(this), compressedPubKey)).toEthSignedMessageHash();
+        address signer = _recoverEcdsa(digest, popSignature);
+        if (signer == address(0) || signer != pubkey.toAddress()) revert("Invalid PoP");
+    }
+
+    function _recoverEcdsa(bytes32 digest, bytes memory sig) private pure returns (address signer) {
+        if (sig.length != 65) revert("Invalid PoP");
+        bytes32 r;
+        bytes32 s;
+        uint8 v;
+        assembly ("memory-safe") {
+            r := mload(add(sig, 0x20))
+            s := mload(add(sig, 0x40))
+            v := byte(0, mload(add(sig, 0x60)))
+        }
+        if (v < 27) {
+            v += 27;
+        }
+        if (v != 27 && v != 28) revert("Invalid PoP");
+        signer = ecrecover(digest, v, r, s);
     }
 }

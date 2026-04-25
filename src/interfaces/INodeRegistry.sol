@@ -18,9 +18,14 @@ interface INodeRegistry is INodeRegistryStructs, INodeRegistryEvents {
         SchnorrSignature calldata schnorrData
     ) external;
 
-    /// @notice Initialize per-job seed and round counter (round 0)
-    /// @param jobId The job identifier
-    function initializeJob(bytes32 jobId) external;
+
+    /// @notice Initializes a job's seed and round counter.
+    /// @dev    startTime MUST be identical across all deployment chains for a given jobId.
+    ///        Using any chain-specific value (block.chainid, block.timestamp) would cause
+    ///        permanent seed divergence. The initial seed is keccak256(jobId || 0 || startTime).
+    /// @param jobId    The job identifier.
+    /// @param startTime Canonical start timestamp supplied by the admin; must match on all chains.
+    function initializeJob(bytes32 jobId, uint64 startTime) external;
 
     /// @notice Round counter for a job (from stored job state)
     function getJobRound(bytes32 jobId) external view returns (uint32 round);
@@ -33,7 +38,8 @@ interface INodeRegistry is INodeRegistryStructs, INodeRegistryEvents {
 
     /// @notice Add a new node in the aggregator group
     /// @param compressedPubKey Compressed public key of the node
-    function addNode(bytes memory compressedPubKey) external;
+    /// @param popSignature Proof-of-possession signature by the same key over the registration domain message
+    function addNode(bytes memory compressedPubKey, bytes memory popSignature) external;
 
     /// @notice Remove a node from the aggregator group
     /// @param node Address of the node to remove
@@ -55,8 +61,8 @@ interface INodeRegistry is INodeRegistryStructs, INodeRegistryEvents {
     /// @notice Cumulative successful `publish` count for the node at 1-based registry index
     function participationCounts(uint256 nodeIndex) external view returns (uint256);
 
-    /// @notice MuSig2 delinearized aggregate pubkey over the full registered signer set (uncompressed x, y)
-    function getMuSigAggregateKey() external view returns (uint256 x, uint256 y);
+    /// @notice Plain-sum aggregate pubkey over the full registered signer set (uncompressed x, y)
+    function getAggregateKey() external view returns (uint256 x, uint256 y);
 
     /// @notice Verify a Schnorr signature
     /// @param message The message to verify
@@ -65,6 +71,7 @@ interface INodeRegistry is INodeRegistryStructs, INodeRegistryEvents {
     /// @param round Job round
     /// @param seed Job seed
     /// @param nodeCount Number of nodes in the set
+    /// @notice Reverts if verification fails. Not `view`: publish path records participation in the same pass.
     function verifySignature(
         bytes32 message,
         SchnorrSignature calldata schnorrData,
@@ -72,7 +79,7 @@ interface INodeRegistry is INodeRegistryStructs, INodeRegistryEvents {
         uint32 round,
         bytes32 seed,
         uint256 nodeCount
-    ) external view;
+    ) external;
 
     /// @notice Get the index of a node (alternative name for compatibility)
     /// @param node Address of the node

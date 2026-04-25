@@ -9,73 +9,25 @@ import {LibSchnorr} from "../../src/libs/LibSchnorr.sol";
 library LibSchnorrTestSign {
     using LibSecp256k1 for LibSecp256k1.Point;
 
-    /// @dev MuSig2 coefficient a_i = H("MOLPHA_MUSIG2_COEFF_V1" ‖ L ‖ X_i) mod Q (same as `LibMuSig2KeyAgg._coeffModQ`).
-    function _coeffModQ(bytes32 L, LibSecp256k1.Point memory x) private pure returns (uint256) {
-        uint256 a = uint256(keccak256(abi.encodePacked(bytes("MOLPHA_MUSIG2_COEFF_V1"), L, bytes32(x.x), bytes32(x.y))))
-            % LibSecp256k1.Q();
-        if (a == 0) {
-            return 1;
-        }
-        return a;
-    }
-
-    /// @dev L = keccak256(X_{(1)} ‖ …) with a single pubkey (sorted list hash).
-    function _hashSinglePubkeyList(LibSecp256k1.Point memory p) private pure returns (bytes32) {
-        return keccak256(abi.encodePacked(bytes32(p.x), bytes32(p.y)));
-    }
-
-    /// @dev Sort pubkeys lexicographically (same as LibMuSig2KeyAgg._sortPubkeys).
-    function _sortPubkeys(LibSecp256k1.Point[] memory pts) private pure returns (LibSecp256k1.Point[] memory sorted) {
-        uint256 n = pts.length;
-        sorted = new LibSecp256k1.Point[](n);
-        for (uint256 i; i < n; ++i) {
-            sorted[i] = pts[i];
-        }
-        for (uint256 i = 1; i < n; ++i) {
-            LibSecp256k1.Point memory key = sorted[i];
-            uint256 j = i;
-            while (j > 0 && (sorted[j - 1].x > key.x || (sorted[j - 1].x == key.x && sorted[j - 1].y > key.y))) {
-                sorted[j] = sorted[j - 1];
-                unchecked {
-                    --j;
-                }
-            }
-            sorted[j] = key;
-        }
-    }
-
-    /// @dev L_reg = keccak256(sorted pubkeys as 32-byte x ‖ 32-byte y each).
-    function _hashPubkeyList(LibSecp256k1.Point[] memory sorted) private pure returns (bytes32) {
-        bytes memory buf;
-        for (uint256 i; i < sorted.length; ++i) {
-            buf = abi.encodePacked(buf, bytes32(sorted[i].x), bytes32(sorted[i].y));
-        }
-        return keccak256(buf);
-    }
-
-    /// @notice Effective private key for `pubkey`/`privateKey` under registry-wide L (Intent C / NodeRegistry).
-    /// @param allRegistryPubkeys Active node pubkeys only (no placeholder); order arbitrary.
+    /// @notice Plain-sum effective private key for one signer is just its own private key.
+    /// @param allRegistryPubkeys Active node pubkeys only (unused in plain-sum mode).
     function effectiveSecretRegistryL(
         LibSecp256k1.Point[] memory allRegistryPubkeys,
-        LibSecp256k1.Point memory pubkey,
+        LibSecp256k1.Point memory,
         uint256 privateKey
     ) internal pure returns (uint256 skEff) {
-        LibSecp256k1.Point[] memory sorted = _sortPubkeys(allRegistryPubkeys);
-        bytes32 Lreg = _hashPubkeyList(sorted);
-        uint256 a = _coeffModQ(Lreg, pubkey);
-        skEff = mulmod(a, privateKey, LibSecp256k1.Q());
+        allRegistryPubkeys;
+        skEff = privateKey;
     }
 
-    /// @notice Scalar x such that `[x]G` matches `LibMuSig2KeyAgg.aggregateKeys` for a one-node coalition `{P1}`.
-    /// @dev Here `d1` is the secp256k1 scalar with `P1 = [d1]G`; aggregate pubkey is `[a1·d1]G` with `a1` the MuSig2 coeff.
+    /// @notice Scalar x for one signer in plain-sum aggregation.
     function effectiveSecretSingleSigner(LibSecp256k1.Point memory p1, uint256 d1)
         internal
         pure
         returns (uint256 skEff)
     {
-        bytes32 L = _hashSinglePubkeyList(p1);
-        uint256 a1 = _coeffModQ(L, p1);
-        skEff = mulmod(a1, d1, LibSecp256k1.Q());
+        p1;
+        skEff = d1;
     }
 
     /// @notice Produce `(signature, commitment)` for `pubKey` / `privateKey` / `message`.

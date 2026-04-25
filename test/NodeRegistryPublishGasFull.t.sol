@@ -35,6 +35,7 @@ contract NodeRegistryPublishGasFullTest is Test {
     using MessageHashUtils for bytes32;
     using LibSecp256k1 for LibSecp256k1.Point;
     using LibSecp256k1 for LibSecp256k1.JacobianPoint;
+    bytes32 internal constant POP_DOMAIN = keccak256("MOLPHA_NODE_REGISTRATION_V1");
 
     uint256 constant BASE_TX_GAS = 21_000;
 
@@ -62,42 +63,15 @@ contract NodeRegistryPublishGasFullTest is Test {
         }
     }
 
-    function _sort(LibSecp256k1.Point[] memory pts) internal pure returns (LibSecp256k1.Point[] memory s) {
-        uint256 n = pts.length;
-        s = new LibSecp256k1.Point[](n);
-        for (uint256 i; i < n; ++i) s[i] = pts[i];
-        for (uint256 i = 1; i < n; ++i) {
-            LibSecp256k1.Point memory key = s[i];
-            uint256 j = i;
-            while (j > 0 && (s[j-1].x > key.x || (s[j-1].x == key.x && s[j-1].y > key.y))) {
-                s[j] = s[j-1]; --j;
-            }
-            s[j] = key;
-        }
-    }
-
-    function _lreg(LibSecp256k1.Point[] memory pts) internal pure returns (bytes32) {
-        LibSecp256k1.Point[] memory sorted = _sort(pts);
-        bytes memory buf;
-        for (uint256 i; i < sorted.length; ++i)
-            buf = abi.encodePacked(buf, bytes32(sorted[i].x), bytes32(sorted[i].y));
-        return keccak256(buf);
-    }
-
-    function _coeffModQ(bytes32 Lreg, LibSecp256k1.Point memory x) internal pure returns (uint256 a) {
-        a = uint256(keccak256(abi.encodePacked(bytes("MOLPHA_MUSIG2_COEFF_V1"), bytes32(Lreg), bytes32(x.x), bytes32(x.y)))) % LibSecp256k1.Q();
-        if (a == 0) a = 1;
-    }
-
-    function _combinedKey(
-        LibSecp256k1.Point[] memory allPubkeys,
-        LibSecp256k1.Point[] memory signerPts,
-        uint256[] memory signerSecrets
-    ) internal pure returns (uint256 sk) {
+    function _combinedKey(uint256[] memory signerSecrets) internal pure returns (uint256 sk) {
         uint256 Q = LibSecp256k1.Q();
-        bytes32 Lreg = _lreg(allPubkeys);
-        for (uint256 i; i < signerPts.length; ++i)
-            sk = addmod(sk, mulmod(_coeffModQ(Lreg, signerPts[i]), signerSecrets[i], Q), Q);
+        for (uint256 i; i < signerSecrets.length; ++i) sk = addmod(sk, signerSecrets[i], Q);
+    }
+
+    function _popSig(address registryAddr, bytes memory compressedPubKey, uint256 sk) internal view returns (bytes memory) {
+        bytes32 digest = keccak256(abi.encodePacked(POP_DOMAIN, registryAddr, compressedPubKey)).toEthSignedMessageHash();
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(sk, digest);
+        return abi.encodePacked(r, s, v);
     }
 
     function _buildCall(
@@ -133,23 +107,14 @@ contract NodeRegistryPublishGasFullTest is Test {
             signerSecrets[i] = allSecrets[regIdx - 1];
         }
 
-        bytes32 Lreg = _lreg(allPubkeys);
-        LibSecp256k1.JacobianPoint memory accJac;
-        bool initAgg;
-        for (uint256 i; i < numSigners; ++i) {
-            LibSecp256k1.Point memory xi = signerPts[i];
-            LibSecp256k1.Point memory term = LibSecp256k1.mulAffine(xi, _coeffModQ(Lreg, xi));
-            if (!initAgg) { accJac = term.toJacobian(); initAgg = true; }
-            else accJac.addAffinePoint(term);
-        }
-        LibSecp256k1.Point memory aggKey = accJac.toAffine();
-        uint256 skEff = _combinedKey(allPubkeys, signerPts, signerSecrets);
+        uint256 skEff = _combinedKey(signerSecrets);
+        LibSecp256k1.Point memory aggKey = LibSecp256k1.mulAffine(LibSecp256k1.G(), skEff);
 
         bytes memory value = abi.encodePacked(uint256(round) * 1e18);
         uint64 ts = uint64(block.timestamp) + round;
 
         c.update = INodeRegistryStructs.DataUpdate({feed: feed, jobId: jobId, value: value, timestamp: ts, round: round});
-        bytes32 message = keccak256(abi.encodePacked(c.update.jobId, c.update.value, c.update.timestamp)).toEthSignedMessageHash();
+        bytes32 message = keccak256(abi.encodePacked(c.update.jobId, c.update.value, c.update.timestamp, c.update.round)).toEthSignedMessageHash();
         (bytes32 sig, address cmt) = LibSchnorrTestSign.sign(aggKey, skEff, message, 0);
         c.schnorr =
             INodeRegistryStructs.SchnorrSignature({signature: sig, commitment: cmt, signersBitmap: bytes32(signerBits)});
@@ -204,7 +169,8 @@ contract NodeRegistryPublishGasFullTest is Test {
         for (uint256 i; i < s.nodeCount; ++i) {
             allSecrets[i]  = _secret(i + 1);
             allPubkeys[i]  = LibSecp256k1.mulAffine(LibSecp256k1.G(), allSecrets[i]);
-            fs.reg.addNode(LibSecp256k1.compress(allPubkeys[i]));
+            bytes memory compressed = LibSecp256k1.compress(allPubkeys[i]);
+            fs.reg.addNode(compressed, _popSig(address(fs.reg), compressed, allSecrets[i]));
         }
 
         // Deploy real Feed — nodeRegistry is set as an immutable, no ACL role needed.
@@ -225,7 +191,8 @@ contract NodeRegistryPublishGasFullTest is Test {
 
         (,, bytes32 jobId,) = feed.getFeedConfig();
         vm.warp(1_000_000);
-        fs.reg.initializeJob(jobId);
+        uint64 jobStartTime = uint64(block.timestamp);
+        fs.reg.initializeJob(jobId, jobStartTime);
 
         uint32[] memory pm0 = new uint32[](s.nodeCount);
         bytes32 seed0 = fs.reg.getJobSeed(jobId);

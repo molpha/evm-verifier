@@ -40,25 +40,25 @@ contract NodeRegistryPublishGasDrilldown is Test {
         uint256[] memory nodeCounts = new uint256[](4);
         nodeCounts[0] = 3; nodeCounts[1] = 5; nodeCounts[2] = 10; nodeCounts[3] = 20;
 
-        console2.log("=== SSTORE2.read + abi.decode(PubkeysBlob) ===");
+        console2.log("=== SSTORE2.read + abi.decode(Point[]) ===");
         for (uint256 ci; ci < nodeCounts.length; ++ci) {
             uint256 n = nodeCounts[ci];
-            // Simulate the PubkeysBlob stored in NodeRegistry.pointer
-            LibSecp256k1.Point[] memory keys = new LibSecp256k1.Point[](n + 1); // index 0 unused
+            // Simulate the keys blob stored in NodeRegistry.pointer:
+            // keys[0] is aggregate key, keys[1..n] are node public keys.
+            LibSecp256k1.Point[] memory keys = new LibSecp256k1.Point[](n + 1);
             for (uint256 i = 1; i <= n; ++i) {
                 keys[i] = LibSecp256k1.mulAffine(LibSecp256k1.G(), _secret(i));
             }
+            keys[0] = LibSecp256k1.ZERO_POINT();
 
-            // NodeRegistry stores: abi.encode(PubkeysBlob{keys, muSigXAgg})
-            // We replicate the same encoding
-            bytes memory encoded = abi.encode(keys, LibSecp256k1.ZERO_POINT());
+            // NodeRegistry stores: abi.encode(Point[])
+            bytes memory encoded = abi.encode(keys);
             address ptr = SSTORE2.write(encoded);
 
             vm.resumeGasMetering();
             uint256 g = gasleft();
             bytes memory raw = SSTORE2.read(ptr);
-            (LibSecp256k1.Point[] memory decoded,) =
-                abi.decode(raw, (LibSecp256k1.Point[], LibSecp256k1.Point));
+            LibSecp256k1.Point[] memory decoded = abi.decode(raw, (LibSecp256k1.Point[]));
             g = g - gasleft();
             vm.pauseGasMetering();
 

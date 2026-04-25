@@ -69,6 +69,7 @@ contract Feed is IFeed, ERC165 {
         require(answer.timestamp <= block.timestamp, "Future timestamp");
 
         _latestAnswer = answer;
+        emit LogAnswerPublished(answer.value, answer.timestamp);
     }
 
     /// @inheritdoc IFeed

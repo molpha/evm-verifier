@@ -533,8 +533,7 @@ library LibSecp256k1 {
         uint256 exp,
         uint256 mod
     ) private view returns (uint256 result) {
-        // EIP-198 expects: |len(b)|len(e)|len(m)| b | e | m |
-        // We'll use 32-byte lengths and big-endian words.
+        // EIP-198 expects: |len(b)|len(e)|len(m)| b | e | m | — six 32-byte words, no extra allocation.
         uint256[6] memory input;
         input[0] = 32; // len(b)
         input[1] = 32; // len(e)
@@ -543,33 +542,13 @@ library LibSecp256k1 {
         input[4] = exp;
         input[5] = mod;
 
-        bytes memory callData = abi.encodePacked(
-            bytes32(input[0]),
-            bytes32(input[1]),
-            bytes32(input[2]),
-            bytes32(input[3]),
-            bytes32(input[4]),
-            bytes32(input[5])
-        );
-
-        bytes memory out = new bytes(32);
+        uint256[1] memory out;
         bool ok;
-        assembly {
-            // staticcall to 0x05 (bigModExp)
-            // gas stipend: just forward most of remaining gas
-            ok := staticcall(
-                gas(),
-                0x05,
-                add(callData, 0x20),
-                mload(callData),
-                add(out, 0x20),
-                32
-            )
+        assembly ("memory-safe") {
+            ok := staticcall(gas(), 5, input, 192, out, 32)
         }
         require(ok, "modexp failed");
-        assembly {
-            result := mload(add(out, 0x20))
-        }
+        result = out[0];
         require(result < mod, "modexp>=mod");
     }
 }

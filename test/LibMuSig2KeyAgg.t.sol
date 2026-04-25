@@ -2,6 +2,7 @@
 pragma solidity ^0.8.29;
 
 import {Test} from "forge-std/Test.sol";
+import {MessageHashUtils} from "openzeppelin-contracts/contracts/utils/cryptography/MessageHashUtils.sol";
 import {NodeRegistry} from "../src/NodeRegistry.sol";
 import {AccessControlManager} from "../src/AccessControlManager.sol";
 import {LibSecp256k1} from "../src/libs/LibSecp256k1.sol";
@@ -9,6 +10,14 @@ import {LibMuSig2KeyAgg} from "../src/libs/LibMuSig2KeyAgg.sol";
 
 contract LibMuSig2KeyAggTest is Test {
     using LibSecp256k1 for LibSecp256k1.Point;
+    using MessageHashUtils for bytes32;
+    bytes32 internal constant POP_DOMAIN = keccak256("MOLPHA_NODE_REGISTRATION_V1");
+
+    function _popSig(address registryAddr, bytes memory compressedPubKey, uint256 sk) internal view returns (bytes memory) {
+        bytes32 digest = keccak256(abi.encodePacked(POP_DOMAIN, registryAddr, compressedPubKey)).toEthSignedMessageHash();
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(sk, digest);
+        return abi.encodePacked(r, s, v);
+    }
 
     function test_aggregateKeys_singleGenerator_matchesLibrary() public pure {
         LibSecp256k1.Point memory g = LibSecp256k1.G();
@@ -26,7 +35,7 @@ contract LibMuSig2KeyAggTest is Test {
         assertEq(agg.y, expected.y);
     }
 
-    function test_registry_storedMuSig_matches_aggregateRegistryKeys() public {
+    function test_registry_storedAggregate_isPlainSum() public {
         NodeRegistry registry = new NodeRegistry();
         AccessControlManager acl = new AccessControlManager();
         acl.initialize(address(this));
@@ -34,13 +43,11 @@ contract LibMuSig2KeyAggTest is Test {
         registry.initialize(address(acl));
 
         LibSecp256k1.Point memory g = LibSecp256k1.G();
-        registry.addNode(LibSecp256k1.compress(g));
+        bytes memory compressed = LibSecp256k1.compress(g);
+        registry.addNode(compressed, _popSig(address(registry), compressed, 1));
 
-        (uint256 x, uint256 y) = registry.getMuSigAggregateKey();
-        LibSecp256k1.Point[] memory reg = new LibSecp256k1.Point[](2);
-        reg[0] = LibSecp256k1.ZERO_POINT();
-        reg[1] = g;
-        LibSecp256k1.Point memory expected = LibMuSig2KeyAgg.aggregateRegistryKeys(reg);
+        (uint256 x, uint256 y) = registry.getAggregateKey();
+        LibSecp256k1.Point memory expected = g;
         assertEq(x, expected.x);
         assertEq(y, expected.y);
     }

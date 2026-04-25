@@ -32,6 +32,7 @@ contract NodeRegistryPublishGasTest is Test {
     using MessageHashUtils for bytes32;
     using LibSecp256k1 for LibSecp256k1.Point;
     using LibSecp256k1 for LibSecp256k1.JacobianPoint;
+    bytes32 internal constant POP_DOMAIN = keccak256("MOLPHA_NODE_REGISTRATION_V1");
 
     // ─── Pre-signed call bundle ───────────────────────────────────────────────
 
@@ -69,56 +70,18 @@ contract NodeRegistryPublishGasTest is Test {
         }
     }
 
-    // ─── Helpers: MuSig2 combined private key ─────────────────────────────────
-
-    /// @dev Sorts pubkeys lexicographically (mirrors LibMuSig2KeyAgg._sortPubkeys).
-    function _sort(LibSecp256k1.Point[] memory pts) internal pure returns (LibSecp256k1.Point[] memory s) {
-        uint256 n = pts.length;
-        s = new LibSecp256k1.Point[](n);
-        for (uint256 i; i < n; ++i) {
-            s[i] = pts[i];
-        }
-        for (uint256 i = 1; i < n; ++i) {
-            LibSecp256k1.Point memory key = s[i];
-            uint256 j = i;
-            while (j > 0 && (s[j - 1].x > key.x || (s[j - 1].x == key.x && s[j - 1].y > key.y))) {
-                s[j] = s[j - 1];
-                --j;
-            }
-            s[j] = key;
-        }
-    }
-
-    /// @dev L_reg over full registered set (Intent C, matches LibMuSig2KeyAgg).
-    function _lreg(LibSecp256k1.Point[] memory allRegistryPubkeys) internal pure returns (bytes32) {
-        LibSecp256k1.Point[] memory sorted = _sort(allRegistryPubkeys);
-        bytes memory buf;
-        for (uint256 i; i < sorted.length; ++i) {
-            buf = abi.encodePacked(buf, bytes32(sorted[i].x), bytes32(sorted[i].y));
-        }
-        return keccak256(buf);
-    }
-
-    function _coeffModQ(bytes32 Lreg, LibSecp256k1.Point memory x) internal pure returns (uint256 a) {
+    // ─── Helpers: plain-sum combined private key ──────────────────────────────
+    function _combinedKey(uint256[] memory signerSecrets) internal pure returns (uint256 sk) {
         uint256 Q = LibSecp256k1.Q();
-        a = uint256(
-            keccak256(abi.encodePacked(bytes("MOLPHA_MUSIG2_COEFF_V1"), bytes32(Lreg), bytes32(x.x), bytes32(x.y)))
-        ) % Q;
-        if (a == 0) a = 1;
+        for (uint256 i; i < signerSecrets.length; ++i) {
+            sk = addmod(sk, signerSecrets[i], Q);
+        }
     }
 
-    /// @dev combined_sk = Σ a_i(L_reg)·d_i (mod Q), matching NodeRegistry Intent C verification.
-    function _combinedKey(
-        LibSecp256k1.Point[] memory allRegistryPubkeys,
-        LibSecp256k1.Point[] memory signerPts,
-        uint256[] memory signerSecrets
-    ) internal pure returns (uint256 sk) {
-        uint256 Q = LibSecp256k1.Q();
-        bytes32 Lreg = _lreg(allRegistryPubkeys);
-        for (uint256 i; i < signerPts.length; ++i) {
-            uint256 a = _coeffModQ(Lreg, signerPts[i]);
-            sk = addmod(sk, mulmod(a, signerSecrets[i], Q), Q);
-        }
+    function _popSig(address registryAddr, bytes memory compressedPubKey, uint256 sk) internal view returns (bytes memory) {
+        bytes32 digest = keccak256(abi.encodePacked(POP_DOMAIN, registryAddr, compressedPubKey)).toEthSignedMessageHash();
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(sk, digest);
+        return abi.encodePacked(r, s, v);
     }
 
     // ─── Helpers: pre-compute a signed Call bundle ────────────────────────────
@@ -165,22 +128,8 @@ contract NodeRegistryPublishGasTest is Test {
             signerSecrets[i] = allSecrets[regIdx - 1];
         }
 
-        bytes32 Lreg = _lreg(allPubkeys);
-        LibSecp256k1.JacobianPoint memory accJac;
-        bool initAgg;
-        for (uint256 i; i < numSigners; ++i) {
-            LibSecp256k1.Point memory xi = signerPts[i];
-            uint256 ai = _coeffModQ(Lreg, xi);
-            LibSecp256k1.Point memory term = LibSecp256k1.mulAffine(xi, ai);
-            if (!initAgg) {
-                accJac = term.toJacobian();
-                initAgg = true;
-            } else {
-                accJac.addAffinePoint(term);
-            }
-        }
-        LibSecp256k1.Point memory aggKey = accJac.toAffine();
-        uint256 skEff = _combinedKey(allPubkeys, signerPts, signerSecrets);
+        uint256 skEff = _combinedKey(signerSecrets);
+        LibSecp256k1.Point memory aggKey = LibSecp256k1.mulAffine(LibSecp256k1.G(), skEff);
 
         bytes memory value = abi.encodePacked(uint256(round) * 1e18);
         uint64 ts = uint64(block.timestamp) + round;
@@ -188,8 +137,9 @@ contract NodeRegistryPublishGasTest is Test {
         c.update =
             INodeRegistryStructs.DataUpdate({feed: feed, jobId: jobId, value: value, timestamp: ts, round: round});
 
-        bytes32 message =
-            keccak256(abi.encodePacked(c.update.jobId, c.update.value, c.update.timestamp)).toEthSignedMessageHash();
+        bytes32 message = keccak256(
+            abi.encodePacked(c.update.jobId, c.update.value, c.update.timestamp, c.update.round)
+        ).toEthSignedMessageHash();
         (bytes32 sig, address cmt) = LibSchnorrTestSign.sign(aggKey, skEff, message, 0);
 
         c.schnorr =
@@ -241,14 +191,15 @@ contract NodeRegistryPublishGasTest is Test {
         for (uint256 i; i < s.nodeCount; ++i) {
             allSecrets[i] = _secret(i + 1);
             allPubkeys[i] = LibSecp256k1.mulAffine(LibSecp256k1.G(), allSecrets[i]);
-            reg.addNode(LibSecp256k1.compress(allPubkeys[i]));
+            bytes memory compressed = LibSecp256k1.compress(allPubkeys[i]);
+            reg.addNode(compressed, _popSig(address(reg), compressed, allSecrets[i]));
         }
 
         DummyFeed feed = new DummyFeed();
         feed.setMinSignaturesThreshold(s.threshold);
         (,, bytes32 jobId,) = feed.getFeedConfig();
         vm.warp(1_000_000);
-        reg.initializeJob(jobId);
+        reg.initializeJob(jobId, uint64(block.timestamp));
 
         uint32[] memory pm0 = new uint32[](s.nodeCount);
 

@@ -23,7 +23,7 @@ contract MockNodeRegistry is INodeRegistry {
 
     function initialize(address accessControlManager) external override {}
 
-    function initializeJob(bytes32) external override {}
+    function initializeJob(bytes32, uint64) external override {}
 
     function getJobRound(bytes32) external pure override returns (uint32) {
         return 0;
@@ -49,13 +49,13 @@ contract MockNodeRegistry is INodeRegistry {
         uint32 /*round*/,
         bytes32 /*seed*/,
         uint256 /*nodeCount*/
-    ) external view override {
+    ) external override {
         if (!verificationResult) {
             revert("Verification failed");
         }
     }
 
-    function addNode(bytes memory compressedPubKey) external override {
+    function addNode(bytes memory compressedPubKey, bytes memory) external override {
         LibSecp256k1.Point memory pubkey = LibSecp256k1.decompress(compressedPubKey);
         address node = pubkey.toAddress();
         nodes[node] = true;
@@ -84,7 +84,7 @@ contract MockNodeRegistry is INodeRegistry {
         return 0;
     }
 
-    function getMuSigAggregateKey() external pure override returns (uint256, uint256) {
+    function getAggregateKey() external pure override returns (uint256, uint256) {
         return (0, 0);
     }
 

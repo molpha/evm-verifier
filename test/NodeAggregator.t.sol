@@ -20,6 +20,7 @@ contract NodeAggregatorTest is Test {
     uint256 internal constant D1 = 0xA11CE;
     uint256 internal constant D2 = 0xB0B;
     uint256 internal constant D3 = 0xC0C;
+    bytes32 internal constant POP_DOMAIN = keccak256("MOLPHA_NODE_REGISTRATION_V1");
 
     function setUp() public {
         registry = new NodeRegistry();
@@ -34,12 +35,12 @@ contract NodeAggregatorTest is Test {
     function test_registerNode_InvalidKeyLength_Revert() public {
         bytes memory zero = new bytes(0);
         vm.expectRevert("invalid length");
-        registry.addNode(zero);
+        registry.addNode(zero, hex"");
     }
 
     function test_registerAndUnregisterNode_Works() public {
         LibSecp256k1.Point memory g = LibSecp256k1.G();
-        registry.addNode(LibSecp256k1.compress(g));
+        registry.addNode(LibSecp256k1.compress(g), _popSig(address(registry), LibSecp256k1.compress(g), 1));
         assertTrue(registry.isNode(g.toAddress()));
         assertEq(registry.getTotalNodes(), 1);
 
@@ -50,7 +51,7 @@ contract NodeAggregatorTest is Test {
 
     function testFuzz_verifySignature_InvalidSignersBitmap(uint256 a, uint256 b) public {
         LibSecp256k1.Point memory g = LibSecp256k1.G();
-        registry.addNode(LibSecp256k1.compress(g));
+        registry.addNode(LibSecp256k1.compress(g), _popSig(address(registry), LibSecp256k1.compress(g), 1));
         // One node → only bit 0 may be set; bit 4 is out of range for nodeCount 1.
         INodeRegistryStructs.SchnorrSignature memory s = INodeRegistryStructs.SchnorrSignature({
             signature: bytes32(uint256(1)),
@@ -69,13 +70,22 @@ contract NodeAggregatorTest is Test {
         p1 = LibSecp256k1.mulAffine(LibSecp256k1.G(), D1);
         p2 = LibSecp256k1.mulAffine(LibSecp256k1.G(), D2);
         p3 = LibSecp256k1.mulAffine(LibSecp256k1.G(), D3);
-        registry.addNode(LibSecp256k1.compress(p1));
-        registry.addNode(LibSecp256k1.compress(p2));
-        registry.addNode(LibSecp256k1.compress(p3));
+        bytes memory c1 = LibSecp256k1.compress(p1);
+        bytes memory c2 = LibSecp256k1.compress(p2);
+        bytes memory c3 = LibSecp256k1.compress(p3);
+        registry.addNode(c1, _popSig(address(registry), c1, D1));
+        registry.addNode(c2, _popSig(address(registry), c2, D2));
+        registry.addNode(c3, _popSig(address(registry), c3, D3));
+    }
+
+    function _popSig(address registryAddr, bytes memory compressedPubKey, uint256 sk) internal view returns (bytes memory) {
+        bytes32 digest = keccak256(abi.encodePacked(POP_DOMAIN, registryAddr, compressedPubKey)).toEthSignedMessageHash();
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(sk, digest);
+        return abi.encodePacked(r, s, v);
     }
 
     function _constructMessage(INodeRegistryStructs.DataUpdate memory u) internal pure returns (bytes32) {
-        return keccak256(abi.encodePacked(u.jobId, u.value, u.timestamp)).toEthSignedMessageHash();
+        return keccak256(abi.encodePacked(u.jobId, u.value, u.timestamp, u.round)).toEthSignedMessageHash();
     }
 
     /// @dev Intent C: Schnorr aggregate pubkey and effective secret for node 1 in a 3-node registry (L_reg over all three).
@@ -95,7 +105,7 @@ contract NodeAggregatorTest is Test {
     function test_publish_reverts_zeroFeed() public {
         _threeNodes();
         bytes32 jobId = keccak256("job");
-        registry.initializeJob(jobId);
+        registry.initializeJob(jobId, uint64(block.timestamp));
         uint32[] memory pm = new uint32[](3);
 
         INodeRegistryStructs.DataUpdate memory u =
@@ -135,7 +145,7 @@ contract NodeAggregatorTest is Test {
         DummyFeed feed = new DummyFeed();
         feed.setMinSignaturesThreshold(1);
         bytes32 jobId = keccak256("other");
-        registry.initializeJob(jobId);
+        registry.initializeJob(jobId, uint64(block.timestamp));
 
         uint32[] memory pm = new uint32[](3);
         INodeRegistryStructs.DataUpdate memory u =
@@ -156,7 +166,7 @@ contract NodeAggregatorTest is Test {
         feed.setMinSignaturesThreshold(1);
         (,, bytes32 jobId,) = feed.getFeedConfig();
         vm.warp(1_000_000);
-        registry.initializeJob(jobId);
+        registry.initializeJob(jobId, uint64(block.timestamp));
 
         bytes32 message = _constructMessage(
             INodeRegistryStructs.DataUpdate({feed: address(feed), jobId: jobId, value: hex"01", timestamp: 2, round: 2})
@@ -184,7 +194,7 @@ contract NodeAggregatorTest is Test {
         feed.setMinSignaturesThreshold(1);
         (,, bytes32 jobId,) = feed.getFeedConfig();
         vm.warp(1_000_000);
-        registry.initializeJob(jobId);
+        registry.initializeJob(jobId, uint64(block.timestamp));
 
         uint32[] memory pm = new uint32[](0);
         INodeRegistryStructs.DataUpdate memory u =
@@ -205,7 +215,7 @@ contract NodeAggregatorTest is Test {
         feed.setMinSignaturesThreshold(1);
         (,, bytes32 jobId,) = feed.getFeedConfig();
         vm.warp(1_000_000);
-        registry.initializeJob(jobId);
+        registry.initializeJob(jobId, uint64(block.timestamp));
 
         INodeRegistryStructs.DataUpdate memory u =
             INodeRegistryStructs.DataUpdate({feed: address(feed), jobId: jobId, value: hex"01", timestamp: 2, round: 1});
@@ -227,7 +237,7 @@ contract NodeAggregatorTest is Test {
         feed.setMinSignaturesThreshold(1);
         (,, bytes32 jobId,) = feed.getFeedConfig();
         vm.warp(1_000_000);
-        registry.initializeJob(jobId);
+        registry.initializeJob(jobId, uint64(block.timestamp));
         bytes32 seedBefore = registry.getJobSeed(jobId);
         assertEq(registry.getJobRound(jobId), 0);
 
