@@ -54,11 +54,6 @@ contract NodeRegistry is INodeRegistry, ERC165, Initializable {
     uint256 private constant SSTORE2_DATA_OFFSET = 1;
     uint256 private constant POINT_COORD_BYTES = 64;
 
-    struct BitmapValidation {
-        uint256 bitmap;
-        uint256 signerCount;
-    }
-
     modifier onlyProtocolAdmin() {
         _accessControlManager.verifyProtocolAdmin(msg.sender);
         _;
@@ -337,8 +332,15 @@ contract NodeRegistry is INodeRegistry, ERC165, Initializable {
         if (schnorrData.signature == bytes32(0)) revert("Invalid signature");
         if (schnorrData.commitment == address(0)) revert("Invalid commitment");
 
-        BitmapValidation memory validation = _validateSignersBitmap(schnorrData.signersBitmap, _nodeCount);
-        if (validation.signerCount < minSignaturesThreshold) revert("Not enough signatures");
+        uint256 sb = uint256(schnorrData.signersBitmap);
+        if (sb == 0) revert("Invalid signers bitmap");
+
+        // Bits may only be set for 1-based indices 1.._nodeCount (0-based positions 0.._nodeCount-1).
+        uint256 validMask = _nodeCount >= 256 ? type(uint256).max : (uint256(1) << _nodeCount) - 1;
+        if (sb & ~validMask != 0) revert("Invalid signers bitmap");
+
+        uint256 signerCount = sb.popCount();
+        if (signerCount < minSignaturesThreshold) revert("Not enough signatures");
 
         uint256 grpSize = minSignaturesThreshold + redundancyBuffer;
         uint256 bm = _deriveBitmap(seed, round, _nodeCount, grpSize);
@@ -351,7 +353,7 @@ contract NodeRegistry is INodeRegistry, ERC165, Initializable {
         uint256 ax;
         uint256 ay;
         uint256 az;
-        uint256 rem = validation.bitmap;
+        uint256 rem = sb;
         while (rem != 0) {
             uint256 bit;
             uint256 pos;
@@ -387,23 +389,6 @@ contract NodeRegistry is INodeRegistry, ERC165, Initializable {
 
         bool isValid = aggPubKey.verifySignatureTrusted(message, schnorrData.signature, schnorrData.commitment);
         if (!isValid) revert("Invalid signature");
-    }
-
-    /// @dev Ensures signer bitmap is non-empty, within node bounds and returns signer count.
-    function _validateSignersBitmap(bytes32 signersBitmap, uint256 _nodeCount)
-        private
-        pure
-        returns (BitmapValidation memory result)
-    {
-        uint256 sb = uint256(signersBitmap);
-        if (sb == 0) revert("Invalid signers bitmap");
-
-        // Bits may only be set for 1-based indices 1.._nodeCount (0-based positions 0.._nodeCount-1).
-        uint256 validMask = _nodeCount >= 256 ? type(uint256).max : (uint256(1) << _nodeCount) - 1;
-        if (sb & ~validMask != 0) revert("Invalid signers bitmap");
-
-        result.bitmap = sb;
-        result.signerCount = sb.popCount();
     }
 
     function _constructMessage(DataUpdate calldata dataUpdate) internal pure returns (bytes32 message) {
