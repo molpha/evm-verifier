@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BSL-1.1
-pragma solidity ^0.8.29;
+pragma solidity ^0.8.31;
 
 import {ISubscriptionRegistryStructs} from "./ISubscriptionRegistryStructs.sol";
 import {ISubscriptionRegistryEvents} from "./ISubscriptionRegistryEvents.sol";

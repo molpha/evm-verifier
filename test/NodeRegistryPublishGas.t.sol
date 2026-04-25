@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.29;
+pragma solidity ^0.8.31;
 
 import {Test, console2} from "forge-std/Test.sol";
 import {MessageHashUtils} from "openzeppelin-contracts/contracts/utils/cryptography/MessageHashUtils.sol";
@@ -8,6 +8,7 @@ import {NodeRegistry} from "../src/NodeRegistry.sol";
 import {AccessControlManager} from "../src/AccessControlManager.sol";
 import {INodeRegistry, INodeRegistryStructs} from "../src/interfaces/INodeRegistry.sol";
 import {LibSecp256k1} from "../src/libs/LibSecp256k1.sol";
+import {NodeGroupBitmapLib} from "../src/libs/NodeGroupBitmapLib.sol";
 import {LibSchnorrTestSign} from "./libs/LibSchnorrTestSign.sol";
 import {DummyFeed} from "./mocks/DummyFeed.sol";
 
@@ -50,25 +51,7 @@ contract NodeRegistryPublishGasTest is Test {
         return (uint256(keccak256(abi.encodePacked("MOLPHA_GAS_KEY", slot))) % (LibSecp256k1.Q() - 1)) + 1;
     }
 
-    // ─── Helpers: bitmap (replica of NodeRegistry._deriveBitmap) ─────────────
-
-    function _deriveBitmap(bytes32 seed, uint32 round, uint256 nodeCount, uint256 groupSize)
-        internal
-        pure
-        returns (uint256 bitmap)
-    {
-        uint256 selected;
-        uint256 attempt;
-        while (selected < groupSize) {
-            uint256 pos = uint256(keccak256(abi.encodePacked(seed, uint256(round), attempt))) % nodeCount;
-            uint256 bit = uint256(1) << pos;
-            if (bitmap & bit == 0) {
-                bitmap |= bit;
-                ++selected;
-            }
-            ++attempt;
-        }
-    }
+    // ─── Helpers: bitmap (NodeGroupBitmapLib.derive) ─────────────────────────
 
     // ─── Helpers: plain-sum combined private key ──────────────────────────────
     function _combinedKey(uint256[] memory signerSecrets) internal pure returns (uint256 sk) {
@@ -105,7 +88,7 @@ contract NodeRegistryPublishGasTest is Test {
         uint256 groupSize = threshold + reg.redundancyBuffer();
         require(groupSize <= nodeCount, "groupSize > nodeCount");
 
-        uint256 bitmap = _deriveBitmap(seed, round, nodeCount, groupSize);
+        uint256 bitmap = NodeGroupBitmapLib.derive(seed, round, nodeCount, groupSize);
 
         // Collect selected 1-based node indices (ascending, low bit first).
         uint256[] memory selected = new uint256[](groupSize);

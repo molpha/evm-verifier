@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.29;
+pragma solidity ^0.8.31;
 
 import {IFeed} from "../../src/interfaces/IFeed.sol";
 import {IFeedStructs} from "../../src/interfaces/IFeedStructs.sol";

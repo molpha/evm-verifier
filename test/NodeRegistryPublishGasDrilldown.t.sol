@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.29;
+pragma solidity ^0.8.31;
 
 import {Test, console2} from "forge-std/Test.sol";
 import {SSTORE2} from "solmate/utils/SSTORE2.sol";
@@ -10,6 +10,7 @@ import {AccessControlManager} from "../src/AccessControlManager.sol";
 import {INodeRegistry, INodeRegistryStructs} from "../src/interfaces/INodeRegistry.sol";
 import {LibSecp256k1} from "../src/libs/LibSecp256k1.sol";
 import {LibMuSig2KeyAgg} from "../src/libs/LibMuSig2KeyAgg.sol";
+import {NodeGroupBitmapLib} from "../src/libs/NodeGroupBitmapLib.sol";
 import {LibSchnorr} from "../src/libs/LibSchnorr.sol";
 import {LibSchnorrTestSign} from "./libs/LibSchnorrTestSign.sol";
 import {DummyFeed} from "./mocks/DummyFeed.sol";
@@ -158,24 +159,12 @@ contract NodeRegistryPublishGasDrilldown is Test {
 
             vm.resumeGasMetering();
             uint256 g = gasleft();
-            uint256 bitmap = _deriveBitmap(seed, 1, nodeCount, groupSize);
+            uint256 bitmap = NodeGroupBitmapLib.derive(seed, 1, nodeCount, groupSize);
             g = g - gasleft();
             vm.pauseGasMetering();
 
             _measure(string.concat("nodes=", vm.toString(nodeCount), " groupSize=3"), g);
             (bitmap);
-        }
-    }
-
-    function _deriveBitmap(bytes32 seed, uint32 round, uint256 nodeCount, uint256 groupSize)
-        internal pure returns (uint256 bitmap)
-    {
-        uint256 selected; uint256 attempt;
-        while (selected < groupSize) {
-            uint256 pos = uint256(keccak256(abi.encodePacked(seed, uint256(round), attempt))) % nodeCount;
-            uint256 bit = uint256(1) << pos;
-            if (bitmap & bit == 0) { bitmap |= bit; ++selected; }
-            ++attempt;
         }
     }
 

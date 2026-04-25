@@ -3,7 +3,7 @@
 // OpenZeppelin library for checking ERC165 support
 // modified to match oracle contracts needs
 
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.31;
 
 import {IERC165} from "openzeppelin-contracts/contracts/utils/introspection/IERC165.sol";
 

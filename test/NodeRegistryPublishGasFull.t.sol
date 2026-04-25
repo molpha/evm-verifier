@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.29;
+pragma solidity ^0.8.31;
 
 import {Test, console2} from "forge-std/Test.sol";
 import {MessageHashUtils} from "openzeppelin-contracts/contracts/utils/cryptography/MessageHashUtils.sol";
@@ -10,6 +10,7 @@ import {IFeed} from "../src/interfaces/IFeed.sol";
 import {AccessControlManager} from "../src/AccessControlManager.sol";
 import {INodeRegistry, INodeRegistryStructs} from "../src/interfaces/INodeRegistry.sol";
 import {LibSecp256k1} from "../src/libs/LibSecp256k1.sol";
+import {NodeGroupBitmapLib} from "../src/libs/NodeGroupBitmapLib.sol";
 import {LibSchnorrTestSign} from "./libs/LibSchnorrTestSign.sol";
 
 /// @title NodeRegistryPublishGasFullTest
@@ -31,6 +32,12 @@ import {LibSchnorrTestSign} from "./libs/LibSchnorrTestSign.sol";
 ///
 /// Run:
 ///   forge test --match-path test/NodeRegistryPublishGasFull.t.sol -vv
+///
+/// @dev Do **not** pass `--gas-report` or `--isolate` when reading the printed `exec` / TOTAL
+///      lines. Foundry runs each top-level external call as a separate tx in isolation mode
+///      (which `--gas-report` turns on), so `gasleft()` deltas and the per-test `(gas: …)` no
+///      longer match a normal, single-tx test — use a plain `forge test` for this benchmark, and
+///      a separate run with `--gas-report` if you want the contract-level table only.
 contract NodeRegistryPublishGasFullTest is Test {
     using MessageHashUtils for bytes32;
     using LibSecp256k1 for LibSecp256k1.Point;
@@ -49,18 +56,6 @@ contract NodeRegistryPublishGasFullTest is Test {
 
     function _secret(uint256 slot) internal pure returns (uint256) {
         return (uint256(keccak256(abi.encodePacked("MOLPHA_GAS_KEY", slot))) % (LibSecp256k1.Q() - 1)) + 1;
-    }
-
-    function _deriveBitmap(bytes32 seed, uint32 round, uint256 nodeCount, uint256 groupSize)
-        internal pure returns (uint256 bitmap)
-    {
-        uint256 selected; uint256 attempt;
-        while (selected < groupSize) {
-            uint256 pos = uint256(keccak256(abi.encodePacked(seed, uint256(round), attempt))) % nodeCount;
-            uint256 bit = uint256(1) << pos;
-            if (bitmap & bit == 0) { bitmap |= bit; ++selected; }
-            ++attempt;
-        }
     }
 
     function _combinedKey(uint256[] memory signerSecrets) internal pure returns (uint256 sk) {
@@ -87,7 +82,7 @@ contract NodeRegistryPublishGasFullTest is Test {
         uint32 round
     ) internal view returns (Call memory c) {
         uint256 groupSize = threshold + reg.redundancyBuffer();
-        uint256 bitmap = _deriveBitmap(seed, round, nodeCount, groupSize);
+        uint256 bitmap = NodeGroupBitmapLib.derive(seed, round, nodeCount, groupSize);
 
         uint256[] memory selected = new uint256[](groupSize);
         uint256 cnt;
@@ -274,5 +269,6 @@ contract NodeRegistryPublishGasFullTest is Test {
     function test_full_nodes20_signers18() public { _runBench(Scenario({nodeCount: 20, threshold: 18})); }
     function test_full_nodes40_signers10() public { _runBench(Scenario({nodeCount: 40, threshold: 10})); }
     function test_full_nodes60_signers10() public { _runBench(Scenario({nodeCount: 60, threshold: 10})); }
+    function test_full_nodes64_signers32() public { _runBench(Scenario({nodeCount: 64, threshold: 32})); }
     function test_full_nodes100_signers10() public { _runBench(Scenario({nodeCount: 100, threshold: 10})); }
 }

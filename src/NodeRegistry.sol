@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BSL-1.1
-pragma solidity ^0.8.29;
+pragma solidity ^0.8.31;
 
 import {ERC165} from "openzeppelin-contracts/contracts/utils/introspection/ERC165.sol";
 import {Initializable} from "openzeppelin-contracts/contracts/proxy/utils/Initializable.sol";
@@ -15,6 +15,7 @@ import {IFeedStructs} from "./interfaces/IFeedStructs.sol";
 import {IAccessControlManager} from "./interfaces/IAccessControlManager.sol";
 import {PubkeyBlobLib} from "./libs/PubkeyBlobLib.sol";
 import {BitmapLib} from "./libs/BitmapLib.sol";
+import {NodeGroupBitmapLib} from "./libs/NodeGroupBitmapLib.sol";
 
 /// @title NodeRegistry
 /// @notice Registry for managing nodes and verifying Schnorr signatures
@@ -287,27 +288,6 @@ contract NodeRegistry is INodeRegistry, ERC165, Initializable {
         newSeed = _unpackSeed(packedJob);
     }
 
-    function _deriveBitmap(bytes32 seed, uint32 round, uint256 nCount, uint256 groupSize)
-        internal
-        pure
-        returns (uint256 bitmap)
-    {
-        if (groupSize > nCount) revert("groupSize exceeds nodeCount");
-        uint256 selected;
-        uint256 attempt;
-        while (selected < groupSize) {
-            uint256 pos = uint256(keccak256(abi.encodePacked(seed, uint256(round), attempt))) % nCount;
-            uint256 bit = uint256(1) << pos;
-            if (bitmap & bit == 0) {
-                bitmap |= bit;
-                selected++;
-            }
-            unchecked {
-                ++attempt;
-            }
-        }
-    }
-
     /// @dev Copies one affine key (64 bytes) from the SSTORE2 `abi.encode(LibSecp256k1.Point[])` blob into
     ///      `out64` (must be `new bytes(64)` from the caller) to avoid per-signer `bytes` allocation.
     function _readNodeKeyXYInto(address ptr, uint256 idx, bytes memory out64) private view {
@@ -343,7 +323,7 @@ contract NodeRegistry is INodeRegistry, ERC165, Initializable {
         if (signerCount < minSignaturesThreshold) revert("Not enough signatures");
 
         uint256 grpSize = minSignaturesThreshold + redundancyBuffer;
-        uint256 bm = _deriveBitmap(seed, round, _nodeCount, grpSize);
+        uint256 bm = NodeGroupBitmapLib.derive(seed, round, _nodeCount, grpSize);
 
         address keysPtr = rawKeysPointer;
         bytes memory keyScratch = new bytes(64);
@@ -359,7 +339,7 @@ contract NodeRegistry is INodeRegistry, ERC165, Initializable {
             uint256 pos;
             unchecked {
                 bit = rem & (~rem + 1);
-                pos = bit.ctz256();
+                pos = bit.ctzPow2();
                 rem ^= bit;
             }
             if (bm & bit == 0) revert("Signer not selected");
