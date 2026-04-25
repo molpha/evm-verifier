@@ -9,6 +9,7 @@ import {INodeRegistry, INodeRegistryStructs} from "../src/interfaces/INodeRegist
 import {LibSecp256k1} from "../src/libs/LibSecp256k1.sol";
 import {LibSchnorrTestSign} from "./libs/LibSchnorrTestSign.sol";
 import {DummyFeed} from "./mocks/DummyFeed.sol";
+import {PublishCalldataLib} from "../src/libs/PublishCalldataLib.sol";
 
 contract NodeAggregatorTest is Test {
     using LibSecp256k1 for LibSecp256k1.Point;
@@ -84,8 +85,28 @@ contract NodeAggregatorTest is Test {
         return abi.encodePacked(r, s, v);
     }
 
+    function _makeUpdate(address feed, bytes32 jobId, bytes memory value, uint64 ts, uint32 round)
+        internal
+        pure
+        returns (INodeRegistryStructs.DataUpdate memory u)
+    {
+        u = INodeRegistryStructs.DataUpdate({
+            feed: feed,
+            jobId: jobId,
+            value: value,
+            tsAndRound: PublishCalldataLib.packTsRound(ts, round)
+        });
+    }
+
     function _constructMessage(INodeRegistryStructs.DataUpdate memory u) internal pure returns (bytes32) {
-        return keccak256(abi.encodePacked(u.jobId, u.value, u.timestamp, u.round)).toEthSignedMessageHash();
+        return keccak256(
+            abi.encodePacked(
+                u.jobId,
+                u.value,
+                PublishCalldataLib.unpackTimestamp(u.tsAndRound),
+                PublishCalldataLib.unpackRound(u.tsAndRound)
+            )
+        ).toEthSignedMessageHash();
     }
 
     /// @dev Intent C: Schnorr aggregate pubkey and effective secret for node 1 in a 3-node registry (L_reg over all three).
@@ -108,8 +129,7 @@ contract NodeAggregatorTest is Test {
         registry.initializeJob(jobId, uint64(block.timestamp));
         uint32[] memory pm = new uint32[](3);
 
-        INodeRegistryStructs.DataUpdate memory u =
-            INodeRegistryStructs.DataUpdate({feed: address(0), jobId: jobId, value: hex"01", timestamp: 1, round: 1});
+        INodeRegistryStructs.DataUpdate memory u = _makeUpdate(address(0), jobId, hex"01", 1, 1);
         INodeRegistryStructs.SchnorrSignature memory s = INodeRegistryStructs.SchnorrSignature({
             signature: bytes32(uint256(1)),
             commitment: address(1),
@@ -128,8 +148,7 @@ contract NodeAggregatorTest is Test {
         (,, bytes32 jobId,) = feed.getFeedConfig();
         uint32[] memory pm = new uint32[](3);
 
-        INodeRegistryStructs.DataUpdate memory u =
-            INodeRegistryStructs.DataUpdate({feed: address(feed), jobId: jobId, value: hex"01", timestamp: 1, round: 1});
+        INodeRegistryStructs.DataUpdate memory u = _makeUpdate(address(feed), jobId, hex"01", 1, 1);
         INodeRegistryStructs.SchnorrSignature memory s = INodeRegistryStructs.SchnorrSignature({
             signature: bytes32(uint256(1)),
             commitment: address(1),
@@ -148,8 +167,7 @@ contract NodeAggregatorTest is Test {
         registry.initializeJob(jobId, uint64(block.timestamp));
 
         uint32[] memory pm = new uint32[](3);
-        INodeRegistryStructs.DataUpdate memory u =
-            INodeRegistryStructs.DataUpdate({feed: address(feed), jobId: jobId, value: hex"01", timestamp: 1, round: 1});
+        INodeRegistryStructs.DataUpdate memory u = _makeUpdate(address(feed), jobId, hex"01", 1, 1);
         INodeRegistryStructs.SchnorrSignature memory s = INodeRegistryStructs.SchnorrSignature({
             signature: bytes32(uint256(1)),
             commitment: address(1),
@@ -168,9 +186,7 @@ contract NodeAggregatorTest is Test {
         vm.warp(1_000_000);
         registry.initializeJob(jobId, uint64(block.timestamp));
 
-        bytes32 message = _constructMessage(
-            INodeRegistryStructs.DataUpdate({feed: address(feed), jobId: jobId, value: hex"01", timestamp: 2, round: 2})
-        );
+        bytes32 message = _constructMessage(_makeUpdate(address(feed), jobId, hex"01", 2, 2));
 
         (LibSecp256k1.Point memory agg, uint256 skEff) = _aggAndSkEffThreeNodes(p1, p2, p3);
         LibSecp256k1.Point memory check = LibSecp256k1.mulAffine(LibSecp256k1.G(), skEff);
@@ -182,8 +198,7 @@ contract NodeAggregatorTest is Test {
             INodeRegistryStructs.SchnorrSignature({signature: sig, commitment: cmt, signersBitmap: bytes32(uint256(1))});
 
         uint32[] memory pm = new uint32[](3);
-        INodeRegistryStructs.DataUpdate memory u =
-            INodeRegistryStructs.DataUpdate({feed: address(feed), jobId: jobId, value: hex"01", timestamp: 2, round: 2});
+        INodeRegistryStructs.DataUpdate memory u = _makeUpdate(address(feed), jobId, hex"01", 2, 2);
 
         vm.expectRevert("Invalid round");
         registry.publish(u, schn);
@@ -197,8 +212,7 @@ contract NodeAggregatorTest is Test {
         registry.initializeJob(jobId, uint64(block.timestamp));
 
         uint32[] memory pm = new uint32[](0);
-        INodeRegistryStructs.DataUpdate memory u =
-            INodeRegistryStructs.DataUpdate({feed: address(feed), jobId: jobId, value: hex"01", timestamp: 2, round: 1});
+        INodeRegistryStructs.DataUpdate memory u = _makeUpdate(address(feed), jobId, hex"01", 2, 1);
         INodeRegistryStructs.SchnorrSignature memory schn = INodeRegistryStructs.SchnorrSignature({
             signature: bytes32(uint256(1)),
             commitment: address(1),
@@ -217,8 +231,7 @@ contract NodeAggregatorTest is Test {
         vm.warp(1_000_000);
         registry.initializeJob(jobId, uint64(block.timestamp));
 
-        INodeRegistryStructs.DataUpdate memory u =
-            INodeRegistryStructs.DataUpdate({feed: address(feed), jobId: jobId, value: hex"01", timestamp: 2, round: 1});
+        INodeRegistryStructs.DataUpdate memory u = _makeUpdate(address(feed), jobId, hex"01", 2, 1);
         INodeRegistryStructs.SchnorrSignature memory schn = INodeRegistryStructs.SchnorrSignature({
             signature: bytes32(uint256(1)),
             commitment: address(2),
@@ -243,8 +256,7 @@ contract NodeAggregatorTest is Test {
 
         bytes memory value = abi.encodePacked(uint256(42));
         uint64 ts = 9_999;
-        INodeRegistryStructs.DataUpdate memory u =
-            INodeRegistryStructs.DataUpdate({feed: address(feed), jobId: jobId, value: value, timestamp: ts, round: 1});
+        INodeRegistryStructs.DataUpdate memory u = _makeUpdate(address(feed), jobId, value, ts, 1);
         bytes32 message = _constructMessage(u);
 
         (LibSecp256k1.Point memory agg, uint256 skEff) = _aggAndSkEffThreeNodes(p1, p2, p3);

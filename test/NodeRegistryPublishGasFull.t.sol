@@ -11,6 +11,7 @@ import {AccessControlManager} from "../src/AccessControlManager.sol";
 import {INodeRegistry, INodeRegistryStructs} from "../src/interfaces/INodeRegistry.sol";
 import {LibSecp256k1} from "../src/libs/LibSecp256k1.sol";
 import {NodeGroupBitmapLib} from "../src/libs/NodeGroupBitmapLib.sol";
+import {PublishCalldataLib} from "../src/libs/PublishCalldataLib.sol";
 import {LibSchnorrTestSign} from "./libs/LibSchnorrTestSign.sol";
 
 /// @title NodeRegistryPublishGasFullTest
@@ -108,8 +109,20 @@ contract NodeRegistryPublishGasFullTest is Test {
         bytes memory value = abi.encodePacked(uint256(round) * 1e18);
         uint64 ts = uint64(block.timestamp) + round;
 
-        c.update = INodeRegistryStructs.DataUpdate({feed: feed, jobId: jobId, value: value, timestamp: ts, round: round});
-        bytes32 message = keccak256(abi.encodePacked(c.update.jobId, c.update.value, c.update.timestamp, c.update.round)).toEthSignedMessageHash();
+        c.update = INodeRegistryStructs.DataUpdate({
+            feed: feed,
+            jobId: jobId,
+            value: value,
+            tsAndRound: PublishCalldataLib.packTsRound(ts, round)
+        });
+        bytes32 message = keccak256(
+            abi.encodePacked(
+                c.update.jobId,
+                c.update.value,
+                PublishCalldataLib.unpackTimestamp(c.update.tsAndRound),
+                PublishCalldataLib.unpackRound(c.update.tsAndRound)
+            )
+        ).toEthSignedMessageHash();
         (bytes32 sig, address cmt) = LibSchnorrTestSign.sign(aggKey, skEff, message, 0);
         c.schnorr =
             INodeRegistryStructs.SchnorrSignature({signature: sig, commitment: cmt, signersBitmap: bytes32(signerBits)});
@@ -195,8 +208,15 @@ contract NodeRegistryPublishGasFullTest is Test {
         fs.call1 = _buildCall(fs.reg, address(feed), jobId, allPubkeys, allSecrets, s.nodeCount, s.threshold, seed0, pm0, 1);
 
         bytes32 seed1 = bytes32(
-            uint256(keccak256(abi.encodePacked(seed0, fs.call1.update.value, fs.call1.update.timestamp)))
-            & ~uint256(type(uint32).max)
+            uint256(
+                keccak256(
+                    abi.encodePacked(
+                        seed0,
+                        fs.call1.update.value,
+                        PublishCalldataLib.unpackTimestamp(fs.call1.update.tsAndRound)
+                    )
+                )
+            ) & ~uint256(type(uint32).max)
         );
         uint32[] memory pm1 = _advancePm(pm0, fs.call1.schnorr.signersBitmap);
         fs.call2 = _buildCall(fs.reg, address(feed), jobId, allPubkeys, allSecrets, s.nodeCount, s.threshold, seed1, pm1, 2);

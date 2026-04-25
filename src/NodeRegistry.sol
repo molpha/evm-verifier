@@ -16,11 +16,13 @@ import {IAccessControlManager} from "./interfaces/IAccessControlManager.sol";
 import {PubkeyBlobLib} from "./libs/PubkeyBlobLib.sol";
 import {BitmapLib} from "./libs/BitmapLib.sol";
 import {NodeGroupBitmapLib} from "./libs/NodeGroupBitmapLib.sol";
+import {PublishCalldataLib} from "./libs/PublishCalldataLib.sol";
 
 /// @title NodeRegistry
 /// @notice Registry for managing nodes and verifying Schnorr signatures
 /// @dev Uses SSTORE2 for efficient storage of node public keys, supports up to 256 nodes
 contract NodeRegistry is INodeRegistry, ERC165, Initializable {
+    using PublishCalldataLib for uint96;
     using MessageHashUtils for bytes32;
     using ERC165Checker for address;
     using LibSchnorr for LibSecp256k1.Point;
@@ -106,7 +108,8 @@ contract NodeRegistry is INodeRegistry, ERC165, Initializable {
         require(jobId == dataUpdate.jobId, "Invalid feed");
 
         (bytes32 prevSeed, uint32 prevRound) = _readJobState(jobId);
-        require(dataUpdate.round == prevRound + 1, "Invalid round");
+        uint32 publishRound = dataUpdate.tsAndRound.unpackRound();
+        require(publishRound == prevRound + 1, "Invalid round");
 
         uint256 _nodeCount = nodeCount;
         require(_nodeCount > 0, "No nodes");
@@ -115,7 +118,7 @@ contract NodeRegistry is INodeRegistry, ERC165, Initializable {
             _constructMessage(dataUpdate),
             schnorrData,
             minSignaturesThreshold,
-            dataUpdate.round,
+            publishRound,
             prevSeed,
             _nodeCount,
             true
@@ -123,10 +126,11 @@ contract NodeRegistry is INodeRegistry, ERC165, Initializable {
 
         bytes32 newSeed = _advanceJobRound(jobId, prevSeed, dataUpdate);
 
-        IFeed(feed).publish(IFeedStructs.Answer({value: dataUpdate.value, timestamp: dataUpdate.timestamp}));
+        uint64 publishTs = dataUpdate.tsAndRound.unpackTimestamp();
+        IFeed(feed).publish(IFeedStructs.Answer({value: dataUpdate.value, timestamp: publishTs}));
 
         emit LogAnswerPublished(
-            feed, dataUpdate.value, dataUpdate.timestamp, schnorrData.signersBitmap, dataUpdate.round, newSeed
+            feed, dataUpdate.value, publishTs, schnorrData.signersBitmap, publishRound, newSeed
         );
     }
 
@@ -282,8 +286,10 @@ contract NodeRegistry is INodeRegistry, ERC165, Initializable {
         internal
         returns (bytes32 newSeed)
     {
-        bytes32 rawSeed = keccak256(abi.encodePacked(prevSeed, dataUpdate.value, dataUpdate.timestamp));
-        bytes32 packedJob = _packJobState(rawSeed, dataUpdate.round);
+        uint32 advRound = dataUpdate.tsAndRound.unpackRound();
+        uint64 advTs = dataUpdate.tsAndRound.unpackTimestamp();
+        bytes32 rawSeed = keccak256(abi.encodePacked(prevSeed, dataUpdate.value, advTs));
+        bytes32 packedJob = _packJobState(rawSeed, advRound);
         jobState[jobId] = packedJob;
         newSeed = _unpackSeed(packedJob);
     }
@@ -372,8 +378,10 @@ contract NodeRegistry is INodeRegistry, ERC165, Initializable {
     }
 
     function _constructMessage(DataUpdate calldata dataUpdate) internal pure returns (bytes32 message) {
-        message = keccak256(abi.encodePacked(dataUpdate.jobId, dataUpdate.value, dataUpdate.timestamp, dataUpdate.round))
-            .toEthSignedMessageHash();
+        uint96 tr = dataUpdate.tsAndRound;
+        message = keccak256(
+            abi.encodePacked(dataUpdate.jobId, dataUpdate.value, tr.unpackTimestamp(), tr.unpackRound())
+        ).toEthSignedMessageHash();
     }
 
     function _verifyPop(LibSecp256k1.Point memory pubkey, bytes memory compressedPubKey, bytes memory popSignature)
