@@ -22,22 +22,24 @@ library LibSchnorr {
         bytes32 signature,
         address commitment
     ) internal pure returns (bool) {
+        uint256 px = pubKey.x;
+        uint256 parity = pubKey.yParity();
         uint challenge = uint(
-            keccak256(abi.encodePacked(pubKey.x, uint8(pubKey.yParity()), message, commitment))
+            keccak256(abi.encodePacked(px, uint8(parity), message, commitment))
         ) % LibSecp256k1.Q();
 
         uint msgHash;
         unchecked {
-            msgHash = LibSecp256k1.Q() - mulmod(uint(signature), pubKey.x, LibSecp256k1.Q());
+            msgHash = LibSecp256k1.Q() - mulmod(uint(signature), px, LibSecp256k1.Q());
         }
 
         uint v;
-        unchecked { v = pubKey.yParity() + 27; }
+        unchecked { v = parity + 27; }
 
-        uint r = pubKey.x;
+        uint r = px;
         uint s;
         unchecked {
-            s = LibSecp256k1.Q() - mulmod(challenge, pubKey.x, LibSecp256k1.Q());
+            s = LibSecp256k1.Q() - mulmod(challenge, px, LibSecp256k1.Q());
         }
 
         address recovered = ecrecover(bytes32(msgHash), uint8(v), bytes32(r), bytes32(s));
@@ -80,14 +82,12 @@ library LibSchnorr {
             return false;
         }
 
+        uint256 px = pubKey.x;
+        uint256 parity = pubKey.yParity();
         // Construct challenge = H(Pₓ ‖ Pₚ ‖ m ‖ Rₑ) mod Q
-        uint challenge = uint(
-            keccak256(
-                abi.encodePacked(
-                    pubKey.x, uint8(pubKey.yParity()), message, commitment
-                )
-            )
-        ) % LibSecp256k1.Q();
+        uint challenge =
+            uint(keccak256(abi.encodePacked(px, uint8(parity), message, commitment))) %
+            LibSecp256k1.Q();
 
         // Compute msgHash = -sig * Pₓ      (mod Q)
         //                 = Q - (sig * Pₓ) (mod Q)
@@ -98,7 +98,7 @@ library LibSchnorr {
         uint msgHash;
         unchecked {
             msgHash = LibSecp256k1.Q()
-                - mulmod(uint(signature), pubKey.x, LibSecp256k1.Q());
+                - mulmod(uint(signature), px, LibSecp256k1.Q());
         }
 
         // Compute v = Pₚ + 27
@@ -107,11 +107,11 @@ library LibSchnorr {
         // by adding 27.
         uint v;
         unchecked {
-            v = pubKey.yParity() + 27;
+            v = parity + 27;
         }
 
         // Set r = Pₓ
-        uint r = pubKey.x;
+        uint r = px;
 
         // Compute s = Q - (e * Pₓ) (mod Q)
         //
@@ -120,7 +120,7 @@ library LibSchnorr {
         // computation, i.e. the subtrahend is guaranteed to be less than Q.
         uint s;
         unchecked {
-            s = LibSecp256k1.Q() - mulmod(challenge, pubKey.x, LibSecp256k1.Q());
+            s = LibSecp256k1.Q() - mulmod(challenge, px, LibSecp256k1.Q());
         }
 
         // Compute ([s]G - [e]P)ₑ via ecrecover.

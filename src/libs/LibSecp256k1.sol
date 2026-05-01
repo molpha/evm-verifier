@@ -173,6 +173,10 @@ library LibSecp256k1 {
     function toAffineModexpXYZ(
         uint256 jx, uint256 jy, uint256 jz
     ) internal view returns (Point memory result) {
+        // Affine accumulator (`z == 1`): skip field inversion (~modexp cost).
+        if (jz == 1) {
+            return Point({x: jx, y: jy});
+        }
         uint zInv = _modExp(jz, _P - 2, _P);
         uint zInv2 = mulmod(zInv, zInv, _P);
         result.x = mulmod(jx, zInv2, _P);

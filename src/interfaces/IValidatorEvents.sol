@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: BSL-1.1
 pragma solidity ^0.8.31;
 
-/// @title INodeRegistryEvents
-/// @notice Events for the NodeRegistry
-interface INodeRegistryEvents {
+/// @title IValidatorEvents
+/// @notice Events for the Validator
+interface IValidatorEvents {
     /// @notice Emitted when a new node is added to the set
     /// @param node The address of the new node
     /// @param index The index assigned to the new node

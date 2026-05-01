@@ -7,11 +7,12 @@ pragma solidity ^0.8.31;
 library NodeGroupBitmapLib {
     /// @dev Bumps `freeMemoryPointer` by one `bytes(96)` scratch for the 3×32B hash preimage; cheaper than
     ///      rebuilding `abi.encodePacked` in the hot loop.
-    function derive(bytes32 seed, uint32 round, uint256 nCount, uint256 groupSize)
+    function derive(bytes32 seed, uint256 nCount, uint256 groupSize)
         internal
         pure
         returns (uint256 bitmap)
     {
+        if (nCount == 0) revert("nodeCount is zero");
         if (groupSize > nCount) revert("groupSize exceeds nodeCount");
         if (groupSize == 0) return 0;
         if (groupSize == nCount) {
@@ -20,13 +21,11 @@ library NodeGroupBitmapLib {
             }
             return (uint256(1) << nCount) - 1;
         }
-        uint256 roundWord = uint256(uint32(round));
         bytes memory scratch = new bytes(96);
         uint256 p;
         assembly ("memory-safe") {
             p := add(scratch, 0x20)
             mstore(p, seed)
-            mstore(add(p, 0x20), roundWord)
         }
         uint256 selected;
         uint256 attempt;
