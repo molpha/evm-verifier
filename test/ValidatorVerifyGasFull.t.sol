@@ -73,7 +73,7 @@ contract ValidatorVerifyGasFullTest is Test {
         returns (IValidatorStructs.SchnorrProof memory pop)
     {
         bytes32 digest =
-            keccak256(abi.encodePacked(POP_DOMAIN, validatorAddr, compressedPubKey)).toEthSignedMessageHash();
+            keccak256(abi.encodePacked(POP_DOMAIN, validatorAddr, compressedPubKey));
         LibSecp256k1.Point memory pubKey = LibSecp256k1.mulAffine(LibSecp256k1.G(), sk);
         (bytes32 sig, address cmt) = LibSchnorrTestSign.sign(pubKey, sk, digest, 0);
         pop = IValidatorStructs.SchnorrProof({signature: sig, commitment: cmt});
@@ -109,7 +109,7 @@ contract ValidatorVerifyGasFullTest is Test {
                     du.value,
                     du.canonicalTimestamp
                 )
-            ).toEthSignedMessageHash();
+            );
     }
 
     function _pickSignerIndices(uint256 bitmap, uint256 nRegistered, uint256 need)
@@ -163,14 +163,13 @@ contract ValidatorVerifyGasFullTest is Test {
         uint256[] memory allSecrets,
         uint256 threshold,
         bytes32 jobId,
-        uint32 registryVersion,
         bytes32 configHash,
         bytes32 value,
         uint64 canonicalTimestamp
     ) internal view returns (VerifyCall memory c) {
         c.dataUpdate = IValidatorStructs.DataUpdate({
             jobId: jobId,
-            registryVersion: registryVersion,
+            registryVersion: uint32(validator.getRegistryVersion()),
             signaturesRequired: uint32(threshold),
             configHash: configHash,
             value: value,
@@ -221,7 +220,6 @@ contract ValidatorVerifyGasFullTest is Test {
         }
 
         bytes32 jobId = bytes32(uint256(keccak256("VALIDATOR_VERIFY_GAS_JOB")));
-        uint32 registryVersion = 1;
         bytes32 configHash = bytes32(uint256(keccak256("VALIDATOR_VERIFY_GAS_CFG")));
 
         vm.warp(1_000_000);
@@ -233,7 +231,6 @@ contract ValidatorVerifyGasFullTest is Test {
             allSecrets,
             s.threshold,
             jobId,
-            registryVersion,
             configHash,
             bytes32(uint256(1)),
             tsBase + 1
@@ -245,7 +242,6 @@ contract ValidatorVerifyGasFullTest is Test {
             allSecrets,
             s.threshold,
             jobId,
-            registryVersion,
             configHash,
             bytes32(uint256(2)),
             tsBase + 2

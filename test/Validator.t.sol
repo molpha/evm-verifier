@@ -43,7 +43,7 @@ contract ValidatorTest is Test {
         pure
         returns (IValidatorStructs.SchnorrProof memory pop)
     {
-        bytes32 digest = keccak256(abi.encodePacked(POP_DOMAIN, validatorAddr, compressed)).toEthSignedMessageHash();
+        bytes32 digest = keccak256(abi.encodePacked(POP_DOMAIN, validatorAddr, compressed));
         LibSecp256k1.Point memory pk = LibSecp256k1.mulAffine(LibSecp256k1.G(), sk);
         (bytes32 sig, address cmt) = LibSchnorrTestSign.sign(pk, sk, digest, 0);
         pop = IValidatorStructs.SchnorrProof({signature: sig, commitment: cmt});
@@ -111,7 +111,7 @@ contract ValidatorTest is Test {
                     du.value,
                     du.canonicalTimestamp
                 )
-            ).toEthSignedMessageHash();
+            );
     }
 
     /// @dev Collect the first `need` signer indices (1-based) whose bits are set in `bitmap`.
@@ -141,14 +141,13 @@ contract ValidatorTest is Test {
         Validator validator,
         uint256 sigReq,
         bytes32 jobId,
-        uint32 registryVersion,
         bytes32 configHash,
         bytes32 value,
         uint64 canonicalTs
     ) internal view returns (IValidatorStructs.DataUpdate memory du, IValidatorStructs.SchnorrSignature memory sch) {
         du = IValidatorStructs.DataUpdate({
             jobId: jobId,
-            registryVersion: registryVersion,
+            registryVersion: uint32(validator.getRegistryVersion()),
             signaturesRequired: uint32(sigReq),
             configHash: configHash,
             value: value,
@@ -264,7 +263,7 @@ contract ValidatorTest is Test {
     function test_removeNode_swap_middle() public {
         _addNodes(v, 3);
         address middle = pubPoints[1].toAddress();
-        uint256 ptrBefore = uint256(uint160(v.rawKeysPointer()));
+        uint256 ptrBefore = uint256(uint160(v.getRegistryPointer()));
 
         v.removeNode(middle);
 
@@ -274,7 +273,7 @@ contract ValidatorTest is Test {
         // Third node's address should now occupy index 2 (former middle slot after swap-with-last).
         address last = pubPoints[2].toAddress();
         assertEq(v.getNodeIndex(last), 2);
-        assertTrue(uint256(uint160(v.rawKeysPointer())) != ptrBefore);
+        assertTrue(uint256(uint160(v.getRegistryPointer())) != ptrBefore);
     }
 
     function test_getNodesSetHash_stable_for_same_set() public {
@@ -289,7 +288,7 @@ contract ValidatorTest is Test {
     function test_verify_revert_no_nodes() public {
         IValidatorStructs.DataUpdate memory du = IValidatorStructs.DataUpdate({
             jobId: bytes32(uint256(1)),
-            registryVersion: 1,
+            registryVersion: 0,
             signaturesRequired: 1,
             configHash: bytes32(uint256(2)),
             value: bytes32(uint256(3)),
@@ -307,7 +306,7 @@ contract ValidatorTest is Test {
         _addNodes(v, numNodes);
 
         (IValidatorStructs.DataUpdate memory du, IValidatorStructs.SchnorrSignature memory sch) =
-            _buildVerify(v, sigReq, bytes32("job-a"), 1, bytes32("cfg"), bytes32("val"), uint64(1700000000));
+            _buildVerify(v, sigReq, bytes32("job-a"), bytes32("cfg"), bytes32("val"), uint64(1700000000));
 
         assertTrue(v.verify(du, sch));
     }
@@ -316,7 +315,7 @@ contract ValidatorTest is Test {
         _addNodes(v, 5);
 
         (IValidatorStructs.DataUpdate memory du, IValidatorStructs.SchnorrSignature memory sch) =
-            _buildVerify(v, 3, bytes32("job-b"), 1, bytes32("cfg"), bytes32("val"), uint64(1700000001));
+            _buildVerify(v, 3, bytes32("job-b"), bytes32("cfg"), bytes32("val"), uint64(1700000001));
 
         sch.signature = bytes32(uint256(sch.signature) ^ 1);
         assertFalse(v.verify(du, sch));
@@ -327,7 +326,7 @@ contract ValidatorTest is Test {
 
         for (uint256 salt = 1; salt < 1000; ++salt) {
             (IValidatorStructs.DataUpdate memory du, IValidatorStructs.SchnorrSignature memory sch) =
-                _buildVerify(v, 3, bytes32(salt), 1, bytes32("cfg"), bytes32("val"), uint64(1700000001));
+                _buildVerify(v, 3, bytes32(salt), bytes32("cfg"), bytes32("val"), uint64(1700000001));
 
             IValidatorStructs.DataUpdate memory tampered = du;
             tampered.signaturesRequired = 2;
@@ -347,7 +346,7 @@ contract ValidatorTest is Test {
 
         IValidatorStructs.DataUpdate memory du = IValidatorStructs.DataUpdate({
             jobId: bytes32("zero-threshold"),
-            registryVersion: 1,
+            registryVersion: uint32(v.getRegistryVersion()),
             signaturesRequired: 0,
             configHash: bytes32("cfg"),
             value: bytes32("val"),
@@ -363,7 +362,7 @@ contract ValidatorTest is Test {
         _addNodes(v, 5);
 
         (IValidatorStructs.DataUpdate memory du, IValidatorStructs.SchnorrSignature memory sch) =
-            _buildVerify(v, 3, bytes32("job-zero"), 1, bytes32("cfg"), bytes32("val"), uint64(1700000001));
+            _buildVerify(v, 3, bytes32("job-zero"), bytes32("cfg"), bytes32("val"), uint64(1700000001));
 
         IValidatorStructs.SchnorrSignature memory zeroSigners = IValidatorStructs.SchnorrSignature({
             signature: sch.signature, commitment: sch.commitment, signersBitmap: 0
@@ -388,7 +387,7 @@ contract ValidatorTest is Test {
         _addNodes(v, 5);
 
         (IValidatorStructs.DataUpdate memory du, IValidatorStructs.SchnorrSignature memory sch) =
-            _buildVerify(v, 3, bytes32("job-c"), 1, bytes32("cfg"), bytes32("val"), uint64(1700000002));
+            _buildVerify(v, 3, bytes32("job-c"), bytes32("cfg"), bytes32("val"), uint64(1700000002));
 
         // Drop one signer bit → popCount 2 < 3
         sch.signersBitmap &= ~uint256(1);
@@ -401,7 +400,7 @@ contract ValidatorTest is Test {
         _addNodes(v, 6);
 
         (IValidatorStructs.DataUpdate memory du, IValidatorStructs.SchnorrSignature memory sch) =
-            _buildVerify(v, 3, bytes32("job-d"), 1, bytes32("cfg"), bytes32("val"), uint64(1700000003));
+            _buildVerify(v, 3, bytes32("job-d"), bytes32("cfg"), bytes32("val"), uint64(1700000003));
 
         // Flip a bit that is not in the selection bitmap for this update.
         sch.signersBitmap ^= uint256(1) << 255;
@@ -410,12 +409,12 @@ contract ValidatorTest is Test {
         v.verify(du, sch);
     }
 
-    function test_verify_revert_group_too_large() public {
+    function test_verify_caps_group_size_when_buffer_exceeds_nodes() public {
         _addNodes(v, 2);
-        // redundancyBuffer=2 → grpSize = 4 > 2 registered nodes
+        // redundancyBuffer=2 → uncapped grpSize = 4, capped to nodeCount = 2
         IValidatorStructs.DataUpdate memory du = IValidatorStructs.DataUpdate({
             jobId: bytes32("x"),
-            registryVersion: 1,
+            registryVersion: uint32(v.getRegistryVersion()),
             signaturesRequired: 2,
             configHash: bytes32(0),
             value: bytes32(0),
@@ -426,8 +425,7 @@ contract ValidatorTest is Test {
         sch.signature = bytes32(uint256(1));
         sch.commitment = address(1);
 
-        vm.expectRevert(bytes("groupSize exceeds nodeCount"));
-        v.verify(du, sch);
+        assertFalse(v.verify(du, sch));
     }
 
     function test_fuzz_verify_matches_selection_bitmap(uint256 jobSalt, uint64 ts) public {
@@ -435,7 +433,7 @@ contract ValidatorTest is Test {
         _addNodes(v, 8);
 
         (IValidatorStructs.DataUpdate memory du, IValidatorStructs.SchnorrSignature memory sch) =
-            _buildVerify(v, 4, bytes32(jobSalt), 7, bytes32(uint256(999)), bytes32(uint256(888)), ts);
+            _buildVerify(v, 4, bytes32(jobSalt), bytes32(uint256(999)), bytes32(uint256(888)), ts);
 
         assertTrue(v.verify(du, sch));
     }
@@ -449,7 +447,7 @@ contract ValidatorTest is Test {
         _addNodes(vv, numNodes);
 
         (IValidatorStructs.DataUpdate memory du, IValidatorStructs.SchnorrSignature memory sch) =
-            _buildVerify(vv, sigReq, jobId, 1, bytes32("cfg"), bytes32("val"), uint64(1700000100));
+            _buildVerify(vv, sigReq, jobId, bytes32("cfg"), bytes32("val"), uint64(1700000100));
 
         bytes memory cd = abi.encodeCall(IValidator.verify, (du, sch));
         uint256 cdCost = _calldataCost(cd);
@@ -479,5 +477,99 @@ contract ValidatorTest is Test {
 
     function test_gas_verify_20_nodes_threshold_8() public {
         _benchVerify(20, 8, bytes32("gas-20-8"));
+    }
+
+    function test_fixture_solana_compat_10nodes_8signers() public {
+        uint256 numNodes = 10;
+        uint256 sigReq = 8;
+
+        // Setup: register 10 nodes (deterministic keys).
+        _addNodes(v, numNodes);
+        assertEq(_registeredNodeCount(v), numNodes);
+
+        // Build a deterministic data update.
+        IValidatorStructs.DataUpdate memory du = IValidatorStructs.DataUpdate({
+            jobId: bytes32("solana-compat-job"),
+            registryVersion: uint32(v.getRegistryVersion()),
+            signaturesRequired: uint32(sigReq),
+            configHash: bytes32("solana-compat-cfg"),
+            value: bytes32("solana-compat-val"),
+            canonicalTimestamp: uint64(1_700_000_123)
+        });
+
+        // Selection + signer list (must be 8 signers from 10 nodes).
+        uint256 grpSize = sigReq + v.redundancyBuffer();
+        bytes32 selSeed = _selectionSeed(du);
+        uint256 selectionBitmap = NodeGroupBitmapLib.derive(selSeed, numNodes, grpSize);
+        uint256[] memory idxs = _pickSignerIndices(selectionBitmap, numNodes, sigReq);
+
+        uint256 signersBitmap;
+        for (uint256 i; i < idxs.length; ++i) {
+            signersBitmap |= uint256(1) << (idxs[i] - 1);
+        }
+
+        // Aggregate pubkey + signature over the constructed message.
+        LibSecp256k1.Point[] memory pts = _pubkeysForIndices(idxs);
+        LibSecp256k1.Point memory aggPk = _sumPubkeys(pts);
+        bytes32 msgHash = _constructMessage(du, signersBitmap);
+        uint256 skEff = _sumSecretsStorage(idxs);
+        (bytes32 sig, address cmt) = LibSchnorrTestSign.sign(aggPk, skEff, msgHash, 0);
+        IValidatorStructs.SchnorrSignature memory sch =
+            IValidatorStructs.SchnorrSignature({signature: sig, commitment: cmt, signersBitmap: signersBitmap});
+
+        // Sanity: on-chain verify must pass.
+        assertTrue(v.verify(du, sch));
+
+        // Build node pubkey fixtures (compressed pubkeys).
+        bytes[] memory nodePubkeys = new bytes[](numNodes);
+        for (uint256 i; i < numNodes; ++i) {
+            nodePubkeys[i] = LibSecp256k1.compress(pubPoints[i]);
+        }
+
+        // Emit a single JSON object fixture to stdout.
+        string memory out = "{";
+        out = string.concat(out, '"registeredNodeCount":', vm.toString(numNodes), ",");
+        out = string.concat(out, '"registryVersion":', vm.toString(uint256(du.registryVersion)), ",");
+        out = string.concat(out, '"configHash":"', vm.toString(du.configHash), '",');
+
+        out = string.concat(out, '"nodeIndexesOneBased":[');
+        for (uint256 i; i < idxs.length; ++i) {
+            out = string.concat(out, vm.toString(idxs[i]));
+            if (i + 1 < idxs.length) out = string.concat(out, ",");
+        }
+        out = string.concat(out, "],");
+
+        out = string.concat(out, '"nodePubkeys":[');
+        for (uint256 i; i < nodePubkeys.length; ++i) {
+            out = string.concat(out, '"', vm.toString(nodePubkeys[i]), '"');
+            if (i + 1 < nodePubkeys.length) out = string.concat(out, ",");
+        }
+        out = string.concat(out, "],");
+
+        out = string.concat(out, '"secretKeys":[');
+        for (uint256 i; i < idxs.length; ++i) {
+            out = string.concat(out, '"', vm.toString(secrets[i]), '"');
+            // out = string.concat(out, vm.toString(secrets[idxs[i] - 1]));
+            if (i + 1 < idxs.length) out = string.concat(out, ",");
+        }
+        out = string.concat(out, "],");
+
+        out = string.concat(out, '"dataUpdate":{');
+        out = string.concat(out, '"jobId":"', vm.toString(du.jobId), '",');
+        out = string.concat(out, '"registryVersion":', vm.toString(uint256(du.registryVersion)), ",");
+        out = string.concat(out, '"signaturesRequired":', vm.toString(sigReq), ",");
+        out = string.concat(out, '"configHash":"', vm.toString(du.configHash), '",');
+        out = string.concat(out, '"value":"', vm.toString(du.value), '",');
+        out = string.concat(out, '"canonicalTimestamp":', vm.toString(uint256(du.canonicalTimestamp)));
+        out = string.concat(out, "},");
+
+        out = string.concat(out, '"schnorrSignature":{');
+        out = string.concat(out, '"signature":"', vm.toString(sch.signature), '",');
+        out = string.concat(out, '"commitment":"', vm.toString(sch.commitment), '",');
+        out = string.concat(out, '"signersBitmap":', vm.toString(sch.signersBitmap));
+        out = string.concat(out, "}");
+
+        out = string.concat(out, "}");
+        console2.log(out);
     }
 }

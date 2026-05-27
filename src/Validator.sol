@@ -39,7 +39,9 @@ contract Validator is IValidator, Initializable {
     mapping(address node => uint256 index) public nodeIndexes;
 
     /// @notice Pointer to `abi.encode(LibSecp256k1.Point[])` raw keys with index 0 placeholder.
-    address public rawKeysPointer;
+    // address public rawKeysPointer;
+
+    address[] public registryPointers;
 
     /// @notice Per-index coordinates for O(1) removal aggregate update.
     mapping(uint256 index => uint256 x) public nodeKeyX;
@@ -60,7 +62,7 @@ contract Validator is IValidator, Initializable {
 
         LibSecp256k1.Point[] memory emptyArray = new LibSecp256k1.Point[](1);
         emptyArray[0] = LibSecp256k1.ZERO_POINT();
-        rawKeysPointer = SSTORE2.write(abi.encode(emptyArray));
+        registryPointers.push(SSTORE2.write(abi.encode(emptyArray)));
     }
 
     /// @inheritdoc IValidator
@@ -78,7 +80,7 @@ contract Validator is IValidator, Initializable {
         bytes32 selectionSeed =
             keccak256(abi.encodePacked(SELECTION_SEED_PREFIX, dataUpdate.jobId, dataUpdate.registryVersion, roundId));
 
-        address keysPtr = rawKeysPointer;
+        address keysPtr = registryPointers[dataUpdate.registryVersion];
 
         /// @dev Index 0 holds the aggregate key; indices `1..keysLen-1` are registered nodes.
         uint256 keysLen = _blobEncodedKeysLength(keysPtr);
@@ -91,6 +93,7 @@ contract Validator is IValidator, Initializable {
         if (schnorrData.commitment == address(0)) revert("Zero commitment");
 
         uint256 grpSize = dataUpdate.signaturesRequired + redundancyBuffer;
+        grpSize = grpSize > nodeCount ? nodeCount : grpSize;
 
         uint256 signerCount = schnorrData.signersBitmap.popCount();
         if (signerCount < dataUpdate.signaturesRequired) revert("Not enough signatures");
@@ -138,7 +141,10 @@ contract Validator is IValidator, Initializable {
         if (pubkey.toAddress() == address(0)) revert("Zero address");
         _verifyPop(pubkey, compressedPubKey, pop);
 
-        bytes memory keysBlob = SSTORE2.read(rawKeysPointer);
+        uint256 registryVersion = registryPointers.length - 1;
+        address keysPtr = registryPointers[registryVersion];
+        bytes memory keysBlob = SSTORE2.read(keysPtr);
+
         uint256 nextIndex = keysBlob.getNodesLength();
         if (nextIndex - START_INDEX >= MAX_NODES) revert("Max nodes reached");
 
@@ -158,7 +164,7 @@ contract Validator is IValidator, Initializable {
 
         keysBlob.addPubkeyWithAggregate(pubkey, agg);
         address newPointer = SSTORE2.write(keysBlob);
-        rawKeysPointer = newPointer;
+        registryPointers.push(newPointer);
 
         nodeIndexes[node] = nextIndex;
         nodeKeyX[nextIndex] = pubkey.x;
@@ -171,7 +177,10 @@ contract Validator is IValidator, Initializable {
         uint256 index = nodeIndexes[node];
         if (index == 0) revert("Not node");
 
-        bytes memory keysBlob = SSTORE2.read(rawKeysPointer);
+        uint256 registryVersion = registryPointers.length - 1;
+        address keysPtr = registryPointers[registryVersion];
+
+        bytes memory keysBlob = SSTORE2.read(keysPtr);
         uint256 len = keysBlob.getNodesLength();
         if (index >= len) revert("Bad index");
 
@@ -197,12 +206,28 @@ contract Validator is IValidator, Initializable {
 
         keysBlob.removePubkeyWithAggregate(index, nextAgg);
         address newPointer = SSTORE2.write(keysBlob);
-        rawKeysPointer = newPointer;
+        registryPointers.push(newPointer);
         delete nodeKeyX[len - 1];
         delete nodeKeyY[len - 1];
         delete nodeIndexes[node];
 
         emit LogNodeRemoved(node, index, newPointer);
+    }
+
+    /// @inheritdoc IValidator
+    function getRegistryVersion() external view returns (uint256 registryVersion) {
+        registryVersion = registryPointers.length - 1;
+    }
+
+    /// @inheritdoc IValidator
+    function getRegistryPointer() external view returns (address registryPointer) {
+        uint256 registryVersion = registryPointers.length - 1;
+        registryPointer = registryPointers[registryVersion];
+    }   
+
+    /// @inheritdoc IValidator
+    function getRegistryPointer(uint256 registryVersion) external view returns (address registryPointer) {
+        registryPointer = registryPointers[registryVersion];
     }
 
     function isNode(address node) external view returns (bool isActive) {
@@ -211,16 +236,22 @@ contract Validator is IValidator, Initializable {
 
     /// @inheritdoc IValidator
     function getTotalNodes() external view override returns (uint256 totalSigners) {
-        totalSigners = _blobEncodedKeysLength(rawKeysPointer);
+        uint256 registryVersion = registryPointers.length - 1;
+        address keysPtr = registryPointers[registryVersion];
+        totalSigners = _blobEncodedKeysLength(keysPtr);
     }
 
     function getNodesSetHash() external view override returns (bytes32 hash) {
-        hash = keccak256(SSTORE2.read(rawKeysPointer));
+        uint256 registryVersion = registryPointers.length - 1;
+        address keysPtr = registryPointers[registryVersion];
+        hash = keccak256(SSTORE2.read(keysPtr));
     }
 
     /// @inheritdoc IValidator
     function getAggregateKey() external view override returns (uint256 x, uint256 y) {
-        bytes memory keysBlob = SSTORE2.read(rawKeysPointer);
+        uint256 registryVersion = registryPointers.length - 1;
+        address keysPtr = registryPointers[registryVersion];
+        bytes memory keysBlob = SSTORE2.read(keysPtr);
         LibSecp256k1.Point memory aggregate = keysBlob.getNode(0);
         x = aggregate.x;
         y = aggregate.y;
@@ -267,7 +298,7 @@ contract Validator is IValidator, Initializable {
                     dataUpdate.value,
                     dataUpdate.canonicalTimestamp
                 )
-            ).toEthSignedMessageHash();
+            );
     }
 
     function _verifyPop(LibSecp256k1.Point memory pubkey, bytes memory compressedPubKey, SchnorrProof calldata pop)
@@ -275,7 +306,7 @@ contract Validator is IValidator, Initializable {
         view
     {
         bytes32 digest =
-            keccak256(abi.encodePacked(POP_DOMAIN, address(this), compressedPubKey)).toEthSignedMessageHash();
+            keccak256(abi.encodePacked(POP_DOMAIN, address(this), compressedPubKey));
         bool isValid = pubkey.verifySignature(digest, pop.signature, pop.commitment);
         if (!isValid) revert("Invalid PoP");
     }

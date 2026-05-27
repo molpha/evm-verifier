@@ -20,6 +20,28 @@ interface IValidator is IValidatorStructs, IValidatorEvents {
     /// @param node Address of the node to remove
     function removeNode(address node) external;
 
+    /// @notice Verify a Schnorr signature
+    /// @param dataUpdate The data update
+    /// @param schnorrData The Schnorr signature data
+    /// @notice Reverts if verification fails. Not `view`: publish path records participation in the same pass.
+    function verify(
+        DataUpdate calldata dataUpdate,
+        SchnorrSignature calldata schnorrData
+    ) external view returns (bool);
+
+    /// @notice Get the current registry version
+    /// @return registryVersion The current registry version
+    function getRegistryVersion() external view returns (uint256 registryVersion);
+
+    /// @notice Get the current registry pointer
+    /// @return registryPointer The current registry pointer
+    function getRegistryPointer() external view returns (address registryPointer);
+
+    /// @notice Get the registry pointer for a specific registry version
+    /// @param registryVersion The registry version
+    /// @return registryPointer The registry pointer for the specific registry version
+    function getRegistryPointer(uint256 registryVersion) external view returns (address registryPointer);
+
     /// @notice Check if a node is currently registered
     /// @param node Address of the node
     /// @return isActive Whether the node is active
@@ -35,15 +57,6 @@ interface IValidator is IValidatorStructs, IValidatorEvents {
 
     /// @notice Plain-sum aggregate pubkey over the full registered signer set (uncompressed x, y)
     function getAggregateKey() external view returns (uint256 x, uint256 y);
-
-    /// @notice Verify a Schnorr signature
-    /// @param dataUpdate The data update
-    /// @param schnorrData The Schnorr signature data
-    /// @notice Reverts if verification fails. Not `view`: publish path records participation in the same pass.
-    function verify(
-        DataUpdate calldata dataUpdate,
-        SchnorrSignature calldata schnorrData
-    ) external view returns (bool);
 
     /// @notice Get the index of a node (alternative name for compatibility)
     /// @param node Address of the node
