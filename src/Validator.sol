@@ -34,7 +34,7 @@ contract Validator is IValidator, Initializable {
 
     bytes32 private constant POP_DOMAIN = keccak256("MOLPHA_VALIDATOR_V1");
     bytes32 private constant SELECTION_SEED_PREFIX = keccak256("MOLPHA_SELECTION_V1");
-    bytes32 private constant ROUND_ID_PREFIX = keccak256("MOLPHA_PULL_ROUND_V1");
+    bytes32 private constant MESSAGE_PREFIX = keccak256("MOLPHA_MESSAGE_V1");
 
     mapping(address node => uint256 index) public nodeIndexes;
 
@@ -71,14 +71,14 @@ contract Validator is IValidator, Initializable {
         view
         returns (bool isVerified)
     {
-        bytes32 roundId = keccak256(
+        bytes32 selectionSeed = keccak256(
             abi.encodePacked(
-                ROUND_ID_PREFIX, dataUpdate.jobId, dataUpdate.registryVersion, dataUpdate.canonicalTimestamp
+                SELECTION_SEED_PREFIX, 
+                dataUpdate.jobId, 
+                dataUpdate.registryVersion,
+                dataUpdate.canonicalTimestamp
             )
         );
-
-        bytes32 selectionSeed =
-            keccak256(abi.encodePacked(SELECTION_SEED_PREFIX, dataUpdate.jobId, dataUpdate.registryVersion, roundId));
 
         address keysPtr = registryPointers[dataUpdate.registryVersion];
 
@@ -289,11 +289,10 @@ contract Validator is IValidator, Initializable {
     {
         message = keccak256(
                 abi.encodePacked(
-                    ROUND_ID_PREFIX,
+                    MESSAGE_PREFIX,
                     dataUpdate.jobId,
                     dataUpdate.registryVersion,
                     dataUpdate.signaturesRequired,
-                    dataUpdate.configHash,
                     signersBitmap,
                     dataUpdate.value,
                     dataUpdate.canonicalTimestamp

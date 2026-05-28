@@ -19,9 +19,6 @@ contract ValidatorCompatFixtureTest is Test {
     uint256 internal constant REGISTERED_NODE_COUNT = 8;
     uint256 internal constant FIXTURE_REGISTRY_VERSION = 8;
 
-    bytes32 internal constant FIXTURE_CONFIG_HASH =
-        0xfcc3910d9fad9531a7cbd24db44e274672fe6b79986c76b31d375abafc60c377;
-
     bytes32 internal constant FIXTURE_JOB_ID =
         0xe1dd7a3c71d4405dc3c7c172413fa866e19584f5f1259b6c508b08541238cc8b;
 
@@ -75,7 +72,6 @@ contract ValidatorCompatFixtureTest is Test {
             jobId: FIXTURE_JOB_ID,
             registryVersion: uint32(FIXTURE_REGISTRY_VERSION),
             signaturesRequired: 8,
-            configHash: FIXTURE_CONFIG_HASH,
             value: FIXTURE_VALUE,
             canonicalTimestamp: FIXTURE_CANONICAL_TIMESTAMP
         });

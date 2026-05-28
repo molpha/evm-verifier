@@ -42,7 +42,7 @@ contract ValidatorVerifyGasFullTest is Test {
 
     // Matches private constants in `Validator.sol`.
     bytes32 internal constant POP_DOMAIN = keccak256("MOLPHA_VALIDATOR_V1");
-    bytes32 internal constant ROUND_ID_PREFIX = keccak256("MOLPHA_PULL_ROUND_V1");
+    bytes32 internal constant MESSAGE_PREFIX = keccak256("MOLPHA_MESSAGE_V1");
     bytes32 internal constant SELECTION_SEED_PREFIX = keccak256("MOLPHA_SELECTION_V1");
 
     struct VerifyCall {
@@ -85,7 +85,7 @@ contract ValidatorVerifyGasFullTest is Test {
     }
 
     function _roundId(IValidatorStructs.DataUpdate memory du) internal pure returns (bytes32) {
-        return keccak256(abi.encodePacked(ROUND_ID_PREFIX, du.jobId, du.registryVersion, du.canonicalTimestamp));
+        return keccak256(abi.encodePacked(MESSAGE_PREFIX, du.jobId, du.registryVersion, du.canonicalTimestamp));
     }
 
     function _selectionSeed(IValidatorStructs.DataUpdate memory du) internal pure returns (bytes32) {
@@ -100,11 +100,10 @@ contract ValidatorVerifyGasFullTest is Test {
     {
         return keccak256(
                 abi.encodePacked(
-                    ROUND_ID_PREFIX,
+                    MESSAGE_PREFIX,
                     du.jobId,
                     du.registryVersion,
                     du.signaturesRequired,
-                    du.configHash,
                     signersBitmap,
                     du.value,
                     du.canonicalTimestamp
@@ -163,7 +162,6 @@ contract ValidatorVerifyGasFullTest is Test {
         uint256[] memory allSecrets,
         uint256 threshold,
         bytes32 jobId,
-        bytes32 configHash,
         bytes32 value,
         uint64 canonicalTimestamp
     ) internal view returns (VerifyCall memory c) {
@@ -171,7 +169,6 @@ contract ValidatorVerifyGasFullTest is Test {
             jobId: jobId,
             registryVersion: uint32(validator.getRegistryVersion()),
             signaturesRequired: uint32(threshold),
-            configHash: configHash,
             value: value,
             canonicalTimestamp: canonicalTimestamp
         });
@@ -220,7 +217,6 @@ contract ValidatorVerifyGasFullTest is Test {
         }
 
         bytes32 jobId = bytes32(uint256(keccak256("VALIDATOR_VERIFY_GAS_JOB")));
-        bytes32 configHash = bytes32(uint256(keccak256("VALIDATOR_VERIFY_GAS_CFG")));
 
         vm.warp(1_000_000);
         uint64 tsBase = uint64(block.timestamp);
@@ -231,7 +227,6 @@ contract ValidatorVerifyGasFullTest is Test {
             allSecrets,
             s.threshold,
             jobId,
-            configHash,
             bytes32(uint256(1)),
             tsBase + 1
         );
@@ -242,7 +237,6 @@ contract ValidatorVerifyGasFullTest is Test {
             allSecrets,
             s.threshold,
             jobId,
-            configHash,
             bytes32(uint256(2)),
             tsBase + 2
         );

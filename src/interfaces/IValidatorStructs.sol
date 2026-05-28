@@ -40,7 +40,6 @@ interface IValidatorStructs {
         bytes32 jobId;
         uint32 registryVersion;
         uint32  signaturesRequired;
-        bytes32 configHash;
         bytes32 value;
         uint64 canonicalTimestamp;
     }

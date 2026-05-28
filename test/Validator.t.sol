@@ -13,7 +13,7 @@ import {LibSchnorrTestSign} from "./libs/LibSchnorrTestSign.sol";
 
 // Matches private constants in `Validator.sol` (same string literals).
 bytes32 constant POP_DOMAIN = keccak256("MOLPHA_VALIDATOR_V1");
-bytes32 constant ROUND_ID_PREFIX = keccak256("MOLPHA_PULL_ROUND_V1");
+bytes32 constant MESSAGE_PREFIX = keccak256("MOLPHA_MESSAGE_V1");
 bytes32 constant SELECTION_SEED_PREFIX = keccak256("MOLPHA_SELECTION_V1");
 
 /// @title ValidatorTest
@@ -87,7 +87,7 @@ contract ValidatorTest is Test {
     }
 
     function _roundId(IValidatorStructs.DataUpdate memory du) internal pure returns (bytes32) {
-        return keccak256(abi.encodePacked(ROUND_ID_PREFIX, du.jobId, du.registryVersion, du.canonicalTimestamp));
+        return keccak256(abi.encodePacked(MESSAGE_PREFIX, du.jobId, du.registryVersion, du.canonicalTimestamp));
     }
 
     function _selectionSeed(IValidatorStructs.DataUpdate memory du) internal pure returns (bytes32) {
@@ -102,11 +102,10 @@ contract ValidatorTest is Test {
     {
         return keccak256(
                 abi.encodePacked(
-                    ROUND_ID_PREFIX,
+                    MESSAGE_PREFIX,
                     du.jobId,
                     du.registryVersion,
                     du.signaturesRequired,
-                    du.configHash,
                     signersBitmap,
                     du.value,
                     du.canonicalTimestamp
@@ -141,7 +140,6 @@ contract ValidatorTest is Test {
         Validator validator,
         uint256 sigReq,
         bytes32 jobId,
-        bytes32 configHash,
         bytes32 value,
         uint64 canonicalTs
     ) internal view returns (IValidatorStructs.DataUpdate memory du, IValidatorStructs.SchnorrSignature memory sch) {
@@ -149,7 +147,6 @@ contract ValidatorTest is Test {
             jobId: jobId,
             registryVersion: uint32(validator.getRegistryVersion()),
             signaturesRequired: uint32(sigReq),
-            configHash: configHash,
             value: value,
             canonicalTimestamp: canonicalTs
         });
@@ -290,7 +287,6 @@ contract ValidatorTest is Test {
             jobId: bytes32(uint256(1)),
             registryVersion: 0,
             signaturesRequired: 1,
-            configHash: bytes32(uint256(2)),
             value: bytes32(uint256(3)),
             canonicalTimestamp: uint64(block.timestamp)
         });
@@ -306,7 +302,7 @@ contract ValidatorTest is Test {
         _addNodes(v, numNodes);
 
         (IValidatorStructs.DataUpdate memory du, IValidatorStructs.SchnorrSignature memory sch) =
-            _buildVerify(v, sigReq, bytes32("job-a"), bytes32("cfg"), bytes32("val"), uint64(1700000000));
+            _buildVerify(v, sigReq, bytes32("job-a"), bytes32("val"), uint64(1700000000));
 
         assertTrue(v.verify(du, sch));
     }
@@ -315,7 +311,7 @@ contract ValidatorTest is Test {
         _addNodes(v, 5);
 
         (IValidatorStructs.DataUpdate memory du, IValidatorStructs.SchnorrSignature memory sch) =
-            _buildVerify(v, 3, bytes32("job-b"), bytes32("cfg"), bytes32("val"), uint64(1700000001));
+            _buildVerify(v, 3, bytes32("job-b"), bytes32("val"), uint64(1700000001));
 
         sch.signature = bytes32(uint256(sch.signature) ^ 1);
         assertFalse(v.verify(du, sch));
@@ -326,7 +322,7 @@ contract ValidatorTest is Test {
 
         for (uint256 salt = 1; salt < 1000; ++salt) {
             (IValidatorStructs.DataUpdate memory du, IValidatorStructs.SchnorrSignature memory sch) =
-                _buildVerify(v, 3, bytes32(salt), bytes32("cfg"), bytes32("val"), uint64(1700000001));
+                _buildVerify(v, 3, bytes32(salt), bytes32("val"), uint64(1700000001));
 
             IValidatorStructs.DataUpdate memory tampered = du;
             tampered.signaturesRequired = 2;
@@ -348,7 +344,6 @@ contract ValidatorTest is Test {
             jobId: bytes32("zero-threshold"),
             registryVersion: uint32(v.getRegistryVersion()),
             signaturesRequired: 0,
-            configHash: bytes32("cfg"),
             value: bytes32("val"),
             canonicalTimestamp: uint64(1700000001)
         });
@@ -362,7 +357,7 @@ contract ValidatorTest is Test {
         _addNodes(v, 5);
 
         (IValidatorStructs.DataUpdate memory du, IValidatorStructs.SchnorrSignature memory sch) =
-            _buildVerify(v, 3, bytes32("job-zero"), bytes32("cfg"), bytes32("val"), uint64(1700000001));
+            _buildVerify(v, 3, bytes32("job-zero"), bytes32("val"), uint64(1700000001));
 
         IValidatorStructs.SchnorrSignature memory zeroSigners = IValidatorStructs.SchnorrSignature({
             signature: sch.signature, commitment: sch.commitment, signersBitmap: 0
@@ -387,7 +382,7 @@ contract ValidatorTest is Test {
         _addNodes(v, 5);
 
         (IValidatorStructs.DataUpdate memory du, IValidatorStructs.SchnorrSignature memory sch) =
-            _buildVerify(v, 3, bytes32("job-c"), bytes32("cfg"), bytes32("val"), uint64(1700000002));
+            _buildVerify(v, 3, bytes32("job-c"), bytes32("val"), uint64(1700000002));
 
         // Drop one signer bit → popCount 2 < 3
         sch.signersBitmap &= ~uint256(1);
@@ -400,7 +395,7 @@ contract ValidatorTest is Test {
         _addNodes(v, 6);
 
         (IValidatorStructs.DataUpdate memory du, IValidatorStructs.SchnorrSignature memory sch) =
-            _buildVerify(v, 3, bytes32("job-d"), bytes32("cfg"), bytes32("val"), uint64(1700000003));
+            _buildVerify(v, 3, bytes32("job-d"), bytes32("val"), uint64(1700000003));
 
         // Flip a bit that is not in the selection bitmap for this update.
         sch.signersBitmap ^= uint256(1) << 255;
@@ -416,7 +411,6 @@ contract ValidatorTest is Test {
             jobId: bytes32("x"),
             registryVersion: uint32(v.getRegistryVersion()),
             signaturesRequired: 2,
-            configHash: bytes32(0),
             value: bytes32(0),
             canonicalTimestamp: 1
         });
@@ -433,7 +427,7 @@ contract ValidatorTest is Test {
         _addNodes(v, 8);
 
         (IValidatorStructs.DataUpdate memory du, IValidatorStructs.SchnorrSignature memory sch) =
-            _buildVerify(v, 4, bytes32(jobSalt), bytes32(uint256(999)), bytes32(uint256(888)), ts);
+            _buildVerify(v, 4, bytes32(jobSalt), bytes32(uint256(888)), ts);
 
         assertTrue(v.verify(du, sch));
     }
@@ -447,7 +441,7 @@ contract ValidatorTest is Test {
         _addNodes(vv, numNodes);
 
         (IValidatorStructs.DataUpdate memory du, IValidatorStructs.SchnorrSignature memory sch) =
-            _buildVerify(vv, sigReq, jobId, bytes32("cfg"), bytes32("val"), uint64(1700000100));
+            _buildVerify(vv, sigReq, jobId, bytes32("val"), uint64(1700000100));
 
         bytes memory cd = abi.encodeCall(IValidator.verify, (du, sch));
         uint256 cdCost = _calldataCost(cd);
@@ -492,7 +486,6 @@ contract ValidatorTest is Test {
             jobId: bytes32("solana-compat-job"),
             registryVersion: uint32(v.getRegistryVersion()),
             signaturesRequired: uint32(sigReq),
-            configHash: bytes32("solana-compat-cfg"),
             value: bytes32("solana-compat-val"),
             canonicalTimestamp: uint64(1_700_000_123)
         });
@@ -530,7 +523,6 @@ contract ValidatorTest is Test {
         string memory out = "{";
         out = string.concat(out, '"registeredNodeCount":', vm.toString(numNodes), ",");
         out = string.concat(out, '"registryVersion":', vm.toString(uint256(du.registryVersion)), ",");
-        out = string.concat(out, '"configHash":"', vm.toString(du.configHash), '",');
 
         out = string.concat(out, '"nodeIndexesOneBased":[');
         for (uint256 i; i < idxs.length; ++i) {
@@ -558,7 +550,6 @@ contract ValidatorTest is Test {
         out = string.concat(out, '"jobId":"', vm.toString(du.jobId), '",');
         out = string.concat(out, '"registryVersion":', vm.toString(uint256(du.registryVersion)), ",");
         out = string.concat(out, '"signaturesRequired":', vm.toString(sigReq), ",");
-        out = string.concat(out, '"configHash":"', vm.toString(du.configHash), '",');
         out = string.concat(out, '"value":"', vm.toString(du.value), '",');
         out = string.concat(out, '"canonicalTimestamp":', vm.toString(uint256(du.canonicalTimestamp)));
         out = string.concat(out, "},");
