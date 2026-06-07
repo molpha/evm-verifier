@@ -47,10 +47,9 @@ contract VerifierTest is Test {
         pop = IVerifier.SchnorrProof({signature: sig, commitment: cmt});
     }
 
-    /// @notice Registered node count: blob slot 0 is aggregate; nodes occupy `1..keysLen-1`.
+    /// @notice Registered node count returned directly by `getTotalNodes()`.
     function _registeredNodeCount(Verifier validator) internal view returns (uint256 n) {
-        uint256 keysLen = validator.getTotalNodes();
-        n = keysLen > 1 ? keysLen - 1 : 0;
+        n = validator.getTotalNodes();
     }
 
     function _addNodes(Verifier validator, uint256 numNodes) internal {
@@ -176,7 +175,21 @@ contract VerifierTest is Test {
     function test_constructor_sets_admin_and_defaults() public view {
         assertEq(v.protocolAdmin(), address(this));
         assertEq(v.redundancyBuffer(), 2);
+        assertEq(v.getTotalNodes(), 0);
+    }
+
+    function test_getTotalNodes_excludes_aggregate_slot() public {
+        assertEq(v.getTotalNodes(), 0);
+
+        uint256 sk = _sk(1);
+        LibSecp256k1.Point memory pk = LibSecp256k1.mulAffine(LibSecp256k1.G(), sk);
+        bytes memory compressed = LibSecp256k1.compress(pk);
+        address nodeAddr = pk.toAddress();
+        v.addNode(compressed, _pop(address(v), compressed, sk));
         assertEq(v.getTotalNodes(), 1);
+
+        v.removeNode(nodeAddr);
+        assertEq(v.getTotalNodes(), 0);
     }
 
     function test_addNode_emits_and_registers() public {
@@ -189,7 +202,7 @@ contract VerifierTest is Test {
 
         assertTrue(v.isNode(nodeAddr));
         assertEq(v.getNodeIndex(nodeAddr), 1);
-        assertEq(v.getTotalNodes(), 2);
+        assertEq(v.getTotalNodes(), 1);
 
         (uint256 ax, uint256 ay) = v.getAggregateKey();
         assertEq(ax, pk.x);
@@ -289,7 +302,7 @@ contract VerifierTest is Test {
         (uint256 ax, uint256 ay) = v.getAggregateKey();
         assertEq(ax, 0);
         assertEq(ay, 0);
-        assertEq(v.getTotalNodes(), 1);
+        assertEq(v.getTotalNodes(), 0);
     }
 
     function test_removeNode_swap_middle() public {
@@ -300,7 +313,7 @@ contract VerifierTest is Test {
         v.removeNode(middle);
 
         assertFalse(v.isNode(middle));
-        assertEq(v.getTotalNodes(), 3);
+        assertEq(v.getTotalNodes(), 2);
 
         // Third node's address should now occupy index 2 (former middle slot after swap-with-last).
         address last = pubPoints[2].toAddress();

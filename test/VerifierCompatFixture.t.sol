@@ -96,7 +96,7 @@ contract VerifierCompatFixtureTest is Test {
         }
 
         assertEq(validator.getRegistryVersion(), FIXTURE_REGISTRY_VERSION, "registryVersion");
-        assertEq(validator.getTotalNodes(), REGISTERED_NODE_COUNT + 1, "blob length includes aggregate slot");
+        assertEq(validator.getTotalNodes(), REGISTERED_NODE_COUNT, "registered nodes");
 
         IVerifier.DataUpdate memory du = _fixtureDataUpdate();
         IVerifier.SchnorrSignature memory sch = _fixtureSchnorrSignature();

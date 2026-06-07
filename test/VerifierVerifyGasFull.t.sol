@@ -79,8 +79,7 @@ contract VerifierVerifyGasFullTest is Test {
     }
 
     function _registeredNodeCount(Verifier validator) internal view returns (uint256 n) {
-        uint256 keysLen = validator.getTotalNodes();
-        n = keysLen > 1 ? keysLen - 1 : 0;
+        n = validator.getTotalNodes();
     }
 
     function _selectionSeed(IVerifier.DataUpdate memory du) internal pure returns (bytes32) {

@@ -73,7 +73,7 @@ contract VerifierFixtureJsonTest is Test {
         }
 
         assertEq(validator.getRegistryVersion(), expectedRegistryVersion, "registryVersion");
-        assertEq(validator.getTotalNodes(), registeredNodeCount + 1, "blob length includes aggregate slot");
+        assertEq(validator.getTotalNodes(), registeredNodeCount, "registered nodes");
 
         IVerifier.DataUpdate memory du = _loadDataUpdate(json);
         IVerifier.SchnorrSignature memory sch = _loadSchnorrSignature(json);

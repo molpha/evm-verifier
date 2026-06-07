@@ -245,7 +245,8 @@ contract Verifier is IVerifier {
     function getTotalNodes() external view override returns (uint256 totalSigners) {
         uint256 registryVersion = registryPointers.length - 1;
         address keysPtr = registryPointers[registryVersion];
-        totalSigners = _blobEncodedKeysLength(keysPtr);
+        uint256 keysLen = _blobEncodedKeysLength(keysPtr);
+        totalSigners = keysLen > START_INDEX ? keysLen - START_INDEX : 0;
     }
 
     function getNodesSetHash() external view override returns (bytes32 hash) {
