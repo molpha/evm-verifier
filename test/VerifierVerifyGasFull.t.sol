@@ -4,16 +4,15 @@ pragma solidity ^0.8.31;
 import {Test, console2} from "forge-std/Test.sol";
 import {MessageHashUtils} from "openzeppelin-contracts/contracts/utils/cryptography/MessageHashUtils.sol";
 
-import {Validator} from "../src/Validator.sol";
-import {IValidator} from "../src/interfaces/IValidator.sol";
-import {IValidatorStructs} from "../src/interfaces/IValidatorStructs.sol";
+import {Verifier} from "../src/Verifier.sol";
+import {IVerifier} from "../src/interfaces/IVerifier.sol";
 import {LibSecp256k1} from "../src/libs/LibSecp256k1.sol";
 import {NodeGroupBitmapLib} from "../src/libs/NodeGroupBitmapLib.sol";
 import {LibSchnorrTestSign} from "./libs/LibSchnorrTestSign.sol";
 
-/// @title ValidatorVerifyGasFullTest
+/// @title VerifierVerifyGasFullTest
 ///
-/// Measures the on-chain cost of `Validator.verify()` similarly to `NodeRegistryPublishGasFull`:
+/// Measures the on-chain cost of `Verifier.verify()` similarly to `NodeRegistryPublishGasFull`:
 ///
 ///   execution   — gasleft() delta around `verify()` (full call tree).
 ///
@@ -28,26 +27,26 @@ import {LibSchnorrTestSign} from "./libs/LibSchnorrTestSign.sol";
 /// Schnorr messages differ; round 2 tends to hit warmer bytecode reads than round 1.
 ///
 /// Run:
-///   forge test --match-path test/ValidatorVerifyGasFull.t.sol -vv
+///   forge test --match-path test/VerifierVerifyGasFull.t.sol -vv
 ///
 /// @dev Do **not** rely on printed `exec` / TOTAL next to `--gas-report` or `--isolate`.
 ///      Foundry runs isolated external calls under `--gas-report`, so `gasleft()` deltas and
 ///      per-test `(gas: …)` diverge from a normal single-tx framing — use plain `forge test`
 ///      for these numbers, and a separate `--gas-report` pass for the contract table only.
-contract ValidatorVerifyGasFullTest is Test {
+contract VerifierVerifyGasFullTest is Test {
     using MessageHashUtils for bytes32;
     using LibSecp256k1 for LibSecp256k1.Point;
 
     uint256 constant BASE_TX_GAS = 21_000;
 
-    // Matches private constants in `Validator.sol`.
+    // Matches private constants in `Verifier.sol`.
     bytes32 internal constant POP_DOMAIN = keccak256("MOLPHA_VALIDATOR_V1");
     bytes32 internal constant MESSAGE_PREFIX = keccak256("MOLPHA_MESSAGE_V1");
     bytes32 internal constant SELECTION_SEED_PREFIX = keccak256("MOLPHA_SELECTION_V1");
 
     struct VerifyCall {
-        IValidatorStructs.DataUpdate dataUpdate;
-        IValidatorStructs.SchnorrSignature schnorr;
+        IVerifier.DataUpdate dataUpdate;
+        IVerifier.SchnorrSignature schnorr;
     }
 
     struct Scenario {
@@ -56,7 +55,7 @@ contract ValidatorVerifyGasFullTest is Test {
     }
 
     struct FullSetup {
-        Validator reg;
+        Verifier reg;
         VerifyCall call1;
         VerifyCall call2;
         uint256 calldataCost1;
@@ -70,30 +69,25 @@ contract ValidatorVerifyGasFullTest is Test {
     function _popSig(address validatorAddr, bytes memory compressedPubKey, uint256 sk)
         internal
         pure
-        returns (IValidatorStructs.SchnorrProof memory pop)
+        returns (IVerifier.SchnorrProof memory pop)
     {
         bytes32 digest =
             keccak256(abi.encodePacked(POP_DOMAIN, validatorAddr, compressedPubKey));
         LibSecp256k1.Point memory pubKey = LibSecp256k1.mulAffine(LibSecp256k1.G(), sk);
         (bytes32 sig, address cmt) = LibSchnorrTestSign.sign(pubKey, sk, digest, 0);
-        pop = IValidatorStructs.SchnorrProof({signature: sig, commitment: cmt});
+        pop = IVerifier.SchnorrProof({signature: sig, commitment: cmt});
     }
 
-    function _registeredNodeCount(Validator validator) internal view returns (uint256 n) {
+    function _registeredNodeCount(Verifier validator) internal view returns (uint256 n) {
         uint256 keysLen = validator.getTotalNodes();
         n = keysLen > 1 ? keysLen - 1 : 0;
     }
 
-    function _roundId(IValidatorStructs.DataUpdate memory du) internal pure returns (bytes32) {
-        return keccak256(abi.encodePacked(MESSAGE_PREFIX, du.jobId, du.registryVersion, du.canonicalTimestamp));
+    function _selectionSeed(IVerifier.DataUpdate memory du) internal pure returns (bytes32) {
+        return keccak256(abi.encodePacked(SELECTION_SEED_PREFIX, du.jobId, du.registryVersion, du.canonicalTimestamp));
     }
 
-    function _selectionSeed(IValidatorStructs.DataUpdate memory du) internal pure returns (bytes32) {
-        bytes32 rid = _roundId(du);
-        return keccak256(abi.encodePacked(SELECTION_SEED_PREFIX, du.jobId, du.registryVersion, rid));
-    }
-
-    function _constructMessage(IValidatorStructs.DataUpdate memory du, uint256 signersBitmap)
+    function _constructMessage(IVerifier.DataUpdate memory du, uint256 signersBitmap)
         internal
         pure
         returns (bytes32)
@@ -157,7 +151,7 @@ contract ValidatorVerifyGasFullTest is Test {
     }
 
     function _buildVerifyCall(
-        Validator validator,
+        Verifier validator,
         LibSecp256k1.Point[] memory allPubkeys,
         uint256[] memory allSecrets,
         uint256 threshold,
@@ -165,7 +159,7 @@ contract ValidatorVerifyGasFullTest is Test {
         bytes32 value,
         uint64 canonicalTimestamp
     ) internal view returns (VerifyCall memory c) {
-        c.dataUpdate = IValidatorStructs.DataUpdate({
+        c.dataUpdate = IVerifier.DataUpdate({
             jobId: jobId,
             registryVersion: uint32(validator.getRegistryVersion()),
             signaturesRequired: uint32(threshold),
@@ -191,7 +185,7 @@ contract ValidatorVerifyGasFullTest is Test {
         uint256 skEff = _sumSecrets(allSecrets, idxs);
         (bytes32 sig, address cmt) = LibSchnorrTestSign.sign(aggPk, skEff, msgHash, 0);
 
-        c.schnorr = IValidatorStructs.SchnorrSignature({signature: sig, commitment: cmt, signersBitmap: signerBits});
+        c.schnorr = IVerifier.SchnorrSignature({signature: sig, commitment: cmt, signersBitmap: signerBits});
     }
 
     /// @dev Prices calldata per EIP-2028: 4 gas per zero byte, 16 gas per nonzero byte.
@@ -204,8 +198,7 @@ contract ValidatorVerifyGasFullTest is Test {
     function _setup(Scenario memory s) internal returns (FullSetup memory fs) {
         vm.pauseGasMetering();
 
-        fs.reg = new Validator();
-        fs.reg.initialize();
+        fs.reg = new Verifier(address(this), 2);
 
         LibSecp256k1.Point[] memory allPubkeys = new LibSecp256k1.Point[](s.nodeCount);
         uint256[] memory allSecrets = new uint256[](s.nodeCount);
@@ -241,8 +234,8 @@ contract ValidatorVerifyGasFullTest is Test {
             tsBase + 2
         );
 
-        fs.calldataCost1 = _calldataCost(abi.encodeCall(IValidator.verify, (fs.call1.dataUpdate, fs.call1.schnorr)));
-        fs.calldataCost2 = _calldataCost(abi.encodeCall(IValidator.verify, (fs.call2.dataUpdate, fs.call2.schnorr)));
+        fs.calldataCost1 = _calldataCost(abi.encodeCall(IVerifier.verify, (fs.call1.dataUpdate, fs.call1.schnorr)));
+        fs.calldataCost2 = _calldataCost(abi.encodeCall(IVerifier.verify, (fs.call2.dataUpdate, fs.call2.schnorr)));
 
         vm.resumeGasMetering();
     }

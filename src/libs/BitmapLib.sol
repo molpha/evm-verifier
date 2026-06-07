@@ -33,40 +33,4 @@ library BitmapLib {
         }
     }
 
-    /// @dev Trailing zero count (index of lowest set bit). `x` must be nonzero.
-    function ctz256(uint256 x) internal pure returns (uint256 r) {
-        unchecked {
-            if ((x & type(uint128).max) == 0) {
-                r += 128;
-                x >>= 128;
-            }
-            if ((x & type(uint64).max) == 0) {
-                r += 64;
-                x >>= 64;
-            }
-            if ((x & type(uint32).max) == 0) {
-                r += 32;
-                x >>= 32;
-            }
-            if ((x & type(uint16).max) == 0) {
-                r += 16;
-                x >>= 16;
-            }
-            if ((x & type(uint8).max) == 0) {
-                r += 8;
-                x >>= 8;
-            }
-            if ((x & 0xf) == 0) {
-                r += 4;
-                x >>= 4;
-            }
-            if ((x & 0x3) == 0) {
-                r += 2;
-                x >>= 2;
-            }
-            if ((x & 0x1) == 0) {
-                ++r;
-            }
-        }
-    }
 }

@@ -152,21 +152,6 @@ library LibSecp256k1 {
         return result;
     }
 
-    /// @dev toAffine variant using the modexp precompile (0x05) for the field inversion
-    ///      instead of the extended-Euclidean _invMod. Costs ~1,350 gas vs ~3,500 gas,
-    ///      saving ~2,100 gas per call. Requires a view context (precompile staticcall).
-    function toAffineModexp(
-        JacobianPoint memory self
-    ) internal view returns (Point memory) {
-        // z⁻¹ = z^(P−2) mod P  (Fermat's little theorem, since P is prime)
-        uint zInv = _modExp(self.z, _P - 2, _P);
-        uint zInv_2 = mulmod(zInv, zInv, _P);
-        return Point({
-            x: mulmod(self.x, zInv_2, _P),
-            y: mulmod(self.y, mulmod(zInv, zInv_2, _P), _P)
-        });
-    }
-
     /// @dev Scalar-input variant of toAffineModexp.  Accepts the Jacobian coordinates
     ///      as plain scalars so the caller can avoid allocating a JacobianPoint memory
     ///      struct and the three MLOADs that would follow.

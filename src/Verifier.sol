@@ -1,27 +1,23 @@
 // SPDX-License-Identifier: BSL-1.1
 pragma solidity ^0.8.31;
 
-import {Initializable} from "openzeppelin-contracts/contracts/proxy/utils/Initializable.sol";
 import {SSTORE2} from "solmate/utils/SSTORE2.sol";
 import {MessageHashUtils} from "openzeppelin-contracts/contracts/utils/cryptography/MessageHashUtils.sol";
 
 import {LibSecp256k1} from "./libs/LibSecp256k1.sol";
 import {LibSchnorr} from "./libs/LibSchnorr.sol";
-import {IValidator} from "./interfaces/IValidator.sol";
+import {IVerifier} from "./interfaces/IVerifier.sol";
 import {PubkeyBlobLib} from "./libs/PubkeyBlobLib.sol";
 import {BitmapLib} from "./libs/BitmapLib.sol";
 import {NodeGroupBitmapLib} from "./libs/NodeGroupBitmapLib.sol";
-import {PublishCalldataLib} from "./libs/PublishCalldataLib.sol";
 
-/// @title Validator
+/// @title Verifier
 /// @notice Registry for managing nodes and verifying Schnorr signatures
 /// @dev Uses SSTORE2 for efficient storage of node public keys, supports up to 256 nodes
-contract Validator is IValidator, Initializable {
-    using PublishCalldataLib for uint96;
+contract Verifier is IVerifier {
     using MessageHashUtils for bytes32;
     using LibSchnorr for LibSecp256k1.Point;
     using LibSecp256k1 for LibSecp256k1.Point;
-    using LibSecp256k1 for LibSecp256k1.JacobianPoint;
     using PubkeyBlobLib for bytes;
     using BitmapLib for uint256;
 
@@ -38,9 +34,6 @@ contract Validator is IValidator, Initializable {
 
     mapping(address node => uint256 index) public nodeIndexes;
 
-    /// @notice Pointer to `abi.encode(LibSecp256k1.Point[])` raw keys with index 0 placeholder.
-    // address public rawKeysPointer;
-
     address[] public registryPointers;
 
     /// @notice Per-index coordinates for O(1) removal aggregate update.
@@ -56,16 +49,16 @@ contract Validator is IValidator, Initializable {
         _;
     }
 
-    function initialize() external override initializer {
-        redundancyBuffer = 2;
-        protocolAdmin = msg.sender;
+    constructor(address initialProtocolAdmin, uint256 initialRedundancyBuffer) {
+        redundancyBuffer = initialRedundancyBuffer;
+        protocolAdmin = initialProtocolAdmin;
 
         LibSecp256k1.Point[] memory emptyArray = new LibSecp256k1.Point[](1);
         emptyArray[0] = LibSecp256k1.ZERO_POINT();
         registryPointers.push(SSTORE2.write(abi.encode(emptyArray)));
     }
 
-    /// @inheritdoc IValidator
+    /// @inheritdoc IVerifier
     function verify(DataUpdate calldata dataUpdate, SchnorrSignature calldata schnorrData)
         external
         view
@@ -134,7 +127,7 @@ contract Validator is IValidator, Initializable {
         );
     }
 
-    /// @inheritdoc IValidator
+    /// @inheritdoc IVerifier
     function addNode(bytes memory compressedPubKey, SchnorrProof calldata pop) external onlyProtocolAdmin {
         LibSecp256k1.Point memory pubkey = LibSecp256k1.decompress(compressedPubKey);
         if (pubkey.isZeroPoint()) revert("Invalid public key");
@@ -214,18 +207,32 @@ contract Validator is IValidator, Initializable {
         emit LogNodeRemoved(node, index, newPointer);
     }
 
-    /// @inheritdoc IValidator
+    /// @inheritdoc IVerifier
+    function transferProtocolAdmin(address newProtocolAdmin) external override onlyProtocolAdmin {
+        if (newProtocolAdmin == address(0)) revert("Zero admin");
+        address previousAdmin = protocolAdmin;
+        protocolAdmin = newProtocolAdmin;
+        emit LogProtocolAdminTransferred(previousAdmin, newProtocolAdmin);
+    }
+
+    /// @inheritdoc IVerifier
+    function setRedundancyBuffer(uint256 newRedundancyBuffer) external override onlyProtocolAdmin {
+        redundancyBuffer = newRedundancyBuffer;
+        emit LogRedundancyBufferUpdated(newRedundancyBuffer);
+    }
+
+    /// @inheritdoc IVerifier
     function getRegistryVersion() external view returns (uint256 registryVersion) {
         registryVersion = registryPointers.length - 1;
     }
 
-    /// @inheritdoc IValidator
+    /// @inheritdoc IVerifier
     function getRegistryPointer() external view returns (address registryPointer) {
         uint256 registryVersion = registryPointers.length - 1;
         registryPointer = registryPointers[registryVersion];
     }   
 
-    /// @inheritdoc IValidator
+    /// @inheritdoc IVerifier
     function getRegistryPointer(uint256 registryVersion) external view returns (address registryPointer) {
         registryPointer = registryPointers[registryVersion];
     }
@@ -234,7 +241,7 @@ contract Validator is IValidator, Initializable {
         isActive = nodeIndexes[node] != 0;
     }
 
-    /// @inheritdoc IValidator
+    /// @inheritdoc IVerifier
     function getTotalNodes() external view override returns (uint256 totalSigners) {
         uint256 registryVersion = registryPointers.length - 1;
         address keysPtr = registryPointers[registryVersion];
@@ -247,7 +254,7 @@ contract Validator is IValidator, Initializable {
         hash = keccak256(SSTORE2.read(keysPtr));
     }
 
-    /// @inheritdoc IValidator
+    /// @inheritdoc IVerifier
     function getAggregateKey() external view override returns (uint256 x, uint256 y) {
         uint256 registryVersion = registryPointers.length - 1;
         address keysPtr = registryPointers[registryVersion];
@@ -257,7 +264,7 @@ contract Validator is IValidator, Initializable {
         y = aggregate.y;
     }
 
-    /// @inheritdoc IValidator
+    /// @inheritdoc IVerifier
     function getNodeIndex(address node) external view returns (uint256 index) {
         index = nodeIndexes[node];
     }

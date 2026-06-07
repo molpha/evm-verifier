@@ -3,15 +3,15 @@ pragma solidity ^0.8.31;
 
 import {Test} from "forge-std/Test.sol";
 
-import {Validator} from "../src/Validator.sol";
-import {IValidatorStructs} from "../src/interfaces/IValidatorStructs.sol";
+import {Verifier} from "../src/Verifier.sol";
+import {IVerifier} from "../src/interfaces/IVerifier.sol";
 import {LibSecp256k1} from "../src/libs/LibSecp256k1.sol";
 import {LibSchnorrTestSign} from "./libs/LibSchnorrTestSign.sol";
 
-/// @title ValidatorCompatFixtureTest
+/// @title VerifierCompatFixtureTest
 /// @dev Golden compatibility test: register nodes and verify using only the external fixture payload.
 ///      PoP proofs are derived from fixture private keys (required for `addNode`); verify inputs are not re-signed.
-contract ValidatorCompatFixtureTest is Test {
+contract VerifierCompatFixtureTest is Test {
     using LibSecp256k1 for LibSecp256k1.Point;
 
     bytes32 internal constant POP_DOMAIN = keccak256("MOLPHA_VALIDATOR_V1");
@@ -28,9 +28,9 @@ contract ValidatorCompatFixtureTest is Test {
     uint64 internal constant FIXTURE_CANONICAL_TIMESTAMP = 1_708_783_016;
 
     bytes32 internal constant FIXTURE_SCHNORR_SIGNATURE =
-        0xae7659fee5b36af1751ed799839ece15e266cdff6c2fbc0a111a119eb5a5ec4e;
+        0x2f23ba52761a50b5247e3f76f695dff8a9723bf7da8305c13102f72abd08d44c;
 
-    address internal constant FIXTURE_SCHNORR_COMMITMENT = 0x311A766EA6f39346bD5094c76Fa28103D71C6838;
+    address internal constant FIXTURE_SCHNORR_COMMITMENT = 0x77876a88E5552f1Ea7Bea643ac009611EF8d28df;
 
     uint256 internal constant FIXTURE_SIGNERS_BITMAP = 255;
 
@@ -59,16 +59,16 @@ contract ValidatorCompatFixtureTest is Test {
     function _pop(address validatorAddr, bytes memory compressed, uint256 sk)
         internal
         view
-        returns (IValidatorStructs.SchnorrProof memory pop)
+        returns (IVerifier.SchnorrProof memory pop)
     {
         bytes32 digest = keccak256(abi.encodePacked(POP_DOMAIN, validatorAddr, compressed));
         LibSecp256k1.Point memory pk = LibSecp256k1.decompress(compressed);
         (bytes32 sig, address cmt) = LibSchnorrTestSign.sign(pk, sk, digest, 0);
-        pop = IValidatorStructs.SchnorrProof({signature: sig, commitment: cmt});
+        pop = IVerifier.SchnorrProof({signature: sig, commitment: cmt});
     }
 
-    function _fixtureDataUpdate() internal pure returns (IValidatorStructs.DataUpdate memory du) {
-        du = IValidatorStructs.DataUpdate({
+    function _fixtureDataUpdate() internal pure returns (IVerifier.DataUpdate memory du) {
+        du = IVerifier.DataUpdate({
             jobId: FIXTURE_JOB_ID,
             registryVersion: uint32(FIXTURE_REGISTRY_VERSION),
             signaturesRequired: 8,
@@ -77,8 +77,8 @@ contract ValidatorCompatFixtureTest is Test {
         });
     }
 
-    function _fixtureSchnorrSignature() internal pure returns (IValidatorStructs.SchnorrSignature memory sch) {
-        sch = IValidatorStructs.SchnorrSignature({
+    function _fixtureSchnorrSignature() internal pure returns (IVerifier.SchnorrSignature memory sch) {
+        sch = IVerifier.SchnorrSignature({
             signature: FIXTURE_SCHNORR_SIGNATURE,
             commitment: FIXTURE_SCHNORR_COMMITMENT,
             signersBitmap: FIXTURE_SIGNERS_BITMAP
@@ -86,8 +86,7 @@ contract ValidatorCompatFixtureTest is Test {
     }
 
     function test_verify_compat_external_fixture_8nodes() public {
-        Validator validator = new Validator();
-        validator.initialize();
+        Verifier validator = new Verifier(address(this), 2);
 
         bytes[8] memory pubkeys = _fixtureCompressedPubkeys();
         uint256[8] memory privkeys = _fixtureNodePrivkeys();
@@ -99,8 +98,8 @@ contract ValidatorCompatFixtureTest is Test {
         assertEq(validator.getRegistryVersion(), FIXTURE_REGISTRY_VERSION, "registryVersion");
         assertEq(validator.getTotalNodes(), REGISTERED_NODE_COUNT + 1, "blob length includes aggregate slot");
 
-        IValidatorStructs.DataUpdate memory du = _fixtureDataUpdate();
-        IValidatorStructs.SchnorrSignature memory sch = _fixtureSchnorrSignature();
+        IVerifier.DataUpdate memory du = _fixtureDataUpdate();
+        IVerifier.SchnorrSignature memory sch = _fixtureSchnorrSignature();
 
         bool verified = validator.verify(du, sch);
         assertTrue(verified, "external fixture verify must pass");

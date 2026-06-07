@@ -4,33 +4,31 @@ pragma solidity ^0.8.31;
 import {Test, console2} from "forge-std/Test.sol";
 import {MessageHashUtils} from "openzeppelin-contracts/contracts/utils/cryptography/MessageHashUtils.sol";
 
-import {Validator} from "../src/Validator.sol";
-import {IValidator} from "../src/interfaces/IValidator.sol";
-import {IValidatorStructs} from "../src/interfaces/IValidatorStructs.sol";
+import {Verifier} from "../src/Verifier.sol";
+import {IVerifier} from "../src/interfaces/IVerifier.sol";
 import {LibSecp256k1} from "../src/libs/LibSecp256k1.sol";
 import {NodeGroupBitmapLib} from "../src/libs/NodeGroupBitmapLib.sol";
 import {LibSchnorrTestSign} from "./libs/LibSchnorrTestSign.sol";
 
-// Matches private constants in `Validator.sol` (same string literals).
+// Matches private constants in `Verifier.sol` (same string literals).
 bytes32 constant POP_DOMAIN = keccak256("MOLPHA_VALIDATOR_V1");
 bytes32 constant MESSAGE_PREFIX = keccak256("MOLPHA_MESSAGE_V1");
 bytes32 constant SELECTION_SEED_PREFIX = keccak256("MOLPHA_SELECTION_V1");
 
-/// @title ValidatorTest
+/// @title VerifierTest
 /// @dev `verify` gas benchmarks measure execution only (`gasleft()` delta). Calldata + 21k base are printed for reference.
-contract ValidatorTest is Test {
+contract VerifierTest is Test {
     using MessageHashUtils for bytes32;
     using LibSecp256k1 for LibSecp256k1.Point;
 
     uint256 internal constant BASE_TX_GAS = 21_000;
 
-    Validator internal v;
+    Verifier internal v;
     uint256[] internal secrets;
     LibSecp256k1.Point[] internal pubPoints;
 
     function setUp() public {
-        v = new Validator();
-        v.initialize();
+        v = new Verifier(address(this), 2);
     }
 
     function _sk(uint256 slot) internal pure returns (uint256) {
@@ -41,21 +39,21 @@ contract ValidatorTest is Test {
     function _pop(address validatorAddr, bytes memory compressed, uint256 sk)
         internal
         pure
-        returns (IValidatorStructs.SchnorrProof memory pop)
+        returns (IVerifier.SchnorrProof memory pop)
     {
         bytes32 digest = keccak256(abi.encodePacked(POP_DOMAIN, validatorAddr, compressed));
         LibSecp256k1.Point memory pk = LibSecp256k1.mulAffine(LibSecp256k1.G(), sk);
         (bytes32 sig, address cmt) = LibSchnorrTestSign.sign(pk, sk, digest, 0);
-        pop = IValidatorStructs.SchnorrProof({signature: sig, commitment: cmt});
+        pop = IVerifier.SchnorrProof({signature: sig, commitment: cmt});
     }
 
     /// @notice Registered node count: blob slot 0 is aggregate; nodes occupy `1..keysLen-1`.
-    function _registeredNodeCount(Validator validator) internal view returns (uint256 n) {
+    function _registeredNodeCount(Verifier validator) internal view returns (uint256 n) {
         uint256 keysLen = validator.getTotalNodes();
         n = keysLen > 1 ? keysLen - 1 : 0;
     }
 
-    function _addNodes(Validator validator, uint256 numNodes) internal {
+    function _addNodes(Verifier validator, uint256 numNodes) internal {
         delete secrets;
         delete pubPoints;
         secrets = new uint256[](numNodes);
@@ -86,16 +84,11 @@ contract ValidatorTest is Test {
         }
     }
 
-    function _roundId(IValidatorStructs.DataUpdate memory du) internal pure returns (bytes32) {
-        return keccak256(abi.encodePacked(MESSAGE_PREFIX, du.jobId, du.registryVersion, du.canonicalTimestamp));
+    function _selectionSeed(IVerifier.DataUpdate memory du) internal pure returns (bytes32) {
+        return keccak256(abi.encodePacked(SELECTION_SEED_PREFIX, du.jobId, du.registryVersion, du.canonicalTimestamp));
     }
 
-    function _selectionSeed(IValidatorStructs.DataUpdate memory du) internal pure returns (bytes32) {
-        bytes32 rid = _roundId(du);
-        return keccak256(abi.encodePacked(SELECTION_SEED_PREFIX, du.jobId, du.registryVersion, rid));
-    }
-
-    function _constructMessage(IValidatorStructs.DataUpdate memory du, uint256 signersBitmap)
+    function _constructMessage(IVerifier.DataUpdate memory du, uint256 signersBitmap)
         internal
         pure
         returns (bytes32)
@@ -137,13 +130,13 @@ contract ValidatorTest is Test {
     }
 
     function _buildVerify(
-        Validator validator,
+        Verifier validator,
         uint256 sigReq,
         bytes32 jobId,
         bytes32 value,
         uint64 canonicalTs
-    ) internal view returns (IValidatorStructs.DataUpdate memory du, IValidatorStructs.SchnorrSignature memory sch) {
-        du = IValidatorStructs.DataUpdate({
+    ) internal view returns (IVerifier.DataUpdate memory du, IVerifier.SchnorrSignature memory sch) {
+        du = IVerifier.DataUpdate({
             jobId: jobId,
             registryVersion: uint32(validator.getRegistryVersion()),
             signaturesRequired: uint32(sigReq),
@@ -169,7 +162,7 @@ contract ValidatorTest is Test {
         uint256 skEff = _sumSecretsStorage(idxs);
         (bytes32 sig, address cmt) = LibSchnorrTestSign.sign(aggPk, skEff, msgHash, 0);
 
-        sch = IValidatorStructs.SchnorrSignature({signature: sig, commitment: cmt, signersBitmap: signerBits});
+        sch = IVerifier.SchnorrSignature({signature: sig, commitment: cmt, signersBitmap: signerBits});
     }
 
     function _calldataCost(bytes memory data) internal pure returns (uint256 cost) {
@@ -178,9 +171,9 @@ contract ValidatorTest is Test {
         }
     }
 
-    // --- initialize / admin ---
+    // --- constructor / admin ---
 
-    function test_initialize_sets_admin_and_defaults() public view {
+    function test_constructor_sets_admin_and_defaults() public view {
         assertEq(v.protocolAdmin(), address(this));
         assertEq(v.redundancyBuffer(), 2);
         assertEq(v.getTotalNodes(), 1);
@@ -208,16 +201,58 @@ contract ValidatorTest is Test {
         LibSecp256k1.Point memory pk = LibSecp256k1.mulAffine(LibSecp256k1.G(), sk);
         bytes memory compressed = LibSecp256k1.compress(pk);
         v.addNode(compressed, _pop(address(v), compressed, sk));
-        IValidatorStructs.SchnorrProof memory popAgain = _pop(address(v), compressed, sk);
+        IVerifier.SchnorrProof memory popAgain = _pop(address(v), compressed, sk);
         vm.expectRevert(bytes("Node already added"));
         v.addNode(compressed, popAgain);
+    }
+
+    function test_transferProtocolAdmin_updates_role() public {
+        address newAdmin = address(0xAD11);
+        vm.expectEmit(true, true, false, true);
+        emit IVerifier.LogProtocolAdminTransferred(address(this), newAdmin);
+        v.transferProtocolAdmin(newAdmin);
+        assertEq(v.protocolAdmin(), newAdmin);
+    }
+
+    function test_transferProtocolAdmin_revert_zero_address() public {
+        vm.expectRevert(bytes("Zero admin"));
+        v.transferProtocolAdmin(address(0));
+    }
+
+    function test_transferProtocolAdmin_revert_not_admin() public {
+        vm.prank(address(0xB0B));
+        vm.expectRevert(bytes("Not protocol admin"));
+        v.transferProtocolAdmin(address(0xAD11));
+    }
+
+    function test_setRedundancyBuffer_updates_value() public {
+        vm.expectEmit(false, false, false, true);
+        emit IVerifier.LogRedundancyBufferUpdated(5);
+        v.setRedundancyBuffer(5);
+        assertEq(v.redundancyBuffer(), 5);
+    }
+
+    function test_setRedundancyBuffer_revert_not_admin() public {
+        vm.prank(address(0xB0B));
+        vm.expectRevert(bytes("Not protocol admin"));
+        v.setRedundancyBuffer(1);
+    }
+
+    function test_verify_respects_updated_redundancy_buffer() public {
+        _addNodes(v, 5);
+        v.setRedundancyBuffer(0);
+
+        (IVerifier.DataUpdate memory du, IVerifier.SchnorrSignature memory sch) =
+            _buildVerify(v, 3, bytes32("job-buf"), bytes32("val"), uint64(1700000001));
+
+        assertTrue(v.verify(du, sch));
     }
 
     function test_addNode_revert_not_admin() public {
         uint256 sk = _sk(1);
         LibSecp256k1.Point memory pk = LibSecp256k1.mulAffine(LibSecp256k1.G(), sk);
         bytes memory compressed = LibSecp256k1.compress(pk);
-        IValidatorStructs.SchnorrProof memory pop = _pop(address(v), compressed, sk);
+        IVerifier.SchnorrProof memory pop = _pop(address(v), compressed, sk);
         address alice = address(0xA11CE);
         vm.expectRevert(bytes("Not protocol admin"));
         vm.prank(alice);
@@ -283,14 +318,14 @@ contract ValidatorTest is Test {
     // --- verify ---
 
     function test_verify_revert_no_nodes() public {
-        IValidatorStructs.DataUpdate memory du = IValidatorStructs.DataUpdate({
+        IVerifier.DataUpdate memory du = IVerifier.DataUpdate({
             jobId: bytes32(uint256(1)),
             registryVersion: 0,
             signaturesRequired: 1,
             value: bytes32(uint256(3)),
             canonicalTimestamp: uint64(block.timestamp)
         });
-        IValidatorStructs.SchnorrSignature memory sch;
+        IVerifier.SchnorrSignature memory sch;
 
         vm.expectRevert(bytes("No nodes"));
         v.verify(du, sch);
@@ -301,7 +336,7 @@ contract ValidatorTest is Test {
         uint256 sigReq = 3;
         _addNodes(v, numNodes);
 
-        (IValidatorStructs.DataUpdate memory du, IValidatorStructs.SchnorrSignature memory sch) =
+        (IVerifier.DataUpdate memory du, IVerifier.SchnorrSignature memory sch) =
             _buildVerify(v, sigReq, bytes32("job-a"), bytes32("val"), uint64(1700000000));
 
         assertTrue(v.verify(du, sch));
@@ -310,7 +345,7 @@ contract ValidatorTest is Test {
     function test_verify_returns_false_for_tampered_signature() public {
         _addNodes(v, 5);
 
-        (IValidatorStructs.DataUpdate memory du, IValidatorStructs.SchnorrSignature memory sch) =
+        (IVerifier.DataUpdate memory du, IVerifier.SchnorrSignature memory sch) =
             _buildVerify(v, 3, bytes32("job-b"), bytes32("val"), uint64(1700000001));
 
         sch.signature = bytes32(uint256(sch.signature) ^ 1);
@@ -321,10 +356,10 @@ contract ValidatorTest is Test {
         _addNodes(v, 5);
 
         for (uint256 salt = 1; salt < 1000; ++salt) {
-            (IValidatorStructs.DataUpdate memory du, IValidatorStructs.SchnorrSignature memory sch) =
+            (IVerifier.DataUpdate memory du, IVerifier.SchnorrSignature memory sch) =
                 _buildVerify(v, 3, bytes32(salt), bytes32("val"), uint64(1700000001));
 
-            IValidatorStructs.DataUpdate memory tampered = du;
+            IVerifier.DataUpdate memory tampered = du;
             tampered.signaturesRequired = 2;
 
             uint256 selectionBitmap = NodeGroupBitmapLib.derive(_selectionSeed(tampered), 5, 4);
@@ -340,14 +375,14 @@ contract ValidatorTest is Test {
     function test_verify_revert_zero_signatures_required() public {
         _addNodes(v, 5);
 
-        IValidatorStructs.DataUpdate memory du = IValidatorStructs.DataUpdate({
+        IVerifier.DataUpdate memory du = IVerifier.DataUpdate({
             jobId: bytes32("zero-threshold"),
             registryVersion: uint32(v.getRegistryVersion()),
             signaturesRequired: 0,
             value: bytes32("val"),
             canonicalTimestamp: uint64(1700000001)
         });
-        IValidatorStructs.SchnorrSignature memory sch;
+        IVerifier.SchnorrSignature memory sch;
 
         vm.expectRevert(bytes("Zero signatures required"));
         v.verify(du, sch);
@@ -356,22 +391,22 @@ contract ValidatorTest is Test {
     function test_verify_revert_zero_signature_inputs() public {
         _addNodes(v, 5);
 
-        (IValidatorStructs.DataUpdate memory du, IValidatorStructs.SchnorrSignature memory sch) =
+        (IVerifier.DataUpdate memory du, IVerifier.SchnorrSignature memory sch) =
             _buildVerify(v, 3, bytes32("job-zero"), bytes32("val"), uint64(1700000001));
 
-        IValidatorStructs.SchnorrSignature memory zeroSigners = IValidatorStructs.SchnorrSignature({
+        IVerifier.SchnorrSignature memory zeroSigners = IVerifier.SchnorrSignature({
             signature: sch.signature, commitment: sch.commitment, signersBitmap: 0
         });
         vm.expectRevert(bytes("Zero signers bitmap"));
         v.verify(du, zeroSigners);
 
-        IValidatorStructs.SchnorrSignature memory zeroSignature = IValidatorStructs.SchnorrSignature({
+        IVerifier.SchnorrSignature memory zeroSignature = IVerifier.SchnorrSignature({
             signature: 0, commitment: sch.commitment, signersBitmap: sch.signersBitmap
         });
         vm.expectRevert(bytes("Zero signature"));
         v.verify(du, zeroSignature);
 
-        IValidatorStructs.SchnorrSignature memory zeroCommitment = IValidatorStructs.SchnorrSignature({
+        IVerifier.SchnorrSignature memory zeroCommitment = IVerifier.SchnorrSignature({
             signature: sch.signature, commitment: address(0), signersBitmap: sch.signersBitmap
         });
         vm.expectRevert(bytes("Zero commitment"));
@@ -381,7 +416,7 @@ contract ValidatorTest is Test {
     function test_verify_revert_not_enough_signatures() public {
         _addNodes(v, 5);
 
-        (IValidatorStructs.DataUpdate memory du, IValidatorStructs.SchnorrSignature memory sch) =
+        (IVerifier.DataUpdate memory du, IVerifier.SchnorrSignature memory sch) =
             _buildVerify(v, 3, bytes32("job-c"), bytes32("val"), uint64(1700000002));
 
         // Drop one signer bit → popCount 2 < 3
@@ -394,7 +429,7 @@ contract ValidatorTest is Test {
     function test_verify_revert_signer_not_in_selection() public {
         _addNodes(v, 6);
 
-        (IValidatorStructs.DataUpdate memory du, IValidatorStructs.SchnorrSignature memory sch) =
+        (IVerifier.DataUpdate memory du, IVerifier.SchnorrSignature memory sch) =
             _buildVerify(v, 3, bytes32("job-d"), bytes32("val"), uint64(1700000003));
 
         // Flip a bit that is not in the selection bitmap for this update.
@@ -407,14 +442,14 @@ contract ValidatorTest is Test {
     function test_verify_caps_group_size_when_buffer_exceeds_nodes() public {
         _addNodes(v, 2);
         // redundancyBuffer=2 → uncapped grpSize = 4, capped to nodeCount = 2
-        IValidatorStructs.DataUpdate memory du = IValidatorStructs.DataUpdate({
+        IVerifier.DataUpdate memory du = IVerifier.DataUpdate({
             jobId: bytes32("x"),
             registryVersion: uint32(v.getRegistryVersion()),
             signaturesRequired: 2,
             value: bytes32(0),
             canonicalTimestamp: 1
         });
-        IValidatorStructs.SchnorrSignature memory sch;
+        IVerifier.SchnorrSignature memory sch;
         sch.signersBitmap = 3;
         sch.signature = bytes32(uint256(1));
         sch.commitment = address(1);
@@ -426,7 +461,7 @@ contract ValidatorTest is Test {
         ts = uint64(bound(ts, 1, type(uint64).max));
         _addNodes(v, 8);
 
-        (IValidatorStructs.DataUpdate memory du, IValidatorStructs.SchnorrSignature memory sch) =
+        (IVerifier.DataUpdate memory du, IVerifier.SchnorrSignature memory sch) =
             _buildVerify(v, 4, bytes32(jobSalt), bytes32(uint256(888)), ts);
 
         assertTrue(v.verify(du, sch));
@@ -436,14 +471,13 @@ contract ValidatorTest is Test {
 
     function _benchVerify(uint256 numNodes, uint256 sigReq, bytes32 jobId) internal {
         vm.pauseGasMetering();
-        Validator vv = new Validator();
-        vv.initialize();
+        Verifier vv = new Verifier(address(this), 2);
         _addNodes(vv, numNodes);
 
-        (IValidatorStructs.DataUpdate memory du, IValidatorStructs.SchnorrSignature memory sch) =
+        (IVerifier.DataUpdate memory du, IVerifier.SchnorrSignature memory sch) =
             _buildVerify(vv, sigReq, jobId, bytes32("val"), uint64(1700000100));
 
-        bytes memory cd = abi.encodeCall(IValidator.verify, (du, sch));
+        bytes memory cd = abi.encodeCall(IVerifier.verify, (du, sch));
         uint256 cdCost = _calldataCost(cd);
         vm.resumeGasMetering();
 
@@ -482,7 +516,7 @@ contract ValidatorTest is Test {
         assertEq(_registeredNodeCount(v), numNodes);
 
         // Build a deterministic data update.
-        IValidatorStructs.DataUpdate memory du = IValidatorStructs.DataUpdate({
+        IVerifier.DataUpdate memory du = IVerifier.DataUpdate({
             jobId: bytes32("solana-compat-job"),
             registryVersion: uint32(v.getRegistryVersion()),
             signaturesRequired: uint32(sigReq),
@@ -507,8 +541,8 @@ contract ValidatorTest is Test {
         bytes32 msgHash = _constructMessage(du, signersBitmap);
         uint256 skEff = _sumSecretsStorage(idxs);
         (bytes32 sig, address cmt) = LibSchnorrTestSign.sign(aggPk, skEff, msgHash, 0);
-        IValidatorStructs.SchnorrSignature memory sch =
-            IValidatorStructs.SchnorrSignature({signature: sig, commitment: cmt, signersBitmap: signersBitmap});
+        IVerifier.SchnorrSignature memory sch =
+            IVerifier.SchnorrSignature({signature: sig, commitment: cmt, signersBitmap: signersBitmap});
 
         // Sanity: on-chain verify must pass.
         assertTrue(v.verify(du, sch));

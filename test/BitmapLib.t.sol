@@ -7,10 +7,10 @@ import {BitmapLib} from "../src/libs/BitmapLib.sol";
 contract BitmapLibTest is Test {
     using BitmapLib for uint256;
 
-    function test_ctzPow2_matches_ctz256_for_powers_of_two() public pure {
+    function test_ctzPow2_powers_of_two() public pure {
         for (uint256 k; k < 256; ++k) {
             uint256 bit = uint256(1) << k;
-            assertEq(bit.ctzPow2(), bit.ctz256());
+            assertEq(bit.ctzPow2(), k);
         }
     }
 }
