@@ -2,7 +2,6 @@
 pragma solidity ^0.8.31;
 
 import {Test, console2} from "forge-std/Test.sol";
-import {MessageHashUtils} from "openzeppelin-contracts/contracts/utils/cryptography/MessageHashUtils.sol";
 
 import {Verifier} from "../src/Verifier.sol";
 import {IVerifier} from "../src/interfaces/IVerifier.sol";
@@ -18,7 +17,6 @@ bytes32 constant SELECTION_SEED_PREFIX = keccak256("MOLPHA_SELECTION_V1");
 /// @title VerifierTest
 /// @dev `verify` gas benchmarks measure execution only (`gasleft()` delta). Calldata + 21k base are printed for reference.
 contract VerifierTest is Test {
-    using MessageHashUtils for bytes32;
     using LibSecp256k1 for LibSecp256k1.Point;
 
     uint256 internal constant BASE_TX_GAS = 21_000;
@@ -341,6 +339,20 @@ contract VerifierTest is Test {
         IVerifier.SchnorrSignature memory sch;
 
         vm.expectRevert(bytes("No nodes"));
+        v.verify(du, sch);
+    }
+
+    function test_verify_revert_invalid_registry_version() public {
+        IVerifier.DataUpdate memory du = IVerifier.DataUpdate({
+            jobId: bytes32(uint256(1)),
+            registryVersion: 1,
+            signaturesRequired: 1,
+            value: bytes32(uint256(3)),
+            canonicalTimestamp: uint64(block.timestamp)
+        });
+        IVerifier.SchnorrSignature memory sch;
+
+        vm.expectRevert(bytes("Invalid registry version"));
         v.verify(du, sch);
     }
 

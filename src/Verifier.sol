@@ -1,25 +1,23 @@
 // SPDX-License-Identifier: BSL-1.1
 pragma solidity ^0.8.31;
 
-import {SSTORE2} from "solmate/utils/SSTORE2.sol";
-import {MessageHashUtils} from "openzeppelin-contracts/contracts/utils/cryptography/MessageHashUtils.sol";
+import {SSTORE2} from "solady/utils/SSTORE2.sol";
+import {LibBit} from "solady/utils/LibBit.sol";
 
 import {LibSecp256k1} from "./libs/LibSecp256k1.sol";
 import {LibSchnorr} from "./libs/LibSchnorr.sol";
 import {IVerifier} from "./interfaces/IVerifier.sol";
 import {PubkeyBlobLib} from "./libs/PubkeyBlobLib.sol";
-import {BitmapLib} from "./libs/BitmapLib.sol";
 import {NodeGroupBitmapLib} from "./libs/NodeGroupBitmapLib.sol";
 
 /// @title Verifier
 /// @notice Registry for managing nodes and verifying Schnorr signatures
 /// @dev Uses SSTORE2 for efficient storage of node public keys, supports up to 256 nodes
 contract Verifier is IVerifier {
-    using MessageHashUtils for bytes32;
     using LibSchnorr for LibSecp256k1.Point;
     using LibSecp256k1 for LibSecp256k1.Point;
     using PubkeyBlobLib for bytes;
-    using BitmapLib for uint256;
+    using LibBit for uint256;
 
     uint256 constant MAX_NODES = 256;
     uint256 constant START_INDEX = 1;
@@ -64,6 +62,8 @@ contract Verifier is IVerifier {
         view
         returns (bool isVerified)
     {
+        if (dataUpdate.registryVersion >= registryPointers.length) revert("Invalid registry version");
+
         bytes32 selectionSeed = keccak256(
             abi.encodePacked(
                 SELECTION_SEED_PREFIX, 
@@ -102,12 +102,10 @@ contract Verifier is IVerifier {
         uint256 az;
         uint256 rem = schnorrData.signersBitmap;
         while (rem != 0) {
-            uint256 bit;
             uint256 pos;
             unchecked {
-                bit = rem & (~rem + 1);
-                pos = bit.ctzPow2();
-                rem ^= bit;
+                pos = rem.ffs();
+                rem &= rem - 1;
             }
 
             uint256 signerIndex = pos + 1;
@@ -259,10 +257,7 @@ contract Verifier is IVerifier {
     function getAggregateKey() external view override returns (uint256 x, uint256 y) {
         uint256 registryVersion = registryPointers.length - 1;
         address keysPtr = registryPointers[registryVersion];
-        bytes memory keysBlob = SSTORE2.read(keysPtr);
-        LibSecp256k1.Point memory aggregate = keysBlob.getNode(0);
-        x = aggregate.x;
-        y = aggregate.y;
+        (x, y) = _readNodeKeyXY(keysPtr, 0);
     }
 
     /// @inheritdoc IVerifier
