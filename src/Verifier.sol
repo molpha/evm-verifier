@@ -21,7 +21,6 @@ contract Verifier is IVerifier {
 
     uint256 constant MAX_NODES = 256;
     uint256 constant START_INDEX = 1;
-    uint256 private constant ROUND_MASK = type(uint32).max;
     uint256 private constant KEYS_ARRAY_HEAD = 64;
     uint256 private constant SSTORE2_DATA_OFFSET = 1;
     uint256 private constant POINT_COORD_BYTES = 64;

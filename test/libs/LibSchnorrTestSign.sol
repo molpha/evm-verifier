@@ -9,27 +9,6 @@ import {LibSchnorr} from "../../src/libs/LibSchnorr.sol";
 library LibSchnorrTestSign {
     using LibSecp256k1 for LibSecp256k1.Point;
 
-    /// @notice Plain-sum effective private key for one signer is just its own private key.
-    /// @param allRegistryPubkeys Active node pubkeys only (unused in plain-sum mode).
-    function effectiveSecretRegistryL(
-        LibSecp256k1.Point[] memory allRegistryPubkeys,
-        LibSecp256k1.Point memory,
-        uint256 privateKey
-    ) internal pure returns (uint256 skEff) {
-        allRegistryPubkeys;
-        skEff = privateKey;
-    }
-
-    /// @notice Scalar x for one signer in plain-sum aggregation.
-    function effectiveSecretSingleSigner(LibSecp256k1.Point memory p1, uint256 d1)
-        internal
-        pure
-        returns (uint256 skEff)
-    {
-        p1;
-        skEff = d1;
-    }
-
     /// @notice Produce `(signature, commitment)` for `pubKey` / `privateKey` / `message`.
     /// @param privateKey Discrete log of `pubKey` on secp256k1: `[privateKey]G == pubKey`.
     /// @param nonceSalt Varies the deterministic nonce search if the first attempts fail rare edge cases.

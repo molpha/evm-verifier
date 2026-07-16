@@ -58,7 +58,7 @@ library PubkeyBlobLib {
             let length := sub(mload(lengthSlot), 1)
 
             let lastSigner := eq(index, length)
-            orderChanged := not(lastSigner)
+            orderChanged := iszero(lastSigner)
 
             // resize
             mstore(pubKeys, sub(mload(pubKeys), POINT_SIZE)) // decrease bytes length

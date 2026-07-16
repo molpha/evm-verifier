@@ -4,10 +4,10 @@ pragma solidity ^0.8.31;
 import {Test} from "forge-std/Test.sol";
 import {stdJson} from "forge-std/StdJson.sol";
 
-import {Verifier} from "../src/Verifier.sol";
-import {IVerifier} from "../src/interfaces/IVerifier.sol";
-import {LibSecp256k1} from "../src/libs/LibSecp256k1.sol";
-import {LibSchnorrTestSign} from "./libs/LibSchnorrTestSign.sol";
+import {Verifier} from "../../src/Verifier.sol";
+import {IVerifier} from "../../src/interfaces/IVerifier.sol";
+import {LibSecp256k1} from "../../src/libs/LibSecp256k1.sol";
+import {LibSchnorrTestSign} from "../libs/LibSchnorrTestSign.sol";
 
 /// @title VerifierFixtureJsonTest
 /// @dev Golden compatibility test driven by `test/fixtures/fixture.json`.

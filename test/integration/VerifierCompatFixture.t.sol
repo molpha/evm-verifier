@@ -3,10 +3,10 @@ pragma solidity ^0.8.31;
 
 import {Test} from "forge-std/Test.sol";
 
-import {Verifier} from "../src/Verifier.sol";
-import {IVerifier} from "../src/interfaces/IVerifier.sol";
-import {LibSecp256k1} from "../src/libs/LibSecp256k1.sol";
-import {LibSchnorrTestSign} from "./libs/LibSchnorrTestSign.sol";
+import {Verifier} from "../../src/Verifier.sol";
+import {IVerifier} from "../../src/interfaces/IVerifier.sol";
+import {LibSecp256k1} from "../../src/libs/LibSecp256k1.sol";
+import {LibSchnorrTestSign} from "../libs/LibSchnorrTestSign.sol";
 
 /// @title VerifierCompatFixtureTest
 /// @dev Golden compatibility test: register nodes and verify using only the external fixture payload.

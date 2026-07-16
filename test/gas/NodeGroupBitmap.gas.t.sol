@@ -2,16 +2,13 @@
 pragma solidity ^0.8.31;
 
 import {Test, console2} from "forge-std/Test.sol";
-import {NodeGroupBitmapLib} from "../src/libs/NodeGroupBitmapLib.sol";
+import {NodeGroupBitmapLib} from "../../src/libs/NodeGroupBitmapLib.sol";
 
-/// @dev Run: `forge test --match-path test/NodeGroupBitmapLibGas.t.sol -vv`
+/// @dev Run: `FOUNDRY_PROFILE=gas forge test -vv`
 contract NodeGroupBitmapLibGasTest is Test {
     bytes32 internal constant SEED = keccak256("MOLPHA_DERIVE_GAS_PROBE");
 
-    function _gas(bytes32 seed, uint256 nCount, uint256 groupSize)
-        internal
-        returns (uint256 gasUsed, uint256 bitmap)
-    {
+    function _gas(bytes32 seed, uint256 nCount, uint256 groupSize) internal returns (uint256 gasUsed, uint256 bitmap) {
         uint256 g0 = gasleft();
         bitmap = NodeGroupBitmapLib.derive(seed, nCount, groupSize);
         gasUsed = g0 - gasleft();
@@ -24,7 +21,7 @@ contract NodeGroupBitmapLibGasTest is Test {
         }
     }
 
-    function test_derive_isolated_gas() public {
+    function testGas_deriveScenarios() public {
         uint256[] memory groupSizes = new uint256[](4);
         groupSizes[0] = 3;
         groupSizes[1] = 5;
