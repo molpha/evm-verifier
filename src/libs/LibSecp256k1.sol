@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.16;
+pragma solidity ^0.8.31;
 
 /**
  * @title LibSecp256k1
@@ -150,6 +150,61 @@ library LibSecp256k1 {
         result.y = mulmod(self.y, mulmod(zInv, zInv_2, _P), _P);
 
         return result;
+    }
+
+    /// @dev Scalar-input variant of toAffineModexp.  Accepts the Jacobian coordinates
+    ///      as plain scalars so the caller can avoid allocating a JacobianPoint memory
+    ///      struct and the three MLOADs that would follow.
+    function toAffineModexpXYZ(
+        uint256 jx, uint256 jy, uint256 jz
+    ) internal view returns (Point memory result) {
+        // Affine accumulator (`z == 1`): skip field inversion (~modexp cost).
+        if (jz == 1) {
+            return Point({x: jx, y: jy});
+        }
+        uint zInv = _modExp(jz, _P - 2, _P);
+        uint zInv2 = mulmod(zInv, zInv, _P);
+        result.x = mulmod(jx, zInv2, _P);
+        result.y = mulmod(jy, mulmod(zInv, zInv2, _P), _P);
+    }
+
+    /// @dev Mixed Jacobian+Affine EC addition with all inputs and outputs as plain
+    ///      scalars rather than memory structs (madd-2007-bl, z₂=1).
+    ///
+    ///      This eliminates the 3-MLOAD / 3-MSTORE round-trip that the struct-based
+    ///      addAffinePoint incurs on every loop iteration, and lets the compiler (with
+    ///      via-ir) keep the accumulator entirely in Yul stack slots.
+    ///
+    ///      Uses sub(P, x) for negation throughout; this is safe because all intermediate
+    ///      values produced by mulmod/addmod lie in [0, P-1] so P-x ≥ 1.
+    ///
+    ///      Reference: https://hyperelliptic.org/EFD/g1p/auto-shortw-jacobian.html#addition-madd-2007-bl
+    function addAffinePointToXYZ(
+        uint256 jx, uint256 jy, uint256 jz,
+        uint256 px, uint256 py
+    ) internal pure returns (uint256 nax, uint256 nay, uint256 naz) {
+        assembly ("memory-safe") {
+            let P  := 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFC2F
+            let z2 := mulmod(jz, jz, P)                                   // z₁²
+            let z3 := mulmod(z2, jz, P)                                   // z₁³
+            let h  := addmod(mulmod(px, z2, P), sub(P, jx), P)            // u − x₁
+            let h2 := mulmod(h, h, P)                                      // h²
+            let i2 := mulmod(4, h2, P)                                     // 4h²
+            let v  := mulmod(jx, i2, P)                                    // x₁·i
+            let j  := mulmod(h,  i2, P)                                    // h·i
+            let r  := mulmod(2, addmod(mulmod(py, z3, P), sub(P, jy), P), P) // 2(s−y₁)
+            // z = (z₁+h)² − z₁² − h²
+            let azh := addmod(jz, h, P)
+            naz     := addmod(mulmod(azh, azh, P), addmod(sub(P, z2), sub(P, h2), P), P)
+            // x = r² − j − 2v
+            nax     := addmod(mulmod(r, r, P), addmod(sub(P, j), sub(P, mulmod(2, v, P)), P), P)
+            // y = r·(v − x_new) − 2·y₁·j
+            nay     := addmod(
+                mulmod(r, addmod(v, sub(P, nax), P), P),
+                sub(P, mulmod(2, mulmod(jy, j, P), P)),
+                P
+            )
+        }
     }
 
     /// @dev Adds Affine point `p` to Jacobian point `self`.
@@ -304,6 +359,63 @@ library LibSecp256k1 {
         }
     }
 
+    /// @dev Field modulus p for the short Weierstrass curve (public for companion libraries).
+    function fieldP() internal pure returns (uint256) {
+        return _P;
+    }
+
+    /// @dev Jacobian point doubling (a = 0), dbl-2009-l; mutates `self` in place.
+    function jacobianDouble(JacobianPoint memory self) internal pure {
+        uint256 z1 = self.z;
+        if (z1 == 0) {
+            return;
+        }
+        uint256 x1 = self.x;
+        uint256 y1 = self.y;
+        unchecked {
+            uint256 a = mulmod(x1, x1, _P);
+            uint256 b = mulmod(y1, y1, _P);
+            uint256 c = mulmod(b, b, _P);
+            uint256 d = addmod(x1, b, _P);
+            d = mulmod(d, d, _P);
+            d = addmod(addmod(d, _P - a, _P), _P - c, _P);
+            d = mulmod(2, d, _P);
+            uint256 e = mulmod(3, a, _P);
+            uint256 f = mulmod(e, e, _P);
+            uint256 x3 = addmod(f, _P - mulmod(2, d, _P), _P);
+            uint256 y3 = mulmod(e, addmod(d, _P - x3, _P), _P);
+            y3 = addmod(y3, _P - mulmod(8, c, _P), _P);
+            uint256 z3 = mulmod(2, mulmod(y1, z1, _P), _P);
+            self.x = x3;
+            self.y = y3;
+            self.z = z3;
+        }
+    }
+
+    /// @dev Scalar multiplication in the secp256k1 group (affine non-zero point, scalar mod order domain handled by caller).
+    function mulAffine(Point memory p, uint256 scalar) internal pure returns (Point memory) {
+        if (scalar == 0 || isZeroPoint(p)) {
+            return ZERO_POINT();
+        }
+        uint256 msb = 255;
+        while (msb > 0 && ((scalar >> msb) & 1) == 0) {
+            unchecked {
+                msb--;
+            }
+        }
+        JacobianPoint memory r = p.toJacobian();
+        unchecked {
+            for (uint256 i = msb; i > 0; ) {
+                --i;
+                jacobianDouble(r);
+                if (((scalar >> i) & 1) == 1) {
+                    addAffinePoint(r, p);
+                }
+            }
+        }
+        return r.toAffine();
+    }
+
     /// @notice Decompress 33-byte compressed key into (x, y) coordinates
     /// @param comp Compressed pubkey: 0x02/0x03 prefix + 32-byte x
     /// @return point Struct with affine coordinates
@@ -410,8 +522,7 @@ library LibSecp256k1 {
         uint256 exp,
         uint256 mod
     ) private view returns (uint256 result) {
-        // EIP-198 expects: |len(b)|len(e)|len(m)| b | e | m |
-        // We'll use 32-byte lengths and big-endian words.
+        // EIP-198 expects: |len(b)|len(e)|len(m)| b | e | m | — six 32-byte words, no extra allocation.
         uint256[6] memory input;
         input[0] = 32; // len(b)
         input[1] = 32; // len(e)
@@ -420,33 +531,13 @@ library LibSecp256k1 {
         input[4] = exp;
         input[5] = mod;
 
-        bytes memory callData = abi.encodePacked(
-            bytes32(input[0]),
-            bytes32(input[1]),
-            bytes32(input[2]),
-            bytes32(input[3]),
-            bytes32(input[4]),
-            bytes32(input[5])
-        );
-
-        bytes memory out = new bytes(32);
+        uint256[1] memory out;
         bool ok;
-        assembly {
-            // staticcall to 0x05 (bigModExp)
-            // gas stipend: just forward most of remaining gas
-            ok := staticcall(
-                gas(),
-                0x05,
-                add(callData, 0x20),
-                mload(callData),
-                add(out, 0x20),
-                32
-            )
+        assembly ("memory-safe") {
+            ok := staticcall(gas(), 5, input, 192, out, 32)
         }
         require(ok, "modexp failed");
-        assembly {
-            result := mload(add(out, 0x20))
-        }
+        result = out[0];
         require(result < mod, "modexp>=mod");
     }
 }

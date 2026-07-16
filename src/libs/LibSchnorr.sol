@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.16;
+pragma solidity ^0.8.31;
 
 import {LibSecp256k1} from "./LibSecp256k1.sol";
 
@@ -11,6 +11,40 @@ import {LibSecp256k1} from "./LibSecp256k1.sol";
  */
 library LibSchnorr {
     using LibSecp256k1 for LibSecp256k1.Point;
+
+    /// @dev verifySignature without the isOnCurve and signature-range guards.
+    ///      Safe to call when pubKey is a sum of on-curve effective keys (closed under
+    ///      EC addition) and the caller has already checked signature != 0 and commitment != 0.
+    ///      Saves ~500 gas per verify vs the defensive variant.
+    function verifySignatureTrusted(
+        LibSecp256k1.Point memory pubKey,
+        bytes32 message,
+        bytes32 signature,
+        address commitment
+    ) internal pure returns (bool) {
+        uint256 px = pubKey.x;
+        uint256 parity = pubKey.yParity();
+        uint challenge = uint(
+            keccak256(abi.encodePacked(px, uint8(parity), message, commitment))
+        ) % LibSecp256k1.Q();
+
+        uint msgHash;
+        unchecked {
+            msgHash = LibSecp256k1.Q() - mulmod(uint(signature), px, LibSecp256k1.Q());
+        }
+
+        uint v;
+        unchecked { v = parity + 27; }
+
+        uint r = px;
+        uint s;
+        unchecked {
+            s = LibSecp256k1.Q() - mulmod(challenge, px, LibSecp256k1.Q());
+        }
+
+        address recovered = ecrecover(bytes32(msgHash), uint8(v), bytes32(r), bytes32(s));
+        return commitment == recovered;
+    }
 
     /// @dev Returns whether `signature` and `commitment` sign via `pubKey`
     ///      message `message`.
@@ -48,14 +82,12 @@ library LibSchnorr {
             return false;
         }
 
+        uint256 px = pubKey.x;
+        uint256 parity = pubKey.yParity();
         // Construct challenge = H(Pₓ ‖ Pₚ ‖ m ‖ Rₑ) mod Q
-        uint challenge = uint(
-            keccak256(
-                abi.encodePacked(
-                    pubKey.x, uint8(pubKey.yParity()), message, commitment
-                )
-            )
-        ) % LibSecp256k1.Q();
+        uint challenge =
+            uint(keccak256(abi.encodePacked(px, uint8(parity), message, commitment))) %
+            LibSecp256k1.Q();
 
         // Compute msgHash = -sig * Pₓ      (mod Q)
         //                 = Q - (sig * Pₓ) (mod Q)
@@ -66,7 +98,7 @@ library LibSchnorr {
         uint msgHash;
         unchecked {
             msgHash = LibSecp256k1.Q()
-                - mulmod(uint(signature), pubKey.x, LibSecp256k1.Q());
+                - mulmod(uint(signature), px, LibSecp256k1.Q());
         }
 
         // Compute v = Pₚ + 27
@@ -75,11 +107,11 @@ library LibSchnorr {
         // by adding 27.
         uint v;
         unchecked {
-            v = pubKey.yParity() + 27;
+            v = parity + 27;
         }
 
         // Set r = Pₓ
-        uint r = pubKey.x;
+        uint r = px;
 
         // Compute s = Q - (e * Pₓ) (mod Q)
         //
@@ -88,7 +120,7 @@ library LibSchnorr {
         // computation, i.e. the subtrahend is guaranteed to be less than Q.
         uint s;
         unchecked {
-            s = LibSecp256k1.Q() - mulmod(challenge, pubKey.x, LibSecp256k1.Q());
+            s = LibSecp256k1.Q() - mulmod(challenge, px, LibSecp256k1.Q());
         }
 
         // Compute ([s]G - [e]P)ₑ via ecrecover.
