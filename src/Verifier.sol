@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: BSL-1.1
+// SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.31;
 
 import {SSTORE2} from "solady/utils/SSTORE2.sol";

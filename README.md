@@ -225,7 +225,7 @@ forge script script/AddNode.s.sol:AddNode \
 
 ## License
 
-BSL-1.1 on core contracts (`Validator`, interfaces). See individual file headers.
+Apache-2.0 on core contracts (`Verifier`, interfaces). See individual file headers.
 
 ---
 

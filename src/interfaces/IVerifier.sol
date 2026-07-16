@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: BSL-1.1
+// SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.31;
 
 /// @title IVerifier
@@ -93,7 +93,7 @@ interface IVerifier {
     /// @notice Verify a Schnorr signature
     /// @param dataUpdate The data update
     /// @param schnorrData The Schnorr signature data
-    /// @notice Reverts if verification fails. Not `view`: publish path records participation in the same pass.
+    /// @notice returns true if the signature is valid, false otherwise
     function verify(
         DataUpdate calldata dataUpdate,
         SchnorrSignature calldata schnorrData
