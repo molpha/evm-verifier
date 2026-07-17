@@ -65,10 +65,7 @@ contract Verifier is IVerifier {
 
         bytes32 selectionSeed = keccak256(
             abi.encodePacked(
-                SELECTION_SEED_PREFIX, 
-                dataUpdate.jobId, 
-                dataUpdate.registryVersion,
-                dataUpdate.canonicalTimestamp
+                SELECTION_SEED_PREFIX, dataUpdate.feedId, dataUpdate.registryVersion, dataUpdate.canonicalTimestamp
             )
         );
 
@@ -227,7 +224,7 @@ contract Verifier is IVerifier {
     function getRegistryPointer() external view returns (address registryPointer) {
         uint256 registryVersion = registryPointers.length - 1;
         registryPointer = registryPointers[registryVersion];
-    }   
+    }
 
     /// @inheritdoc IVerifier
     function getRegistryPointer(uint256 registryVersion) external view returns (address registryPointer) {
@@ -290,24 +287,23 @@ contract Verifier is IVerifier {
         returns (bytes32 message)
     {
         message = keccak256(
-                abi.encodePacked(
-                    MESSAGE_PREFIX,
-                    dataUpdate.jobId,
-                    dataUpdate.registryVersion,
-                    dataUpdate.signaturesRequired,
-                    signersBitmap,
-                    dataUpdate.value,
-                    dataUpdate.canonicalTimestamp
-                )
-            );
+            abi.encodePacked(
+                MESSAGE_PREFIX,
+                dataUpdate.feedId,
+                dataUpdate.registryVersion,
+                dataUpdate.signaturesRequired,
+                signersBitmap,
+                dataUpdate.value,
+                dataUpdate.canonicalTimestamp
+            )
+        );
     }
 
     function _verifyPop(LibSecp256k1.Point memory pubkey, bytes memory compressedPubKey, SchnorrProof calldata pop)
         private
         view
     {
-        bytes32 digest =
-            keccak256(abi.encodePacked(POP_DOMAIN, address(this), compressedPubKey));
+        bytes32 digest = keccak256(abi.encodePacked(POP_DOMAIN, address(this), compressedPubKey));
         bool isValid = pubkey.verifySignature(digest, pop.signature, pop.commitment);
         if (!isValid) revert("Invalid PoP");
     }

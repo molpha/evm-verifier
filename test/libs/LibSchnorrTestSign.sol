@@ -24,11 +24,13 @@ library LibSchnorrTestSign {
         uint256 s;
 
         for (uint256 attempt; attempt < 128; ++attempt) {
-            k = (
-                uint256(
-                    keccak256(abi.encodePacked("SCHNORR_TEST_NONCE", nonceSalt, attempt, message, pubKey.x, pubKey.y))
-                ) % (Q - 1)
-            ) + 1;
+            k =
+                (uint256(
+                            keccak256(
+                                abi.encodePacked("SCHNORR_TEST_NONCE", nonceSalt, attempt, message, pubKey.x, pubKey.y)
+                            )
+                        )
+                        % (Q - 1)) + 1;
 
             R = LibSecp256k1.mulAffine(LibSecp256k1.G(), k);
             commitment = R.toAddress();

@@ -13,7 +13,7 @@ This repository contains the verification layer only. It does not aggregate sign
 - Up to 256 active oracle nodes, addressed by a 256-bit signer bitmap
 - Schnorr proof-of-possession required when a node is registered
 - Immutable node-set snapshots stored with SSTORE2 after every add or remove
-- Deterministic signer-group selection from the job, registry version, and canonical timestamp
+- Deterministic signer-group selection from the feedId, registry version, and canonical timestamp
 - Configurable redundancy above the required signature threshold
 - Aggregate Schnorr verification against the selected signers' coalition key
 
@@ -50,7 +50,7 @@ For each update, the caller provides:
 
 ```solidity
 struct DataUpdate {
-    bytes32 jobId;
+    bytes32 feedId;
     uint32 registryVersion;
     uint32 signaturesRequired;
     bytes32 value;
@@ -61,7 +61,7 @@ struct DataUpdate {
 The verifier:
 
 1. Loads the requested historical registry snapshot.
-2. Derives a selection seed from `jobId`, `registryVersion`, and `canonicalTimestamp`.
+2. Derives a selection seed from `feedId`, `registryVersion`, and `canonicalTimestamp`.
 3. Selects `min(signaturesRequired + redundancyBuffer, nodeCount)` nodes.
 4. Requires the submitted signer bitmap to be a threshold-sized subset of that group.
 5. Sums the participating public keys and verifies the aggregate signature.
@@ -71,7 +71,7 @@ The signed message is:
 ```text
 keccak256(
   keccak256("MOLPHA_MESSAGE_V1") ||
-  jobId || registryVersion || signaturesRequired || signersBitmap || value || canonicalTimestamp
+  feedId || registryVersion || signaturesRequired || signersBitmap || value || canonicalTimestamp
 )
 ```
 

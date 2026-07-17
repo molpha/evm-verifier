@@ -60,7 +60,7 @@ abstract contract VerifierTestBase is Test {
 
     function _selectionSeed(IVerifier.DataUpdate memory update) internal pure returns (bytes32) {
         return keccak256(
-            abi.encodePacked(SELECTION_SEED_PREFIX, update.jobId, update.registryVersion, update.canonicalTimestamp)
+            abi.encodePacked(SELECTION_SEED_PREFIX, update.feedId, update.registryVersion, update.canonicalTimestamp)
         );
     }
 
@@ -68,7 +68,7 @@ abstract contract VerifierTestBase is Test {
         return keccak256(
             abi.encodePacked(
                 MESSAGE_PREFIX,
-                update.jobId,
+                update.feedId,
                 update.registryVersion,
                 update.signaturesRequired,
                 signersBitmap,
@@ -114,12 +114,12 @@ abstract contract VerifierTestBase is Test {
         Verifier target,
         uint256 signaturesRequired,
         uint256 signerCount,
-        bytes32 jobId,
+        bytes32 feedId,
         bytes32 value,
         uint64 canonicalTimestamp
     ) internal view returns (IVerifier.DataUpdate memory update, IVerifier.SchnorrSignature memory schnorr) {
         update = IVerifier.DataUpdate({
-            jobId: jobId,
+            feedId: feedId,
             registryVersion: uint32(target.getRegistryVersion()),
             signaturesRequired: uint32(signaturesRequired),
             value: value,
@@ -148,10 +148,10 @@ abstract contract VerifierTestBase is Test {
     function _buildVerifyCall(
         Verifier target,
         uint256 signaturesRequired,
-        bytes32 jobId,
+        bytes32 feedId,
         bytes32 value,
         uint64 canonicalTimestamp
     ) internal view returns (IVerifier.DataUpdate memory update, IVerifier.SchnorrSignature memory schnorr) {
-        return _buildVerifyCall(target, signaturesRequired, signaturesRequired, jobId, value, canonicalTimestamp);
+        return _buildVerifyCall(target, signaturesRequired, signaturesRequired, feedId, value, canonicalTimestamp);
     }
 }

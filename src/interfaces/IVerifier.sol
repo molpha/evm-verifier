@@ -25,7 +25,7 @@ interface IVerifier {
     }
 
     struct DataUpdate {
-        bytes32 jobId;
+        bytes32 feedId;
         uint32 registryVersion;
         uint32 signaturesRequired;
         bytes32 value;
@@ -44,10 +44,6 @@ interface IVerifier {
     /// @param rawKeysPointer The storage pointer to the updated raw keys array
     event LogNodeRemoved(address indexed node, uint256 oldIndex, address rawKeysPointer);
 
-    /// @notice Emitted when the minimum signatures threshold is updated
-    /// @param newThreshold The new minimum number of signatures required
-    event LogThresholdUpdated(uint256 newThreshold);
-
     /// @notice Emitted when the protocol admin role is transferred
     /// @param previousAdmin The previous protocol admin
     /// @param newAdmin The new protocol admin
@@ -56,22 +52,6 @@ interface IVerifier {
     /// @notice Emitted when the redundancy buffer is updated
     /// @param newRedundancyBuffer The new redundancy buffer value
     event LogRedundancyBufferUpdated(uint256 newRedundancyBuffer);
-
-    /// @notice Emitted after a successful publish to a feed
-    event LogAnswerPublished(
-        address indexed feed,
-        bytes value,
-        uint64 timestamp,
-        bytes32 signersBitmap,
-        uint32 round,
-        bytes32 seed
-    );
-
-    /// @notice Emitted when the global participation map hash is updated
-    event LogParticipationUpdated(bytes32 newHash, uint32[] updatedMap);
-
-    /// @notice Emitted when per-job oracle state is first initialized
-    event LogJobInitialized(bytes32 indexed jobId, bytes32 initialSeed);
 
     /// @notice Add a new node in the aggregator group
     /// @param compressedPubKey Compressed public key of the node
@@ -94,10 +74,7 @@ interface IVerifier {
     /// @param dataUpdate The data update
     /// @param schnorrData The Schnorr signature data
     /// @notice returns true if the signature is valid, false otherwise
-    function verify(
-        DataUpdate calldata dataUpdate,
-        SchnorrSignature calldata schnorrData
-    ) external view returns (bool);
+    function verify(DataUpdate calldata dataUpdate, SchnorrSignature calldata schnorrData) external view returns (bool);
 
     /// @notice Get the current registry version
     /// @return registryVersion The current registry version

@@ -64,7 +64,11 @@ contract AddNode is Script {
         nodes[0] = _loadSingleNode(verifierAddr);
     }
 
-    function _loadNodesFromFile(string memory path, address verifierAddr) private view returns (NodeCred[] memory nodes) {
+    function _loadNodesFromFile(string memory path, address verifierAddr)
+        private
+        view
+        returns (NodeCred[] memory nodes)
+    {
         string memory json = vm.readFile(path);
 
         if (json.keyExists(".privateKeys")) {
@@ -104,8 +108,7 @@ contract AddNode is Script {
 
         node.compressedPubKey = vm.envBytes("COMPRESSED_PUBKEY");
         node.pop = IVerifier.SchnorrProof({
-            signature: vm.envBytes32("POP_SIGNATURE"),
-            commitment: vm.envAddress("POP_COMMITMENT")
+            signature: vm.envBytes32("POP_SIGNATURE"), commitment: vm.envAddress("POP_COMMITMENT")
         });
     }
 

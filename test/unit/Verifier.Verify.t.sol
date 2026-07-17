@@ -81,7 +81,7 @@ contract VerifierVerifyTest is VerifierTestBase {
             _buildVerifyCall(verifier, 3, bytes32("job"), bytes32("value"), 1_700_000_007);
 
         IVerifier.DataUpdate memory tampered = update;
-        tampered.jobId = bytes32("other job");
+        tampered.feedId = bytes32("other job");
         assertFalse(verifier.verify(tampered, schnorr));
 
         tampered = update;
@@ -119,7 +119,7 @@ contract VerifierVerifyTest is VerifierTestBase {
 
     function test_verify_revertsForInvalidRegistryVersion() public {
         IVerifier.DataUpdate memory update = IVerifier.DataUpdate({
-            jobId: bytes32("job"),
+            feedId: bytes32("job"),
             registryVersion: 1,
             signaturesRequired: 1,
             value: bytes32("value"),
@@ -133,7 +133,7 @@ contract VerifierVerifyTest is VerifierTestBase {
 
     function test_verify_revertsWhenRegistryHasNoNodes() public {
         IVerifier.DataUpdate memory update = IVerifier.DataUpdate({
-            jobId: bytes32("job"),
+            feedId: bytes32("job"),
             registryVersion: 0,
             signaturesRequired: 1,
             value: bytes32("value"),
@@ -148,7 +148,7 @@ contract VerifierVerifyTest is VerifierTestBase {
     function test_verify_revertsForZeroSignaturesRequired() public {
         _addNodes(verifier, 1);
         IVerifier.DataUpdate memory update = IVerifier.DataUpdate({
-            jobId: bytes32("job"),
+            feedId: bytes32("job"),
             registryVersion: uint32(verifier.getRegistryVersion()),
             signaturesRequired: 0,
             value: bytes32("value"),
@@ -221,7 +221,7 @@ contract VerifierVerifyTest is VerifierTestBase {
     }
 
     function testFuzz_verifyAcceptsValidSelectedCoalition(
-        bytes32 jobId,
+        bytes32 feedId,
         bytes32 value,
         uint64 canonicalTimestamp,
         uint8 thresholdSeed,
@@ -237,7 +237,7 @@ contract VerifierVerifyTest is VerifierTestBase {
         uint256 signerCount = bound(signerCountSeed, threshold, groupSize);
 
         (IVerifier.DataUpdate memory update, IVerifier.SchnorrSignature memory schnorr) =
-            _buildVerifyCall(verifier, threshold, signerCount, jobId, value, canonicalTimestamp);
+            _buildVerifyCall(verifier, threshold, signerCount, feedId, value, canonicalTimestamp);
 
         assertTrue(verifier.verify(update, schnorr));
     }
