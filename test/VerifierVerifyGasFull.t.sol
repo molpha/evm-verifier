@@ -83,7 +83,7 @@ contract VerifierVerifyGasFullTest is Test {
     }
 
     function _selectionSeed(IVerifier.DataUpdate memory du) internal pure returns (bytes32) {
-        return keccak256(abi.encodePacked(SELECTION_SEED_PREFIX, du.jobId, du.registryVersion, du.canonicalTimestamp));
+        return keccak256(abi.encodePacked(SELECTION_SEED_PREFIX, du.feedId, du.registryVersion, du.canonicalTimestamp));
     }
 
     function _constructMessage(IVerifier.DataUpdate memory du, uint256 signersBitmap)
@@ -94,7 +94,7 @@ contract VerifierVerifyGasFullTest is Test {
         return keccak256(
                 abi.encodePacked(
                     MESSAGE_PREFIX,
-                    du.jobId,
+                    du.feedId,
                     du.registryVersion,
                     du.signaturesRequired,
                     signersBitmap,
@@ -154,12 +154,12 @@ contract VerifierVerifyGasFullTest is Test {
         LibSecp256k1.Point[] memory allPubkeys,
         uint256[] memory allSecrets,
         uint256 threshold,
-        bytes32 jobId,
+        bytes32 feedId,
         bytes32 value,
         uint64 canonicalTimestamp
     ) internal view returns (VerifyCall memory c) {
         c.dataUpdate = IVerifier.DataUpdate({
-            jobId: jobId,
+            feedId: feedId,
             registryVersion: uint32(validator.getRegistryVersion()),
             signaturesRequired: uint32(threshold),
             value: value,
@@ -208,7 +208,7 @@ contract VerifierVerifyGasFullTest is Test {
             fs.reg.addNode(compressed, _popSig(address(fs.reg), compressed, allSecrets[i]));
         }
 
-        bytes32 jobId = bytes32(uint256(keccak256("VALIDATOR_VERIFY_GAS_JOB")));
+        bytes32 feedId = bytes32(uint256(keccak256("VALIDATOR_VERIFY_GAS_JOB")));
 
         vm.warp(1_000_000);
         uint64 tsBase = uint64(block.timestamp);
@@ -218,7 +218,7 @@ contract VerifierVerifyGasFullTest is Test {
             allPubkeys,
             allSecrets,
             s.threshold,
-            jobId,
+            feedId,
             bytes32(uint256(1)),
             tsBase + 1
         );
@@ -228,7 +228,7 @@ contract VerifierVerifyGasFullTest is Test {
             allPubkeys,
             allSecrets,
             s.threshold,
-            jobId,
+            feedId,
             bytes32(uint256(2)),
             tsBase + 2
         );

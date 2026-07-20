@@ -69,7 +69,7 @@ contract VerifierCompatFixtureTest is Test {
 
     function _fixtureDataUpdate() internal pure returns (IVerifier.DataUpdate memory du) {
         du = IVerifier.DataUpdate({
-            jobId: FIXTURE_JOB_ID,
+            feedId: FIXTURE_JOB_ID,
             registryVersion: uint32(FIXTURE_REGISTRY_VERSION),
             signaturesRequired: 8,
             value: FIXTURE_VALUE,

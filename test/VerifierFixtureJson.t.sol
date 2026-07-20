@@ -33,7 +33,7 @@ contract VerifierFixtureJsonTest is Test {
 
     function _loadDataUpdate(string memory json) internal view returns (IVerifier.DataUpdate memory du) {
         du = IVerifier.DataUpdate({
-            jobId: json.readBytes32(".dataUpdate.jobId"),
+            feedId: json.readBytes32(".dataUpdate.feedId"),
             registryVersion: uint32(json.readUint(".dataUpdate.registryVersion")),
             signaturesRequired: uint32(json.readUint(".dataUpdate.signaturesRequired")),
             value: json.readBytes32(".dataUpdate.value"),

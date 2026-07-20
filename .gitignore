@@ -4,3 +4,13 @@ out
 cache
 .env
 broadcast
+.env.*
+!.env.example
+.venv*/
+.vscode/
+
+# Local deployment inputs and debug output
+/nodes.json
+/rpc-urls.txt
+/trace.json
+deployments

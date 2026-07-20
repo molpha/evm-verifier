@@ -10,6 +10,9 @@ import {PopSignLib} from "./libs/PopSignLib.sol";
 
 bytes32 constant POP_DOMAIN = keccak256("MOLPHA_VALIDATOR_V1");
 
+error NoNodesInFile();
+error PrivateKeyNotProtocolAdmin();
+
 /// @title AddNode
 /// @notice Register one or more oracle nodes on a deployed `Verifier`.
 /// @dev Env:
@@ -37,7 +40,7 @@ contract AddNode is Script {
 
         uint256 adminKey = vm.envUint("PRIVATE_KEY");
         address admin = vm.addr(adminKey);
-        require(verifier.protocolAdmin() == admin, "PRIVATE_KEY is not protocol admin");
+        if (verifier.protocolAdmin() != admin) revert PrivateKeyNotProtocolAdmin();
         vm.startBroadcast(adminKey);
 
         for (uint256 i = 0; i < nodes.length; ++i) {
@@ -64,7 +67,11 @@ contract AddNode is Script {
         nodes[0] = _loadSingleNode(verifierAddr);
     }
 
-    function _loadNodesFromFile(string memory path, address verifierAddr) private view returns (NodeCred[] memory nodes) {
+    function _loadNodesFromFile(string memory path, address verifierAddr)
+        private
+        view
+        returns (NodeCred[] memory nodes)
+    {
         string memory json = vm.readFile(path);
 
         if (json.keyExists(".privateKeys")) {
@@ -80,7 +87,7 @@ contract AddNode is Script {
         while (json.keyExists(string.concat(".nodes[", vm.toString(count), "]"))) {
             ++count;
         }
-        require(count > 0, "No nodes in file");
+        if (count == 0) revert NoNodesInFile();
 
         nodes = new NodeCred[](count);
         for (uint256 i = 0; i < count; ++i) {
@@ -104,8 +111,7 @@ contract AddNode is Script {
 
         node.compressedPubKey = vm.envBytes("COMPRESSED_PUBKEY");
         node.pop = IVerifier.SchnorrProof({
-            signature: vm.envBytes32("POP_SIGNATURE"),
-            commitment: vm.envAddress("POP_COMMITMENT")
+            signature: vm.envBytes32("POP_SIGNATURE"), commitment: vm.envAddress("POP_COMMITMENT")
         });
     }
 

@@ -82,7 +82,7 @@ contract VerifierTest is Test {
     }
 
     function _selectionSeed(IVerifier.DataUpdate memory du) internal pure returns (bytes32) {
-        return keccak256(abi.encodePacked(SELECTION_SEED_PREFIX, du.jobId, du.registryVersion, du.canonicalTimestamp));
+        return keccak256(abi.encodePacked(SELECTION_SEED_PREFIX, du.feedId, du.registryVersion, du.canonicalTimestamp));
     }
 
     function _constructMessage(IVerifier.DataUpdate memory du, uint256 signersBitmap)
@@ -93,7 +93,7 @@ contract VerifierTest is Test {
         return keccak256(
                 abi.encodePacked(
                     MESSAGE_PREFIX,
-                    du.jobId,
+                    du.feedId,
                     du.registryVersion,
                     du.signaturesRequired,
                     signersBitmap,
@@ -129,12 +129,12 @@ contract VerifierTest is Test {
     function _buildVerify(
         Verifier validator,
         uint256 sigReq,
-        bytes32 jobId,
+        bytes32 feedId,
         bytes32 value,
         uint64 canonicalTs
     ) internal view returns (IVerifier.DataUpdate memory du, IVerifier.SchnorrSignature memory sch) {
         du = IVerifier.DataUpdate({
-            jobId: jobId,
+            feedId: feedId,
             registryVersion: uint32(validator.getRegistryVersion()),
             signaturesRequired: uint32(sigReq),
             value: value,
@@ -330,7 +330,7 @@ contract VerifierTest is Test {
 
     function test_verify_revert_no_nodes() public {
         IVerifier.DataUpdate memory du = IVerifier.DataUpdate({
-            jobId: bytes32(uint256(1)),
+            feedId: bytes32(uint256(1)),
             registryVersion: 0,
             signaturesRequired: 1,
             value: bytes32(uint256(3)),
@@ -344,7 +344,7 @@ contract VerifierTest is Test {
 
     function test_verify_revert_invalid_registry_version() public {
         IVerifier.DataUpdate memory du = IVerifier.DataUpdate({
-            jobId: bytes32(uint256(1)),
+            feedId: bytes32(uint256(1)),
             registryVersion: 1,
             signaturesRequired: 1,
             value: bytes32(uint256(3)),
@@ -401,7 +401,7 @@ contract VerifierTest is Test {
         _addNodes(v, 5);
 
         IVerifier.DataUpdate memory du = IVerifier.DataUpdate({
-            jobId: bytes32("zero-threshold"),
+            feedId: bytes32("zero-threshold"),
             registryVersion: uint32(v.getRegistryVersion()),
             signaturesRequired: 0,
             value: bytes32("val"),
@@ -468,7 +468,7 @@ contract VerifierTest is Test {
         _addNodes(v, 2);
         // redundancyBuffer=2 → uncapped grpSize = 4, capped to nodeCount = 2
         IVerifier.DataUpdate memory du = IVerifier.DataUpdate({
-            jobId: bytes32("x"),
+            feedId: bytes32("x"),
             registryVersion: uint32(v.getRegistryVersion()),
             signaturesRequired: 2,
             value: bytes32(0),
@@ -494,13 +494,13 @@ contract VerifierTest is Test {
 
     // --- gas (execution + estimated total) ---
 
-    function _benchVerify(uint256 numNodes, uint256 sigReq, bytes32 jobId) internal {
+    function _benchVerify(uint256 numNodes, uint256 sigReq, bytes32 feedId) internal {
         vm.pauseGasMetering();
         Verifier vv = new Verifier(address(this), 2);
         _addNodes(vv, numNodes);
 
         (IVerifier.DataUpdate memory du, IVerifier.SchnorrSignature memory sch) =
-            _buildVerify(vv, sigReq, jobId, bytes32("val"), uint64(1700000100));
+            _buildVerify(vv, sigReq, feedId, bytes32("val"), uint64(1700000100));
 
         bytes memory cd = abi.encodeCall(IVerifier.verify, (du, sch));
         uint256 cdCost = _calldataCost(cd);
@@ -542,7 +542,7 @@ contract VerifierTest is Test {
 
         // Build a deterministic data update.
         IVerifier.DataUpdate memory du = IVerifier.DataUpdate({
-            jobId: bytes32("solana-compat-job"),
+            feedId: bytes32("solana-compat-job"),
             registryVersion: uint32(v.getRegistryVersion()),
             signaturesRequired: uint32(sigReq),
             value: bytes32("solana-compat-val"),
@@ -606,7 +606,7 @@ contract VerifierTest is Test {
         out = string.concat(out, "],");
 
         out = string.concat(out, '"dataUpdate":{');
-        out = string.concat(out, '"jobId":"', vm.toString(du.jobId), '",');
+        out = string.concat(out, '"feedId":"', vm.toString(du.feedId), '",');
         out = string.concat(out, '"registryVersion":', vm.toString(uint256(du.registryVersion)), ",");
         out = string.concat(out, '"signaturesRequired":', vm.toString(sigReq), ",");
         out = string.concat(out, '"value":"', vm.toString(du.value), '",');
