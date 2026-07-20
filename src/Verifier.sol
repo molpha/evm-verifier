@@ -144,15 +144,9 @@ contract Verifier is IVerifier {
 
         if (nodeIndexes[node] != 0) revert NodeAlreadyAdded();
 
-        LibSecp256k1.Point memory agg;
-        if (nextIndex == START_INDEX) {
-            agg = pubkey;
-        } else {
-            LibSecp256k1.Point memory currAgg = keysBlob.getNode(0);
-            (uint256 ax, uint256 ay, uint256 az) =
-                LibSecp256k1.addAffinePointToXYZ(currAgg.x, currAgg.y, 1, pubkey.x, pubkey.y);
-            agg = LibSecp256k1.toAffineModexpXYZ(ax, ay, az);
-        }
+        /// @dev Index 0 holds the running aggregate, `(0, 0)` when the node set sums to infinity.
+        ///      `addAffine` handles that sentinel plus the doubling / mutual-negation cases.
+        LibSecp256k1.Point memory agg = LibSecp256k1.addAffine(keysBlob.getNode(0), pubkey);
 
         keysBlob.addPubkeyWithAggregate(pubkey, agg);
         address newPointer = SSTORE2.write(keysBlob);
@@ -178,15 +172,10 @@ contract Verifier is IVerifier {
 
         uint256 px = nodeKeyX[index];
         uint256 py = nodeKeyY[index];
-        LibSecp256k1.Point memory nextAgg;
-        if (len == START_INDEX + 1) {
-            nextAgg = LibSecp256k1.ZERO_POINT();
-        } else {
-            uint256 negY = LibSecp256k1.fieldP() - py;
-            LibSecp256k1.Point memory currAgg = keysBlob.getNode(0);
-            (uint256 ax, uint256 ay, uint256 az) = LibSecp256k1.addAffinePointToXYZ(currAgg.x, currAgg.y, 1, px, negY);
-            nextAgg = LibSecp256k1.toAffineModexpXYZ(ax, ay, az);
-        }
+        /// @dev Subtracting is adding the negated key; `addAffine` collapses to `(0, 0)` when the
+        ///      removed node was the whole aggregate, and handles a `(0, 0)` starting aggregate.
+        LibSecp256k1.Point memory nextAgg =
+            LibSecp256k1.addAffine(keysBlob.getNode(0), LibSecp256k1.Point({x: px, y: LibSecp256k1.fieldP() - py}));
 
         if (index != len - 1) {
             LibSecp256k1.Point memory swappedNode = keysBlob.getNode(len - 1);
