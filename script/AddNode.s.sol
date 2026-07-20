@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: UNLICENSED
+// SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.31;
 
 import {Script, console2} from "forge-std/Script.sol";
@@ -8,7 +8,7 @@ import {IVerifier} from "../src/interfaces/IVerifier.sol";
 import {LibSecp256k1} from "../src/libs/LibSecp256k1.sol";
 import {PopSignLib} from "./libs/PopSignLib.sol";
 
-bytes32 constant POP_DOMAIN = keccak256("MOLPHA_VALIDATOR_V1");
+bytes32 constant POP_DOMAIN = keccak256("MOLPHA_VERIFIER_V1");
 
 error NoNodesInFile();
 error PrivateKeyNotProtocolAdmin();

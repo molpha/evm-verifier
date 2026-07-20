@@ -146,7 +146,7 @@ The proof signs:
 
 ```text
 keccak256(
-  keccak256("MOLPHA_VALIDATOR_V1") ||
+  keccak256("MOLPHA_VERIFIER_V1") ||
   verifierAddress ||
   compressedPubKey
 )
@@ -257,7 +257,7 @@ CI runs formatting, build, normal tests, fuzz tests, and Forge lint.
 The predicted address depends on:
 
 - CREATE2 factory: `0x4e59b44847b379578588920cA78FbF26c0B4956C`
-- Salt: `keccak256("MOLPHA_VERIFIER_BREBELESKUL")`
+- Salt: `keccak256("MOLPHA_VERIFIER_BREBENESKUL")`
 - Constructor args: `initialProtocolAdmin = deployer`, `initialRedundancyBuffer = 2`
 - Compiler, optimizer, EVM version, and init code
 

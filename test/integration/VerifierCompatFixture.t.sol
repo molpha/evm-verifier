@@ -14,7 +14,7 @@ import {LibSchnorrTestSign} from "../libs/LibSchnorrTestSign.sol";
 contract VerifierCompatFixtureTest is Test {
     using LibSecp256k1 for LibSecp256k1.Point;
 
-    bytes32 internal constant POP_DOMAIN = keccak256("MOLPHA_VALIDATOR_V1");
+    bytes32 internal constant POP_DOMAIN = keccak256("MOLPHA_VERIFIER_V1");
 
     uint256 internal constant REGISTERED_NODE_COUNT = 8;
     uint256 internal constant FIXTURE_REGISTRY_VERSION = 8;

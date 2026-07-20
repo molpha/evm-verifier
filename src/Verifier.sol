@@ -25,7 +25,7 @@ contract Verifier is IVerifier {
     uint256 private constant SSTORE2_DATA_OFFSET = 1;
     uint256 private constant POINT_COORD_BYTES = 64;
 
-    bytes32 private constant POP_DOMAIN = keccak256("MOLPHA_VALIDATOR_V1");
+    bytes32 private constant POP_DOMAIN = keccak256("MOLPHA_VERIFIER_V1");
     bytes32 private constant SELECTION_SEED_PREFIX = keccak256("MOLPHA_SELECTION_V1");
     bytes32 private constant MESSAGE_PREFIX = keccak256("MOLPHA_MESSAGE_V1");
 

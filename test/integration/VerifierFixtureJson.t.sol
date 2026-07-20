@@ -17,7 +17,7 @@ contract VerifierFixtureJsonTest is Test {
     using stdJson for string;
     using LibSecp256k1 for LibSecp256k1.Point;
 
-    bytes32 internal constant POP_DOMAIN = keccak256("MOLPHA_VALIDATOR_V1");
+    bytes32 internal constant POP_DOMAIN = keccak256("MOLPHA_VERIFIER_V1");
     string internal constant FIXTURE_PATH = "test/fixtures/fixture.json";
 
     function _pop(address validatorAddr, bytes memory compressed, uint256 sk)
