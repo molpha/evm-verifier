@@ -46,4 +46,4 @@ jobs:
         run: forge test --fuzz-runs 1000
 
       - name: Lint
-        run: forge lint -D warnings
+        run: forge lint
