@@ -14,7 +14,7 @@ library LibSchnorr {
 
     /// @dev verifySignature without the isOnCurve and signature-range guards.
     ///      Safe to call when pubKey is a sum of on-curve effective keys (closed under
-    ///      EC addition) and the caller has already checked signature != 0 and commitment != 0.
+    ///      EC addition) and the caller has already checked signature ∊ [1, Q) and commitment != 0.
     ///      Saves ~500 gas per verify vs the defensive variant.
     function verifySignatureTrusted(
         LibSecp256k1.Point memory pubKey,

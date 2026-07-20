@@ -9,6 +9,8 @@ import {LibSchnorr} from "../../src/libs/LibSchnorr.sol";
 library LibSchnorrTestSign {
     using LibSecp256k1 for LibSecp256k1.Point;
 
+    error CouldNotProduceSignature();
+
     /// @notice Produce `(signature, commitment)` for `pubKey` / `privateKey` / `message`.
     /// @param privateKey Discrete log of `pubKey` on secp256k1: `[privateKey]G == pubKey`.
     /// @param nonceSalt Varies the deterministic nonce search if the first attempts fail rare edge cases.
@@ -54,6 +56,6 @@ library LibSchnorrTestSign {
                 return (signature, commitment);
             }
         }
-        revert("LibSchnorrTestSign: could not produce signature");
+        revert CouldNotProduceSignature();
     }
 }

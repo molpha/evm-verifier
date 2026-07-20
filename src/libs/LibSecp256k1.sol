@@ -17,6 +17,15 @@ library LibSecp256k1 {
     using LibSecp256k1 for LibSecp256k1.Point;
     using LibSecp256k1 for LibSecp256k1.JacobianPoint;
 
+    error CompressedPubkeyXOutOfRange();
+    error CoordinatesOutOfRange();
+    error InvalidCompressedPubkeyLength();
+    error InvalidCompressedPubkeyPrefix();
+    error InvalidZeroParity();
+    error ModExpFailed();
+    error ModExpResultOutOfRange();
+    error PointNotOnCurve();
+
     uint256 private constant ADDRESS_MASK = 0x000000000000000000000000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF;
 
     // -- Secp256k1 Constants --
@@ -396,16 +405,16 @@ library LibSecp256k1 {
     /// @param comp Compressed pubkey: 0x02/0x03 prefix + 32-byte x
     /// @return point Struct with affine coordinates
     function decompress(bytes memory comp) internal view returns (Point memory point) {
-        require(comp.length == 33, "invalid length");
+        if (comp.length != 33) revert InvalidCompressedPubkeyLength();
         uint8 prefix = uint8(comp[0]);
-        require(prefix == 0x02 || prefix == 0x03, "bad prefix");
+        if (prefix != 0x02 && prefix != 0x03) revert InvalidCompressedPubkeyPrefix();
 
         uint256 x;
         assembly {
             // load 32 bytes starting at comp+0x21 (first byte of X)
             x := mload(add(comp, 0x21))
         }
-        require(x < _P, "x>=p");
+        if (x >= _P) revert CompressedPubkeyXOutOfRange();
 
         // y = sqrt(x^3+7) mod p
         uint256 xx = mulmod(x, x, _P);
@@ -414,7 +423,7 @@ library LibSecp256k1 {
 
         // pick root matching prefix (0x02 even, 0x03 odd)
         if ((y & 1) != (prefix & 1)) y = _P - y;
-        if (rhs == 0) require(prefix == 0x02, "invalid zero parity");
+        if (rhs == 0 && prefix != 0x02) revert InvalidZeroParity();
 
         point = Point(x, y);
     }
@@ -422,11 +431,11 @@ library LibSecp256k1 {
     /// @notice Compress affine point into 33-byte form (0x02/0x03 + X)
     /// @dev Validates point is on secp256k1 curve
     function compress(Point memory p) internal pure returns (bytes memory comp) {
-        require(p.x < _P && p.y < _P, "coord>=p");
+        if (p.x >= _P || p.y >= _P) revert CoordinatesOutOfRange();
         // y^2 == x^3 + 7 mod p
         uint256 lhs = mulmod(p.y, p.y, _P);
         uint256 rhs = addmod(mulmod(mulmod(p.x, p.x, _P), p.x, _P), _B, _P);
-        require(lhs == rhs, "not on curve");
+        if (lhs != rhs) revert PointNotOnCurve();
 
         bytes1 prefix = (p.y & 1 == 0) ? bytes1(0x02) : bytes1(0x03);
         // ← avoids any ambiguity with mstore offsets
@@ -505,8 +514,8 @@ library LibSecp256k1 {
         assembly ("memory-safe") {
             ok := staticcall(gas(), 5, input, 192, out, 32)
         }
-        require(ok, "modexp failed");
+        if (!ok) revert ModExpFailed();
         result = out[0];
-        require(result < mod, "modexp>=mod");
+        if (result >= mod) revert ModExpResultOutOfRange();
     }
 }

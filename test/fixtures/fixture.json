@@ -1,4 +1,6 @@
 {
+  "producer": "molpha-node-sdk",
+  "payloadKind": "cross-language-golden-vector",
   "registeredNodeCount": 10,
   "registryVersion": 10,
   "configHash": "0x8845642f1043af0e50a6e432925c887893348dbdaa045f49e6f7b6a7f633481a",

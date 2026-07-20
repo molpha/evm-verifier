@@ -89,11 +89,11 @@ contract NodeGroupBitmapLibTest is Test {
     }
 
     function test_derive_reverts_invalid_inputs() public {
-        vm.expectRevert(bytes("nodeCount is zero"));
+        vm.expectRevert(NodeGroupBitmapLib.ZeroNodeCount.selector);
         this.externalDerive(bytes32(0), 0, 1);
-        vm.expectRevert(bytes("nCount exceeds 256"));
+        vm.expectRevert(NodeGroupBitmapLib.NodeCountExceedsMax.selector);
         this.externalDerive(bytes32(0), 257, 1);
-        vm.expectRevert(bytes("groupSize exceeds nodeCount"));
+        vm.expectRevert(NodeGroupBitmapLib.GroupSizeExceedsNodeCount.selector);
         this.externalDerive(bytes32(0), 4, 5);
     }
 

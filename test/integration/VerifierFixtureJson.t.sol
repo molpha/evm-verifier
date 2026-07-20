@@ -10,7 +10,7 @@ import {LibSecp256k1} from "../../src/libs/LibSecp256k1.sol";
 import {LibSchnorrTestSign} from "../libs/LibSchnorrTestSign.sol";
 
 /// @title VerifierFixtureJsonTest
-/// @dev Golden compatibility test driven by `test/fixtures/fixture.json`.
+/// @dev Golden compatibility test driven by `test/fixtures/fixture.json` from the Molpha node/SDK.
 ///      PoP proofs are derived from fixture private keys (required for `addNode`);
 ///      verify inputs are taken verbatim from the fixture and not re-signed on-chain.
 contract VerifierFixtureJsonTest is Test {
@@ -49,8 +49,11 @@ contract VerifierFixtureJsonTest is Test {
         });
     }
 
-    function test_verify_fixture_json() public {
+    function test_verify_actualMolphaSdkGoldenVector_fixtureJsonPayloadVerbatim() public {
         string memory json = vm.readFile(FIXTURE_PATH);
+
+        assertEq(json.readString(".producer"), "molpha-node-sdk", "fixture producer");
+        assertEq(json.readString(".payloadKind"), "cross-language-golden-vector", "fixture payload kind");
 
         uint256 registeredNodeCount = json.readUint(".registeredNodeCount");
         uint256 expectedRegistryVersion = json.readUint(".registryVersion");

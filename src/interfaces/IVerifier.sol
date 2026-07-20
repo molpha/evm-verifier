@@ -4,6 +4,27 @@ pragma solidity ^0.8.31;
 /// @title IVerifier
 /// @notice Interface for the Verifier
 interface IVerifier {
+    error BadIndex();
+    error InvalidPoP();
+    error InvalidAggregatePublicKey();
+    error InvalidPublicKey();
+    error InvalidRegistryVersion();
+    error InvalidSignatureScalar();
+    error MaxNodesReached();
+    error NoNodes();
+    error NodeAlreadyAdded();
+    error NotEnoughSignatures();
+    error NotNode();
+    error NotProtocolAdmin();
+    error RedundancyBufferExceedsMax();
+    error SignerNotSelected();
+    error ZeroAddress();
+    error ZeroAdmin();
+    error ZeroCommitment();
+    error ZeroSignature();
+    error ZeroSignaturesRequired();
+    error ZeroSignersBitmap();
+
     /// @notice Generic Schnorr proof data used for PoP and aggregate verification inputs.
     /// @param signature Schnorr scalar `s`
     /// @param commitment Ethereum address of commitment point `R`
@@ -53,12 +74,12 @@ interface IVerifier {
     /// @param newRedundancyBuffer The new redundancy buffer value
     event LogRedundancyBufferUpdated(uint256 newRedundancyBuffer);
 
-    /// @notice Add a new node in the aggregator group
+    /// @notice Add a new node to the verifier
     /// @param compressedPubKey Compressed public key of the node
     /// @param pop Schnorr proof-of-possession by the same key over the registration domain message
     function addNode(bytes memory compressedPubKey, SchnorrProof calldata pop) external;
 
-    /// @notice Remove a node from the aggregator group
+    /// @notice Remove a node from the verifier
     /// @param node Address of the node to remove
     function removeNode(address node) external;
 
@@ -94,7 +115,7 @@ interface IVerifier {
     /// @return isActive Whether the node is active
     function isNode(address node) external view returns (bool isActive);
 
-    /// @notice Get the total number of nodes in the aggregator group
+    /// @notice Get the total number of nodes in the verifier
     /// @return totalNodes The total number of nodes
     function getTotalNodes() external view returns (uint256 totalNodes);
 
