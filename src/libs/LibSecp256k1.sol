@@ -344,6 +344,35 @@ library LibSecp256k1 {
         }
     }
 
+    /// @dev Adds two affine points, treating `(0, 0)` as the point at infinity.
+    ///
+    ///      The mixed madd-2007-bl formula used by `addAffinePointToXYZ` is only
+    ///      defined for two distinct, non-infinite points: it degenerates to
+    ///      `z = 0` whenever the operands share an x coordinate, and it silently
+    ///      produces an off-curve result when either operand is the `(0, 0)`
+    ///      infinity sentinel. This wrapper handles all three exceptional cases:
+    ///      identity operands, doubling (`a == b`) and mutual negation
+    ///      (`a == -b`, which yields infinity).
+    ///
+    ///      It is the caller's responsibility to ensure both operands are either
+    ///      the infinity sentinel or on the curve.
+    function addAffine(Point memory a, Point memory b) internal view returns (Point memory) {
+        if (a.isZeroPoint()) return Point({x: b.x, y: b.y});
+        if (b.isZeroPoint()) return Point({x: a.x, y: a.y});
+
+        // On secp256k1 a shared x coordinate means `b == a` or `b == -a`.
+        if (a.x == b.x) {
+            if (a.y != b.y) return ZERO_POINT();
+
+            JacobianPoint memory doubled = a.toJacobian();
+            doubled.jacobianDouble();
+            return toAffineModexpXYZ(doubled.x, doubled.y, doubled.z);
+        }
+
+        (uint256 x, uint256 y, uint256 z) = addAffinePointToXYZ(a.x, a.y, 1, b.x, b.y);
+        return toAffineModexpXYZ(x, y, z);
+    }
+
     /// @dev Field modulus p for the short Weierstrass curve (public for companion libraries).
     function fieldP() internal pure returns (uint256) {
         return _P;

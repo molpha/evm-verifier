@@ -223,7 +223,7 @@ forge fmt --check
 forge build --sizes
 forge test -vvv
 forge test --fuzz-runs 10000
-forge coverage --ir-minimum --report summary
+FOUNDRY_PROFILE=coverage forge coverage --ir-minimum --report summary
 forge lint
 ```
 
@@ -232,6 +232,10 @@ Gas probes live under `test/gas/` and are excluded from the default profile:
 ```bash
 FOUNDRY_PROFILE=gas forge test -vv
 ```
+
+The coverage profile excludes two 256-node boundary tests that remain covered by
+the normal test suite but exceed Foundry's instrumentation gas ceiling under
+`forge coverage`.
 
 ### Test layout
 
