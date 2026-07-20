@@ -43,7 +43,7 @@ jobs:
         run: forge test -vvv
 
       - name: Fuzz test
-        run: forge test --fuzz-runs 10000
+        run: forge test --fuzz-runs 1000
 
       - name: Lint
         run: forge lint

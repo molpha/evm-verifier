@@ -50,7 +50,7 @@ library NodeGroupBitmapLib {
         pure
         returns (uint256 bitmap)
     {
-        uint256 limit = (uint256(type(uint32).max) / nCount) * nCount;
+        uint256 limit = (uint256(1) << 32) - ((uint256(1) << 32) % nCount);
         uint256 selected;
         uint256 counter;
         while (selected < groupSize) {

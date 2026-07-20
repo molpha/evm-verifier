@@ -23,19 +23,16 @@ library LibSchnorr {
         address commitment
     ) internal pure returns (bool) {
         uint256 px = pubKey.x;
-        uint256 parity = pubKey.yParity();
+        uint8 parity = pubKey.yParity() == 0 ? 0 : 1;
         uint256 challenge =
-            uint256(keccak256(abi.encodePacked(px, uint8(parity), message, commitment))) % LibSecp256k1.Q();
+            uint256(keccak256(abi.encodePacked(px, parity, message, commitment))) % LibSecp256k1.Q();
 
         uint256 msgHash;
         unchecked {
             msgHash = LibSecp256k1.Q() - mulmod(uint256(signature), px, LibSecp256k1.Q());
         }
 
-        uint256 v;
-        unchecked {
-            v = parity + 27;
-        }
+        uint8 v = parity + 27;
 
         uint256 r = px;
         uint256 s;
@@ -43,7 +40,7 @@ library LibSchnorr {
             s = LibSecp256k1.Q() - mulmod(challenge, px, LibSecp256k1.Q());
         }
 
-        address recovered = ecrecover(bytes32(msgHash), uint8(v), bytes32(r), bytes32(s));
+        address recovered = ecrecover(bytes32(msgHash), v, bytes32(r), bytes32(s));
         return commitment == recovered;
     }
 
@@ -83,10 +80,10 @@ library LibSchnorr {
         }
 
         uint256 px = pubKey.x;
-        uint256 parity = pubKey.yParity();
+        uint8 parity = pubKey.yParity() == 0 ? 0 : 1;
         // Construct challenge = H(Pₓ ‖ Pₚ ‖ m ‖ Rₑ) mod Q
         uint256 challenge =
-            uint256(keccak256(abi.encodePacked(px, uint8(parity), message, commitment))) % LibSecp256k1.Q();
+            uint256(keccak256(abi.encodePacked(px, parity, message, commitment))) % LibSecp256k1.Q();
 
         // Compute msgHash = -sig * Pₓ      (mod Q)
         //                 = Q - (sig * Pₓ) (mod Q)
@@ -99,14 +96,8 @@ library LibSchnorr {
             msgHash = LibSecp256k1.Q() - mulmod(uint256(signature), px, LibSecp256k1.Q());
         }
 
-        // Compute v = Pₚ + 27
-        //
-        // Unchecked because pubKey.yParity() ∊ {0, 1} which cannot overflow
-        // by adding 27.
-        uint256 v;
-        unchecked {
-            v = parity + 27;
-        }
+        // Compute v = Pₚ + 27.
+        uint8 v = parity + 27;
 
         // Set r = Pₓ
         uint256 r = px;
@@ -122,7 +113,7 @@ library LibSchnorr {
         }
 
         // Compute ([s]G - [e]P)ₑ via ecrecover.
-        address recovered = ecrecover(bytes32(msgHash), uint8(v), bytes32(r), bytes32(s));
+        address recovered = ecrecover(bytes32(msgHash), v, bytes32(r), bytes32(s));
 
         // Verification succeeds iff ([s]G - [e]P)ₑ = Rₑ.
         //
