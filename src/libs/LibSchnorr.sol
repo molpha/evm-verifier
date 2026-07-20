@@ -24,8 +24,7 @@ library LibSchnorr {
     ) internal pure returns (bool) {
         uint256 px = pubKey.x;
         uint8 parity = pubKey.yParity() == 0 ? 0 : 1;
-        uint256 challenge =
-            uint256(keccak256(abi.encodePacked(px, parity, message, commitment))) % LibSecp256k1.Q();
+        uint256 challenge = uint256(keccak256(abi.encodePacked(px, parity, message, commitment))) % LibSecp256k1.Q();
 
         uint256 msgHash;
         unchecked {
@@ -82,8 +81,7 @@ library LibSchnorr {
         uint256 px = pubKey.x;
         uint8 parity = pubKey.yParity() == 0 ? 0 : 1;
         // Construct challenge = H(Pₓ ‖ Pₚ ‖ m ‖ Rₑ) mod Q
-        uint256 challenge =
-            uint256(keccak256(abi.encodePacked(px, parity, message, commitment))) % LibSecp256k1.Q();
+        uint256 challenge = uint256(keccak256(abi.encodePacked(px, parity, message, commitment))) % LibSecp256k1.Q();
 
         // Compute msgHash = -sig * Pₓ      (mod Q)
         //                 = Q - (sig * Pₓ) (mod Q)
