@@ -4,13 +4,13 @@ pragma solidity ^0.8.31;
 import {Test} from "forge-std/Test.sol";
 import {stdJson} from "forge-std/StdJson.sol";
 
-import {Verifier} from "../src/Verifier.sol";
-import {IVerifier} from "../src/interfaces/IVerifier.sol";
-import {LibSecp256k1} from "../src/libs/LibSecp256k1.sol";
-import {LibSchnorrTestSign} from "./libs/LibSchnorrTestSign.sol";
+import {Verifier} from "../../src/Verifier.sol";
+import {IVerifier} from "../../src/interfaces/IVerifier.sol";
+import {LibSecp256k1} from "../../src/libs/LibSecp256k1.sol";
+import {LibSchnorrTestSign} from "../libs/LibSchnorrTestSign.sol";
 
 /// @title VerifierFixtureJsonTest
-/// @dev Golden compatibility test driven by `test/fixtures/fixture.json`.
+/// @dev Golden compatibility test driven by `test/fixtures/fixture.json` from the Molpha node/SDK.
 ///      PoP proofs are derived from fixture private keys (required for `addNode`);
 ///      verify inputs are taken verbatim from the fixture and not re-signed on-chain.
 contract VerifierFixtureJsonTest is Test {
@@ -33,7 +33,7 @@ contract VerifierFixtureJsonTest is Test {
 
     function _loadDataUpdate(string memory json) internal view returns (IVerifier.DataUpdate memory du) {
         du = IVerifier.DataUpdate({
-            jobId: json.readBytes32(".dataUpdate.jobId"),
+            feedId: json.readBytes32(".dataUpdate.feedId"),
             registryVersion: uint32(json.readUint(".dataUpdate.registryVersion")),
             signaturesRequired: uint32(json.readUint(".dataUpdate.signaturesRequired")),
             value: json.readBytes32(".dataUpdate.value"),
@@ -41,11 +41,7 @@ contract VerifierFixtureJsonTest is Test {
         });
     }
 
-    function _loadSchnorrSignature(string memory json)
-        internal
-        view
-        returns (IVerifier.SchnorrSignature memory sch)
-    {
+    function _loadSchnorrSignature(string memory json) internal view returns (IVerifier.SchnorrSignature memory sch) {
         sch = IVerifier.SchnorrSignature({
             signature: json.readBytes32(".schnorrSignature.signature"),
             commitment: json.readAddress(".schnorrSignature.commitment"),
@@ -53,8 +49,11 @@ contract VerifierFixtureJsonTest is Test {
         });
     }
 
-    function test_verify_fixture_json() public {
+    function test_verify_actualMolphaSdkGoldenVector_fixtureJsonPayloadVerbatim() public {
         string memory json = vm.readFile(FIXTURE_PATH);
+
+        assertEq(json.readString(".producer"), "molpha-node-sdk", "fixture producer");
+        assertEq(json.readString(".payloadKind"), "cross-language-golden-vector", "fixture payload kind");
 
         uint256 registeredNodeCount = json.readUint(".registeredNodeCount");
         uint256 expectedRegistryVersion = json.readUint(".registryVersion");

@@ -21,7 +21,6 @@ contract Verifier is IVerifier {
 
     uint256 constant MAX_NODES = 256;
     uint256 constant START_INDEX = 1;
-    uint256 private constant ROUND_MASK = type(uint32).max;
     uint256 private constant KEYS_ARRAY_HEAD = 64;
     uint256 private constant SSTORE2_DATA_OFFSET = 1;
     uint256 private constant POINT_COORD_BYTES = 64;
@@ -43,11 +42,14 @@ contract Verifier is IVerifier {
     address public protocolAdmin;
 
     modifier onlyProtocolAdmin() {
-        require(msg.sender == protocolAdmin, "Not protocol admin");
+        if (msg.sender != protocolAdmin) revert NotProtocolAdmin();
         _;
     }
 
     constructor(address initialProtocolAdmin, uint256 initialRedundancyBuffer) {
+        if (initialProtocolAdmin == address(0)) revert ZeroAdmin();
+        if (initialRedundancyBuffer > MAX_NODES) revert RedundancyBufferExceedsMax();
+
         redundancyBuffer = initialRedundancyBuffer;
         protocolAdmin = initialProtocolAdmin;
 
@@ -62,14 +64,11 @@ contract Verifier is IVerifier {
         view
         returns (bool isVerified)
     {
-        if (dataUpdate.registryVersion >= registryPointers.length) revert("Invalid registry version");
+        if (dataUpdate.registryVersion >= registryPointers.length) revert InvalidRegistryVersion();
 
         bytes32 selectionSeed = keccak256(
             abi.encodePacked(
-                SELECTION_SEED_PREFIX, 
-                dataUpdate.jobId, 
-                dataUpdate.registryVersion,
-                dataUpdate.canonicalTimestamp
+                SELECTION_SEED_PREFIX, dataUpdate.feedId, dataUpdate.registryVersion, dataUpdate.canonicalTimestamp
             )
         );
 
@@ -77,23 +76,24 @@ contract Verifier is IVerifier {
 
         /// @dev Index 0 holds the aggregate key; indices `1..keysLen-1` are registered nodes.
         uint256 keysLen = _blobEncodedKeysLength(keysPtr);
-        if (keysLen <= 1) revert("No nodes");
+        if (keysLen <= 1) revert NoNodes();
         uint256 nodeCount = keysLen - 1;
 
-        if (dataUpdate.signaturesRequired == 0) revert("Zero signatures required");
-        if (schnorrData.signersBitmap == 0) revert("Zero signers bitmap");
-        if (schnorrData.signature == 0) revert("Zero signature");
-        if (schnorrData.commitment == address(0)) revert("Zero commitment");
+        if (dataUpdate.signaturesRequired == 0) revert ZeroSignaturesRequired();
+        if (schnorrData.signersBitmap == 0) revert ZeroSignersBitmap();
+        if (schnorrData.signature == 0) revert ZeroSignature();
+        if (uint256(schnorrData.signature) >= LibSecp256k1.Q()) revert InvalidSignatureScalar();
+        if (schnorrData.commitment == address(0)) revert ZeroCommitment();
 
         uint256 grpSize = dataUpdate.signaturesRequired + redundancyBuffer;
         grpSize = grpSize > nodeCount ? nodeCount : grpSize;
 
         uint256 signerCount = schnorrData.signersBitmap.popCount();
-        if (signerCount < dataUpdate.signaturesRequired) revert("Not enough signatures");
+        if (signerCount < dataUpdate.signaturesRequired) revert NotEnoughSignatures();
 
         uint256 selectionBitmap = NodeGroupBitmapLib.derive(selectionSeed, nodeCount, grpSize);
 
-        if (schnorrData.signersBitmap & ~selectionBitmap != 0) revert("Signer not selected");
+        if (schnorrData.signersBitmap & ~selectionBitmap != 0) revert SignerNotSelected();
 
         // Ascending 1-based index order: peel lowest set bit from `rem` each iteration.
         bool aggInit;
@@ -118,6 +118,7 @@ contract Verifier is IVerifier {
             }
         }
 
+        if (az == 0) revert InvalidAggregatePublicKey();
         LibSecp256k1.Point memory aggPubKey = LibSecp256k1.toAffineModexpXYZ(ax, ay, az);
 
         isVerified = aggPubKey.verifySignatureTrusted(
@@ -128,8 +129,8 @@ contract Verifier is IVerifier {
     /// @inheritdoc IVerifier
     function addNode(bytes memory compressedPubKey, SchnorrProof calldata pop) external onlyProtocolAdmin {
         LibSecp256k1.Point memory pubkey = LibSecp256k1.decompress(compressedPubKey);
-        if (pubkey.isZeroPoint()) revert("Invalid public key");
-        if (pubkey.toAddress() == address(0)) revert("Zero address");
+        if (pubkey.isZeroPoint()) revert InvalidPublicKey();
+        if (pubkey.toAddress() == address(0)) revert ZeroAddress();
         _verifyPop(pubkey, compressedPubKey, pop);
 
         uint256 registryVersion = registryPointers.length - 1;
@@ -137,11 +138,11 @@ contract Verifier is IVerifier {
         bytes memory keysBlob = SSTORE2.read(keysPtr);
 
         uint256 nextIndex = keysBlob.getNodesLength();
-        if (nextIndex - START_INDEX >= MAX_NODES) revert("Max nodes reached");
+        if (nextIndex - START_INDEX >= MAX_NODES) revert MaxNodesReached();
 
         address node = pubkey.toAddress();
 
-        if (nodeIndexes[node] != 0) revert("Node already added");
+        if (nodeIndexes[node] != 0) revert NodeAlreadyAdded();
 
         LibSecp256k1.Point memory agg;
         if (nextIndex == START_INDEX) {
@@ -166,14 +167,14 @@ contract Verifier is IVerifier {
 
     function removeNode(address node) external onlyProtocolAdmin {
         uint256 index = nodeIndexes[node];
-        if (index == 0) revert("Not node");
+        if (index == 0) revert NotNode();
 
         uint256 registryVersion = registryPointers.length - 1;
         address keysPtr = registryPointers[registryVersion];
 
         bytes memory keysBlob = SSTORE2.read(keysPtr);
         uint256 len = keysBlob.getNodesLength();
-        if (index >= len) revert("Bad index");
+        if (index >= len) revert BadIndex();
 
         uint256 px = nodeKeyX[index];
         uint256 py = nodeKeyY[index];
@@ -207,7 +208,7 @@ contract Verifier is IVerifier {
 
     /// @inheritdoc IVerifier
     function transferProtocolAdmin(address newProtocolAdmin) external override onlyProtocolAdmin {
-        if (newProtocolAdmin == address(0)) revert("Zero admin");
+        if (newProtocolAdmin == address(0)) revert ZeroAdmin();
         address previousAdmin = protocolAdmin;
         protocolAdmin = newProtocolAdmin;
         emit LogProtocolAdminTransferred(previousAdmin, newProtocolAdmin);
@@ -215,6 +216,7 @@ contract Verifier is IVerifier {
 
     /// @inheritdoc IVerifier
     function setRedundancyBuffer(uint256 newRedundancyBuffer) external override onlyProtocolAdmin {
+        if (newRedundancyBuffer > MAX_NODES) revert RedundancyBufferExceedsMax();
         redundancyBuffer = newRedundancyBuffer;
         emit LogRedundancyBufferUpdated(newRedundancyBuffer);
     }
@@ -228,7 +230,7 @@ contract Verifier is IVerifier {
     function getRegistryPointer() external view returns (address registryPointer) {
         uint256 registryVersion = registryPointers.length - 1;
         registryPointer = registryPointers[registryVersion];
-    }   
+    }
 
     /// @inheritdoc IVerifier
     function getRegistryPointer(uint256 registryVersion) external view returns (address registryPointer) {
@@ -291,25 +293,24 @@ contract Verifier is IVerifier {
         returns (bytes32 message)
     {
         message = keccak256(
-                abi.encodePacked(
-                    MESSAGE_PREFIX,
-                    dataUpdate.jobId,
-                    dataUpdate.registryVersion,
-                    dataUpdate.signaturesRequired,
-                    signersBitmap,
-                    dataUpdate.value,
-                    dataUpdate.canonicalTimestamp
-                )
-            );
+            abi.encodePacked(
+                MESSAGE_PREFIX,
+                dataUpdate.feedId,
+                dataUpdate.registryVersion,
+                dataUpdate.signaturesRequired,
+                signersBitmap,
+                dataUpdate.value,
+                dataUpdate.canonicalTimestamp
+            )
+        );
     }
 
     function _verifyPop(LibSecp256k1.Point memory pubkey, bytes memory compressedPubKey, SchnorrProof calldata pop)
         private
         view
     {
-        bytes32 digest =
-            keccak256(abi.encodePacked(POP_DOMAIN, address(this), compressedPubKey));
+        bytes32 digest = keccak256(abi.encodePacked(POP_DOMAIN, address(this), compressedPubKey));
         bool isValid = pubkey.verifySignature(digest, pop.signature, pop.commitment);
-        if (!isValid) revert("Invalid PoP");
+        if (!isValid) revert InvalidPoP();
     }
 }

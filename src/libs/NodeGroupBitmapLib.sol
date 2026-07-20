@@ -13,16 +13,16 @@ pragma solidity ^0.8.31;
 ///
 /// Requires `nCount <= 256` (result fits in one `uint256` bitmap).
 library NodeGroupBitmapLib {
+    error GroupSizeExceedsNodeCount();
+    error NodeCountExceedsMax();
+    error ZeroNodeCount();
+
     bytes32 internal constant SELECTION_DOMAIN = keccak256("MOLPHA_SELECTION_DERIVE");
 
-    function derive(bytes32 seed, uint256 nCount, uint256 groupSize)
-        internal
-        pure
-        returns (uint256 bitmap)
-    {
-        if (nCount == 0) revert("nodeCount is zero");
-        if (nCount > 256) revert("nCount exceeds 256");
-        if (groupSize > nCount) revert("groupSize exceeds nodeCount");
+    function derive(bytes32 seed, uint256 nCount, uint256 groupSize) internal pure returns (uint256 bitmap) {
+        if (nCount == 0) revert ZeroNodeCount();
+        if (nCount > 256) revert NodeCountExceedsMax();
+        if (groupSize > nCount) revert GroupSizeExceedsNodeCount();
         if (groupSize == 0) return 0;
         if (groupSize == nCount) {
             return _fullMask(nCount);
@@ -50,7 +50,7 @@ library NodeGroupBitmapLib {
         pure
         returns (uint256 bitmap)
     {
-        uint256 limit = (uint256(type(uint32).max) / nCount) * nCount;
+        uint256 limit = (uint256(1) << 32) - ((uint256(1) << 32) % nCount);
         uint256 selected;
         uint256 counter;
         while (selected < groupSize) {

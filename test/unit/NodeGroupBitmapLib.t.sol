@@ -2,7 +2,7 @@
 pragma solidity ^0.8.31;
 
 import {Test} from "forge-std/Test.sol";
-import {NodeGroupBitmapLib} from "../src/libs/NodeGroupBitmapLib.sol";
+import {NodeGroupBitmapLib} from "../../src/libs/NodeGroupBitmapLib.sol";
 
 contract NodeGroupBitmapLibTest is Test {
     function _popcount(uint256 bitmap) internal pure returns (uint256 c) {
@@ -20,7 +20,9 @@ contract NodeGroupBitmapLibTest is Test {
     }
 
     function test_selection_domain_constant() public pure {
-        assertEq(keccak256("MOLPHA_SELECTION_DERIVE"), 0x492848fe5e85d4ce2231d693a58f0820a4056e2822fe5dcad7c756afe044b70b);
+        assertEq(
+            keccak256("MOLPHA_SELECTION_DERIVE"), 0x492848fe5e85d4ce2231d693a58f0820a4056e2822fe5dcad7c756afe044b70b
+        );
     }
 
     function test_derive_deterministic() public pure {
@@ -51,6 +53,18 @@ contract NodeGroupBitmapLibTest is Test {
         }
     }
 
+    function testFuzz_deriveSelectsExactBoundedGroup(bytes32 seed, uint16 nodeCountSeed, uint16 groupSizeSeed)
+        public
+        pure
+    {
+        uint256 nodeCount = (uint256(nodeCountSeed) % 256) + 1;
+        uint256 groupSize = uint256(groupSizeSeed) % (nodeCount + 1);
+        uint256 bitmap = NodeGroupBitmapLib.derive(seed, nodeCount, groupSize);
+
+        assertEq(_popcount(bitmap), groupSize);
+        assertEq(bitmap & ~_maskBelow(nodeCount), 0);
+    }
+
     function test_derive_marginal_fairness() public {
         uint256 nCount = 8;
         uint256 groupSize = 4;
@@ -75,11 +89,11 @@ contract NodeGroupBitmapLibTest is Test {
     }
 
     function test_derive_reverts_invalid_inputs() public {
-        vm.expectRevert(bytes("nodeCount is zero"));
+        vm.expectRevert(NodeGroupBitmapLib.ZeroNodeCount.selector);
         this.externalDerive(bytes32(0), 0, 1);
-        vm.expectRevert(bytes("nCount exceeds 256"));
+        vm.expectRevert(NodeGroupBitmapLib.NodeCountExceedsMax.selector);
         this.externalDerive(bytes32(0), 257, 1);
-        vm.expectRevert(bytes("groupSize exceeds nodeCount"));
+        vm.expectRevert(NodeGroupBitmapLib.GroupSizeExceedsNodeCount.selector);
         this.externalDerive(bytes32(0), 4, 5);
     }
 

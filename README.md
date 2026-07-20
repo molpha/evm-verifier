@@ -1,178 +1,362 @@
-# molpha-core-contracts
+# molpha-evm-verifier
 
-Smart contracts for the Molpha decentralized oracle protocol.
+[![CI](https://github.com/Molpha/molpha-evm-verifier/actions/workflows/ci.yml/badge.svg)](https://github.com/Molpha/molpha-evm-verifier/actions/workflows/ci.yml)
 
-This repository contains the on-chain **Validator** — a registry of oracle nodes and a Schnorr signature verifier used to validate aggregated data updates from off-chain oracle nodes.
+EVM contracts for Molpha's oracle-node registry and aggregate Schnorr signature verification on secp256k1.
 
----
+This repository contains the on-chain verification layer only. It does not aggregate signatures, publish feed values, store consumed updates, enforce timestamp freshness, or decide whether a feed is authorized for a consuming application. Integrators call `Verifier.verify(...)` and apply their own application-level checks around the returned result.
 
-## Contracts Overview
+## Contents
 
-### `Validator.sol`
+- [Overview](#overview)
+- [Architecture](#architecture)
+- [Contracts](#contracts)
+- [Verification model](#verification-model)
+- [Public API](#public-api)
+- [Development](#development)
+- [Deployment](#deployment)
+- [Node registration](#node-registration)
+- [Integration checklist](#integration-checklist)
+- [Security](#security)
+- [License](#license)
 
-The core contract. It:
+## Overview
 
-- Registers and removes oracle nodes (up to 256 per registry)
-- Stores node public keys efficiently via SSTORE2
-- Derives per-round signer groups from a deterministic selection seed
-- Verifies aggregated Schnorr signatures against the coalition of selected signers
-- Versions the node registry on every add/remove (immutable history)
+`Verifier` combines a versioned oracle-node registry with deterministic signer selection:
 
-**Key functions:**
+- Up to 256 active oracle nodes, represented by a single 256-bit signer bitmap.
+- Node registration requires a Schnorr proof-of-possession over the node's compressed secp256k1 public key.
+- Every registry mutation creates an immutable SSTORE2-backed public-key snapshot.
+- Historical registry versions remain verifiable after later node additions or removals.
+- Signer groups are selected deterministically from `feedId`, `registryVersion`, and `canonicalTimestamp`.
+- The protocol admin can configure a redundancy buffer so each selected group can contain more nodes than the required threshold.
+- Aggregate Schnorr signatures are verified against the plain-sum public key of the submitted signer coalition.
 
-| Function | Description |
-|----------|-------------|
-| `initialize()` | Sets protocol admin and creates the initial empty registry |
-| `addNode(compressedPubKey, pop)` | Registers a node with a Schnorr proof-of-possession |
-| `removeNode(node)` | Removes a node and bumps the registry version |
-| `verify(dataUpdate, schnorrData)` | Verifies a Schnorr signature for a data update |
-| `getRegistryVersion()` | Returns the current registry version |
-| `getAggregateKey()` | Returns the plain-sum aggregate pubkey over all registered nodes |
-
-### Interface
-
-- `IValidator.sol` — public API, structs (`DataUpdate`, `SchnorrSignature`, `SchnorrProof`), and events
-
-### Libraries
-
-| Library | Purpose |
-|---------|---------|
-| `LibSecp256k1.sol` | secp256k1 curve arithmetic |
-| `LibSchnorr.sol` | Schnorr signature verification |
-| `LibMuSig2KeyAgg.sol` | MuSig2 key aggregation helpers |
-| `NodeGroupBitmapLib.sol` | Deterministic signer-group selection from a seed |
-| `BitmapLib.sol` | Bitmap popcount and bit utilities |
-| `PubkeyBlobLib.sol` | Read/write node keys in SSTORE2 blobs |
-| `PublishCalldataLib.sol` | Packed timestamp/round encoding helpers |
-
----
+The contract is intentionally narrow. It answers one question: "Did enough selected Molpha nodes sign this exact data update under the stated registry version?" Everything after that is up to the caller.
 
 ## Architecture
 
+### Registry snapshots
+
+The registry stores public keys as ABI-encoded `LibSecp256k1.Point[]` blobs written with Solady's `SSTORE2`.
+
+- Registry version `0` is created in the constructor and contains no active nodes.
+- Array index `0` is reserved for the aggregate public key of the active set.
+- Active node keys use one-based indices: node index `1` maps to signer bitmap bit `0`, node index `2` maps to bit `1`, and so on.
+- `addNode` appends a key, updates the aggregate key, writes a new blob, and increments the registry version.
+- `removeNode` removes a key, updates the aggregate key, writes a new blob, and increments the registry version.
+- If a removed node is not the tail node, the current tail node is swapped into the removed index. Consumers should not assume node indices are stable across registry versions.
+
+### Signer selection
+
+For each update, the contract derives a selection seed:
+
 ```text
-              [ Off-chain Oracle Nodes ]
-                        |
-     Each node signs data updates; aggregator combines signatures
-                        |
-                    [ On-chain ]
-                          |
-            +----------------------------+
-            | Validator                  |
-            | - Node registry (SSTORE2)  |
-            | - Registry versioning      |
-            | - Signer-group selection   |
-            | - Schnorr verification     |
-            +----------------------------+
-                          |
-                          v
-              [ Consumer / Feed contracts ]
-                (integrate via verify())
+keccak256(
+  keccak256("MOLPHA_SELECTION_V1") ||
+  feedId ||
+  registryVersion ||
+  canonicalTimestamp
+)
 ```
 
-### Verification flow
+`NodeGroupBitmapLib` expands that seed with `keccak256(seed || keccak256("MOLPHA_SELECTION_DERIVE") || counter)`, reads eight big-endian `uint32` limbs from each digest, and samples indices without replacement. It rejects out-of-range limbs to avoid modulo bias. When the requested group is larger than half of the node set, it samples exclusions and returns the complement.
 
-1. **Selection seed** — derived from `(jobId, registryVersion, canonicalTimestamp)`
-2. **Signer group** — `NodeGroupBitmapLib` picks `signaturesRequired + redundancyBuffer` nodes from the registry
-3. **Bitmap check** — `signersBitmap` must be a subset of the selected group and meet the required threshold
-4. **Coalition key** — sum the public keys of all signers in the bitmap
-5. **Schnorr verify** — check the aggregated signature against the coalition key and canonical message hash
+The selected group size is:
+
+```text
+min(signaturesRequired + redundancyBuffer, nodeCount)
+```
+
+The submitted signer bitmap must be a subset of that selected group and must contain at least `signaturesRequired` bits.
+
+### Signature verification
+
+Molpha uses Schnorr signatures over secp256k1. `LibSchnorr` verifies signatures through the EVM `ecrecover` precompile using the same verification identity used by Scribe-style Schnorr implementations.
+
+For aggregate verification, the verifier:
+
+1. Loads the registry snapshot requested by `dataUpdate.registryVersion`.
+2. Derives the deterministic selected signer group.
+3. Checks that the submitted bitmap contains enough selected signers.
+4. Sums the selected signers' public keys in ascending index order.
+5. Verifies the aggregate Schnorr signature against the signed message digest.
+
+Invalid signatures return `false`. Malformed inputs, invalid registry versions, insufficient signers, unselected signers, zero signature fields, and invalid signature scalars revert with custom errors from `IVerifier`.
+
+## Contracts
+
+| Path | Purpose |
+| --- | --- |
+| `src/Verifier.sol` | Node registry, registry snapshots, signer selection, and aggregate signature verification |
+| `src/interfaces/IVerifier.sol` | Public structs, events, errors, and verifier API |
+| `src/libs/LibSchnorr.sol` | secp256k1 Schnorr verification using `ecrecover` |
+| `src/libs/LibSecp256k1.sol` | secp256k1 point arithmetic, compression, decompression, and key utilities |
+| `src/libs/NodeGroupBitmapLib.sol` | Deterministic unbiased signer-group bitmap derivation |
+| `src/libs/PubkeyBlobLib.sol` | Helpers for SSTORE2-encoded public-key registry blobs |
+| `script/Deploy.s.sol` | Deterministic CREATE2 deployment script |
+| `script/AddNode.s.sol` | Single-node and batch node-registration script |
+| `script/libs/DeployConstants.sol` | Shared deployment salt and initial redundancy buffer |
+| `script/libs/PopSignLib.sol` | Admin-script helper for registration proof-of-possession signatures |
+
+## Verification model
+
+Consumers pass the data update and the aggregate Schnorr signature:
+
+```solidity
+struct DataUpdate {
+    bytes32 feedId;
+    uint32 registryVersion;
+    uint32 signaturesRequired;
+    bytes32 value;
+    uint64 canonicalTimestamp;
+}
+
+struct SchnorrSignature {
+    bytes32 signature;
+    address commitment;
+    uint256 signersBitmap;
+}
+```
 
 The signed message is:
 
 ```text
-keccak256(MESSAGE_PREFIX || jobId || registryVersion || signaturesRequired || signersBitmap || value || canonicalTimestamp)
+keccak256(
+  keccak256("MOLPHA_MESSAGE_V1") ||
+  feedId ||
+  registryVersion ||
+  signaturesRequired ||
+  signersBitmap ||
+  value ||
+  canonicalTimestamp
+)
 ```
 
----
+Node proof-of-possession uses:
 
-## Project Structure
+```solidity
+struct SchnorrProof {
+    bytes32 signature;
+    address commitment;
+}
+```
+
+The proof signs:
 
 ```text
-molpha-core-contracts/
-├── src/
-│   ├── Validator.sol           # Main contract
-│   ├── interfaces/             # IValidator (API, structs, events)
-│   └── libs/                   # Crypto and bitmap utilities
-├── test/                       # Foundry tests (Validator, libs, gas benchmarks)
-├── script/
-│   ├── Deploy.s.sol            # Validator deployment script
-│   ├── AddNode.s.sol           # Register one or more oracle nodes
-│   ├── libs/PopSignLib.sol     # PoP signing helper for admin scripts
-│   └── examples/               # Sample nodes JSON for batch registration
-├── add-node.sh                 # Shell wrapper for AddNode.s.sol
-├── deployments/                # Per-chain address files (JSON)
-└── docs/                       # Protocol specs
+keccak256(
+  keccak256("MOLPHA_VALIDATOR_V1") ||
+  verifierAddress ||
+  compressedPubKey
+)
 ```
 
----
+All concatenations above use Solidity `abi.encodePacked` with the field types shown in `IVerifier`.
 
-## Setup
+## Public API
 
-Requires [Foundry](https://book.getfoundry.sh/).
+### Admin functions
+
+| Function | Description |
+| --- | --- |
+| `addNode(bytes compressedPubKey, SchnorrProof pop)` | Registers a node after validating its compressed public key and proof-of-possession |
+| `removeNode(address node)` | Removes an active node and writes a new registry snapshot |
+| `setRedundancyBuffer(uint256 newRedundancyBuffer)` | Sets the extra nodes included in each selected signer group |
+| `transferProtocolAdmin(address newProtocolAdmin)` | Transfers the protocol admin role |
+
+Admin functions revert unless `msg.sender == protocolAdmin`.
+
+### Verification function
+
+| Function | Description |
+| --- | --- |
+| `verify(DataUpdate dataUpdate, SchnorrSignature schnorrData)` | Returns `true` when the aggregate Schnorr signature is valid for the selected signer coalition |
+
+`verify` is `view`. A successful call does not persist state and does not prevent replay by itself.
+
+### Read functions
+
+| Function | Description |
+| --- | --- |
+| `getRegistryVersion()` | Latest registry version |
+| `getRegistryPointer()` | SSTORE2 pointer for the latest registry snapshot |
+| `getRegistryPointer(uint256 registryVersion)` | SSTORE2 pointer for a historical registry snapshot |
+| `isNode(address node)` | Whether a node is currently active |
+| `getTotalNodes()` | Number of active nodes in the latest registry |
+| `getNodesSetHash()` | Hash of the latest encoded registry blob |
+| `getAggregateKey()` | Plain-sum aggregate public key for the latest active set |
+| `getNodeIndex(address node)` | Current one-based node index, or `0` if inactive |
+
+Solidity also exposes public getters for `protocolAdmin`, `redundancyBuffer`, `registryPointers`, `nodeIndexes`, `nodeKeyX`, and `nodeKeyY`.
+
+## Development
+
+### Requirements
+
+- [Foundry](https://getfoundry.sh/)
+- Git with submodule support
+
+### Setup
 
 ```bash
-forge install
+git clone --recurse-submodules https://github.com/Molpha/molpha-evm-verifier.git
+cd molpha-evm-verifier
+
 forge build
 forge test
 ```
 
-**Toolchain:** Solidity `0.8.31`, EVM `Osaka`, optimizer enabled (`via_ir`).
-
-### Deploy
-
-Set `PRIVATE_KEY` and broadcast:
+If the repository was cloned without submodules:
 
 ```bash
-forge script script/Deploy.s.sol \
-  --rpc-url <RPC_URL> \
+git submodule update --init --recursive
+```
+
+The project uses Solidity `0.8.31`, the Cancun EVM target, IR compilation, and one million optimizer runs.
+
+### Common commands
+
+```bash
+forge fmt
+forge fmt --check
+forge build --sizes
+forge test -vvv
+forge test --fuzz-runs 10000
+forge coverage --ir-minimum --report summary
+forge lint
+```
+
+Gas probes live under `test/gas/` and are excluded from the default profile:
+
+```bash
+FOUNDRY_PROFILE=gas forge test -vv
+```
+
+### Test layout
+
+| Path | Purpose |
+| --- | --- |
+| `test/unit/` | Registry, admin, verification, bitmap, pubkey-blob, and Schnorr unit tests |
+| `test/integration/` | External fixture compatibility tests |
+| `test/gas/` | Gas probes for verifier and selection logic |
+| `test/shared/VerifierTestBase.sol` | Shared signing and registry helpers |
+| `test/libs/LibSchnorrTestSign.sol` | Test-only Schnorr signing helper |
+| `test/fixtures/fixture.json` | Fixture data used by integration tests |
+
+CI runs formatting, build, normal tests, fuzz tests, and Forge lint.
+
+## Deployment
+
+`script/Deploy.s.sol` deploys `Verifier` with CREATE2. Foundry routes `new Verifier{salt: ...}` through Arachnid's deterministic deployment proxy at:
+
+```text
+0x4e59b44847b379578588920cA78FbF26c0B4956C
+```
+
+The predicted address depends on:
+
+- CREATE2 factory: `0x4e59b44847b379578588920cA78FbF26c0B4956C`
+- Salt: `keccak256("MOLPHA_VERIFIER_BREBELESKUL")`
+- Constructor args: `initialProtocolAdmin = deployer`, `initialRedundancyBuffer = 2`
+- Compiler, optimizer, EVM version, and init code
+
+Override the salt with `DEPLOY_SALT` when you intentionally want a different address.
+
+### Dry run
+
+```bash
+export PRIVATE_KEY=<protocol-admin-private-key>
+
+forge script script/Deploy.s.sol:Deploy \
+  --rpc-url <rpc-url>
+```
+
+### Broadcast
+
+```bash
+export PRIVATE_KEY=<protocol-admin-private-key>
+
+forge script script/Deploy.s.sol:Deploy \
+  --rpc-url <rpc-url> \
   --broadcast
 ```
 
-Deployment addresses are written to `deployments/<chain-name>/addresses-<timestamp>.json`.
+The deployment script is idempotent. If bytecode already exists at the predicted address, it skips deployment and writes the existing address to the output file.
 
-Supported chain folders include `anvil`, `sepolia`, `avalanche-fuji`, `arbitrum-sepolia`, `bsc-testnet`, `base-sepolia`, and others (see `_deploymentChainFolder` in `script/Deploy.s.sol`).
-
-### Register nodes
-
-Only the protocol admin can call `addNode`. Each node must provide a Schnorr proof-of-possession over:
+Deployment outputs are written to:
 
 ```text
-keccak256(MOLPHA_VALIDATOR_V1 || validatorAddress || compressedPubKey)
+deployments/<network>/addresses.json
 ```
 
-The script reads the latest `Validator` address from `deployments/<chain-name>/addresses-*.json` (falls back to `NodeRegistry` in older files).
+Those local deployment outputs are intentionally ignored by git.
 
-**Single node:**
+The script maps common chain IDs to readable folder names, including `ethereum`, `sepolia`, `anvil`, `avalanche-fuji`, `avalanche`, `arbitrum-sepolia`, `arbitrum-one`, `bsc-testnet`, `bsc`, `xdc-apothem`, `base-sepolia`, `base`, `polygon`, and `polygon-amoy`. Unknown chains use `chain-<id>`.
+
+## Node registration
+
+Only the current `protocolAdmin` can add or remove nodes.
+
+### Single node from a private key
+
+`script/AddNode.s.sol` can derive the compressed public key and proof-of-possession from a node private key:
 
 ```bash
-export PRIVATE_KEY=<protocol_admin_key>
-export NODE_PRIVATE_KEY=<node_secp256k1_private_key>
+export PRIVATE_KEY=<protocol-admin-private-key>
+export VERIFIER=<verifier-address>
+export NODE_PRIVATE_KEY=<node-private-key>
 
-./add-node.sh avalanche-fuji https://your-rpc-url
+forge script script/AddNode.s.sol:AddNode \
+  --rpc-url <rpc-url> \
+  --broadcast
 ```
 
-**Batch (recommended for multiple nodes):** pass a JSON file as the third argument (or set `NODES_FILE`):
+Example:
 
 ```bash
-export PRIVATE_KEY=<protocol_admin_key>
-
-./add-node.sh avalanche-fuji https://your-rpc-url nodes.json
+forge script script/AddNode.s.sol:AddNode \
+  --rpc-url https://avax-fuji.g.alchemy.com/v2/YOUR_API_KEY \
+  --broadcast
 ```
 
-`nodes.json` — private keys (dev/test):
+### Single node from precomputed proof data
+
+For production operations, prefer generating the node proof off-host and passing only public registration data to the admin script:
+
+```bash
+export PRIVATE_KEY=<protocol-admin-private-key>
+export VERIFIER=<verifier-address>
+export COMPRESSED_PUBKEY=0x02...
+export POP_SIGNATURE=0x...
+export POP_COMMITMENT=0x...
+
+forge script script/AddNode.s.sol:AddNode \
+  --rpc-url <rpc-url> \
+  --broadcast
+```
+
+### Batch registration
+
+Batch files support either a top-level `privateKeys` array:
 
 ```json
 {
-  "privateKeys": ["0x...", "0x..."]
+  "privateKeys": [
+    "0x...",
+    "0x..."
+  ]
 }
 ```
 
-`nodes.json` — mixed or pre-signed (production):
+or a `nodes` array that can mix private-key entries with precomputed proof entries:
 
 ```json
 {
   "nodes": [
-    { "privateKey": "0x..." },
+    {
+      "privateKey": "0x..."
+    },
     {
       "compressedPubKey": "0x02...",
       "popSignature": "0x...",
@@ -182,53 +366,43 @@ export PRIVATE_KEY=<protocol_admin_key>
 }
 ```
 
-See `script/examples/nodes.private-keys.example.json`. `PRIVATE_KEY` must match `ProtocolAdmin` in the deployment address file (the shell script checks this before broadcasting).
-
-**Pre-signed PoP (single node):** instead of `NODE_PRIVATE_KEY`:
+Run:
 
 ```bash
-export COMPRESSED_PUBKEY=0x02...
-export POP_SIGNATURE=0x...
-export POP_COMMITMENT=0x...
-```
-
-**Direct forge:**
-
-```bash
-export VALIDATOR=0x...
-export PRIVATE_KEY=...
-export NODES_FILE=nodes.json   # or NODE_PRIVATE_KEY for a single node
+export PRIVATE_KEY=<protocol-admin-private-key>
+export VERIFIER=<verifier-address>
+export NODES_FILE=path/to/nodes.json
 
 forge script script/AddNode.s.sol:AddNode \
-  --rpc-url <RPC_URL> \
+  --rpc-url <rpc-url> \
   --broadcast
 ```
 
----
+Example JSON files live under `script/examples/`.
 
-## Security Considerations
+Never commit `.env`, local node lists, private keys, or RPC credentials.
 
-- Only the **protocol admin** can add or remove nodes
-- New nodes must submit a **Schnorr proof-of-possession** over the registration domain
-- Signers must belong to the **deterministically selected group** for the round; out-of-group bits in the bitmap revert
-- **Registry versioning** ensures signature verification uses the node set that was active at publish time
-- Replay protection is enforced off-chain via `canonicalTimestamp` and on-chain via message binding
+## Integration checklist
 
----
+When integrating `Verifier` into a consumer contract or off-chain client:
 
-## Documentation
+- Pass the registry version that was used during off-chain signing.
+- Treat node indices as version-specific. They can change after removals because the registry swaps the tail node into the removed slot.
+- Build signer bitmaps with zero-based bit positions: bit `i - 1` represents one-based registry index `i`.
+- Reject stale updates by comparing `canonicalTimestamp` against your own freshness policy.
+- Reject duplicate or replayed updates according to your consumer state machine.
+- Validate that the `feedId` is authorized for your application before trusting `value`.
+- Decide how many signatures your feed requires and pass that value in `DataUpdate.signaturesRequired`.
+- Handle both outcomes from `verify`: malformed inputs or unselected signers may revert; well-formed but invalid signatures return `false`.
+- Remember that `value` is an opaque `bytes32`. Consumers define the encoding, scale, and semantic meaning.
+- Pin deployments, registry versions, and expected chain IDs in production configuration.
 
-- [`docs/validation-v2.md`](docs/validation-v2.md) — EVM Schnorr verification specification (draft)
-- [`docs/molpha-tech-specs-v3.md`](docs/molpha-tech-specs-v3.md) — Protocol technical specs
+## Security
 
----
+Please read [SECURITY.md](SECURITY.md) before reporting a vulnerability. Do not disclose security issues in public GitHub issues.
+
+This repository is a smart-contract verification component. Public release does not imply that every deployment, feed, signer, or consumer integration is safe. Integrators should review the contracts, deployment configuration, node operations, and consumer-side replay/freshness logic before using the verifier in production.
 
 ## License
 
-Apache-2.0 on core contracts (`Verifier`, interfaces). See individual file headers.
-
----
-
-## Authors
-
-Maintained by the Molpha core protocol team.
+The core contracts and interfaces are licensed under the [Apache License 2.0](LICENSE). Individual files, including deployment scripts and libraries, may declare different terms in their SPDX headers.

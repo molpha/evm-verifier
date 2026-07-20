@@ -1,6 +1,19 @@
-lib
-out
-.vscode
-cache
+# Foundry artifacts and dependencies
+/broadcast/
+/cache/
+/lib/
+/out/
+
+# Local environment and editor files
+.DS_Store
 .env
-broadcast
+.env.*
+!.env.example
+.venv*/
+.vscode/
+
+# Local deployment inputs and debug output
+/nodes.json
+/rpc-urls.txt
+/trace.json
+deployments

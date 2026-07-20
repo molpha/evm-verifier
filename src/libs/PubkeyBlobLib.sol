@@ -58,7 +58,7 @@ library PubkeyBlobLib {
             let length := sub(mload(lengthSlot), 1)
 
             let lastSigner := eq(index, length)
-            orderChanged := not(lastSigner)
+            orderChanged := iszero(lastSigner)
 
             // resize
             mstore(pubKeys, sub(mload(pubKeys), POINT_SIZE)) // decrease bytes length
@@ -81,11 +81,11 @@ library PubkeyBlobLib {
     /// @param index Node index to remove (must be >= 1)
     /// @param currAgg New aggregate key to write into index 0
     /// @return orderChanged True if last node is swapped into removed index
-    function removePubkeyWithAggregate(
-        bytes memory pubKeys,
-        uint256 index,
-        LibSecp256k1.Point memory currAgg
-    ) internal pure returns (bool orderChanged) {
+    function removePubkeyWithAggregate(bytes memory pubKeys, uint256 index, LibSecp256k1.Point memory currAgg)
+        internal
+        pure
+        returns (bool orderChanged)
+    {
         setNode(pubKeys, 0, currAgg);
         orderChanged = removePubkey(pubKeys, index);
     }
