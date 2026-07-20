@@ -1,7 +1,6 @@
 name: CI
 
 on:
-  push:
   pull_request:
   workflow_dispatch:
 
@@ -10,9 +9,6 @@ permissions: {}
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
-
-env:
-  FOUNDRY_PROFILE: ci
 
 jobs:
   foundry:
@@ -37,8 +33,17 @@ jobs:
       - name: Show Forge version
         run: forge --version
 
+      - name: Check formatting
+        run: forge fmt --check
+
       - name: Build
         run: forge build --sizes
 
       - name: Test
         run: forge test -vvv
+
+      - name: Fuzz test
+        run: forge test --fuzz-runs 1000
+
+      - name: Lint
+        run: forge lint -D warnings

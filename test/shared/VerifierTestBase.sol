@@ -12,6 +12,9 @@ import {LibSchnorrTestSign} from "../libs/LibSchnorrTestSign.sol";
 abstract contract VerifierTestBase is Test {
     using LibSecp256k1 for LibSecp256k1.Point;
 
+    error EmptySignerSet();
+    error InsufficientSelectedSigners();
+
     bytes32 internal constant POP_DOMAIN = keccak256("MOLPHA_VALIDATOR_V1");
     bytes32 internal constant MESSAGE_PREFIX = keccak256("MOLPHA_MESSAGE_V1");
     bytes32 internal constant SELECTION_SEED_PREFIX = keccak256("MOLPHA_SELECTION_V1");
@@ -60,7 +63,7 @@ abstract contract VerifierTestBase is Test {
 
     function _selectionSeed(IVerifier.DataUpdate memory update) internal pure returns (bytes32) {
         return keccak256(
-            abi.encodePacked(SELECTION_SEED_PREFIX, update.jobId, update.registryVersion, update.canonicalTimestamp)
+            abi.encodePacked(SELECTION_SEED_PREFIX, update.feedId, update.registryVersion, update.canonicalTimestamp)
         );
     }
 
@@ -68,7 +71,7 @@ abstract contract VerifierTestBase is Test {
         return keccak256(
             abi.encodePacked(
                 MESSAGE_PREFIX,
-                update.jobId,
+                update.feedId,
                 update.registryVersion,
                 update.signaturesRequired,
                 signersBitmap,
@@ -90,11 +93,11 @@ abstract contract VerifierTestBase is Test {
                 indices[found++] = position + 1;
             }
         }
-        require(found == count, "insufficient selected signers");
+        if (found != count) revert InsufficientSelectedSigners();
     }
 
     function _sumPubkeys(uint256[] memory indices) internal view returns (LibSecp256k1.Point memory aggregate) {
-        require(indices.length != 0, "empty signer set");
+        if (indices.length == 0) revert EmptySignerSet();
         aggregate = pubkeys[indices[0] - 1];
         for (uint256 i = 1; i < indices.length; ++i) {
             LibSecp256k1.Point memory next = pubkeys[indices[i] - 1];
@@ -114,12 +117,12 @@ abstract contract VerifierTestBase is Test {
         Verifier target,
         uint256 signaturesRequired,
         uint256 signerCount,
-        bytes32 jobId,
+        bytes32 feedId,
         bytes32 value,
         uint64 canonicalTimestamp
     ) internal view returns (IVerifier.DataUpdate memory update, IVerifier.SchnorrSignature memory schnorr) {
         update = IVerifier.DataUpdate({
-            jobId: jobId,
+            feedId: feedId,
             registryVersion: uint32(target.getRegistryVersion()),
             signaturesRequired: uint32(signaturesRequired),
             value: value,
@@ -148,10 +151,10 @@ abstract contract VerifierTestBase is Test {
     function _buildVerifyCall(
         Verifier target,
         uint256 signaturesRequired,
-        bytes32 jobId,
+        bytes32 feedId,
         bytes32 value,
         uint64 canonicalTimestamp
     ) internal view returns (IVerifier.DataUpdate memory update, IVerifier.SchnorrSignature memory schnorr) {
-        return _buildVerifyCall(target, signaturesRequired, signaturesRequired, jobId, value, canonicalTimestamp);
+        return _buildVerifyCall(target, signaturesRequired, signaturesRequired, feedId, value, canonicalTimestamp);
     }
 }

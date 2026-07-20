@@ -2,6 +2,7 @@
 pragma solidity ^0.8.31;
 
 import {IVerifier} from "../../src/interfaces/IVerifier.sol";
+import {Verifier} from "../../src/Verifier.sol";
 import {VerifierTestBase} from "../shared/VerifierTestBase.sol";
 
 contract VerifierAdminTest is VerifierTestBase {
@@ -16,6 +17,24 @@ contract VerifierAdminTest is VerifierTestBase {
         (uint256 x, uint256 y) = verifier.getAggregateKey();
         assertEq(x, 0);
         assertEq(y, 0);
+    }
+
+    function test_constructor_revertsForZeroInitialAdmin() public {
+        vm.expectRevert(IVerifier.ZeroAdmin.selector);
+        new Verifier(address(0), 2);
+    }
+
+    function test_constructor_revertsForRedundancyBufferOverMaxNodes() public {
+        vm.expectRevert(IVerifier.RedundancyBufferExceedsMax.selector);
+        new Verifier(address(this), 257);
+    }
+
+    function test_constructor_acceptsMaximumValidRedundancyBuffer() public {
+        Verifier maxBufferVerifier = new Verifier(address(this), 256);
+
+        assertEq(maxBufferVerifier.protocolAdmin(), address(this));
+        assertEq(maxBufferVerifier.redundancyBuffer(), 256);
+        assertEq(maxBufferVerifier.getRegistryVersion(), 0);
     }
 
     function test_transferProtocolAdmin_updatesRoleAndEmitsEvent() public {
@@ -33,13 +52,13 @@ contract VerifierAdminTest is VerifierTestBase {
     }
 
     function test_transferProtocolAdmin_revertsForZeroAddress() public {
-        vm.expectRevert(bytes("Zero admin"));
+        vm.expectRevert(IVerifier.ZeroAdmin.selector);
         verifier.transferProtocolAdmin(address(0));
     }
 
     function test_transferProtocolAdmin_revertsForNonAdmin() public {
         vm.prank(makeAddr("caller"));
-        vm.expectRevert(bytes("Not protocol admin"));
+        vm.expectRevert(IVerifier.NotProtocolAdmin.selector);
         verifier.transferProtocolAdmin(makeAddr("new admin"));
     }
 
@@ -51,9 +70,20 @@ contract VerifierAdminTest is VerifierTestBase {
         assertEq(verifier.redundancyBuffer(), 5);
     }
 
+    function test_setRedundancyBuffer_acceptsMaximumValidBuffer() public {
+        verifier.setRedundancyBuffer(256);
+
+        assertEq(verifier.redundancyBuffer(), 256);
+    }
+
+    function test_setRedundancyBuffer_revertsForBufferOverMaxNodes() public {
+        vm.expectRevert(IVerifier.RedundancyBufferExceedsMax.selector);
+        verifier.setRedundancyBuffer(257);
+    }
+
     function test_setRedundancyBuffer_revertsForNonAdmin() public {
         vm.prank(makeAddr("caller"));
-        vm.expectRevert(bytes("Not protocol admin"));
+        vm.expectRevert(IVerifier.NotProtocolAdmin.selector);
         verifier.setRedundancyBuffer(1);
     }
 }

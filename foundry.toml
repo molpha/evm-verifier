@@ -11,11 +11,11 @@ evm_version = "cancun"
 no_match_path = "test/gas/*.t.sol"
 no_match_coverage = "^(script|test)/"
 
+[lint]
+ignore = ["test/**/*.sol", "test/*.sol"]
+
 [profile.gas]
 match_path = "test/gas/*.t.sol"
 no_match_path = "test/never/*.t.sol"
-
-[lint]
-ignore = ["test/**"]
 
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options

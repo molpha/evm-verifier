@@ -9,6 +9,8 @@ import {LibSchnorr} from "../../src/libs/LibSchnorr.sol";
 library PopSignLib {
     using LibSecp256k1 for LibSecp256k1.Point;
 
+    error CouldNotProduceSignature();
+
     /// @notice Produce `(signature, commitment)` for `pubKey` / `privateKey` / `message`.
     function sign(LibSecp256k1.Point memory pubKey, uint256 privateKey, bytes32 message, uint256 nonceSalt)
         internal
@@ -22,11 +24,13 @@ library PopSignLib {
         uint256 s;
 
         for (uint256 attempt; attempt < 128; ++attempt) {
-            k = (
-                uint256(
-                    keccak256(abi.encodePacked("SCHNORR_TEST_NONCE", nonceSalt, attempt, message, pubKey.x, pubKey.y))
-                ) % (Q - 1)
-            ) + 1;
+            k =
+                (uint256(
+                            keccak256(
+                                abi.encodePacked("SCHNORR_TEST_NONCE", nonceSalt, attempt, message, pubKey.x, pubKey.y)
+                            )
+                        )
+                        % (Q - 1)) + 1;
 
             R = LibSecp256k1.mulAffine(LibSecp256k1.G(), k);
             commitment = R.toAddress();
@@ -50,6 +54,6 @@ library PopSignLib {
                 return (signature, commitment);
             }
         }
-        revert("PopSignLib: could not produce signature");
+        revert CouldNotProduceSignature();
     }
 }
