@@ -8,10 +8,7 @@ import {NodeGroupBitmapLib} from "../src/libs/NodeGroupBitmapLib.sol";
 contract NodeGroupBitmapLibGasTest is Test {
     bytes32 internal constant SEED = keccak256("MOLPHA_DERIVE_GAS_PROBE");
 
-    function _gas(bytes32 seed, uint256 nCount, uint256 groupSize)
-        internal
-        returns (uint256 gasUsed, uint256 bitmap)
-    {
+    function _gas(bytes32 seed, uint256 nCount, uint256 groupSize) internal returns (uint256 gasUsed, uint256 bitmap) {
         uint256 g0 = gasleft();
         bitmap = NodeGroupBitmapLib.derive(seed, nCount, groupSize);
         gasUsed = g0 - gasleft();

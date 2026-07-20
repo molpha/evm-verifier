@@ -85,22 +85,18 @@ contract VerifierTest is Test {
         return keccak256(abi.encodePacked(SELECTION_SEED_PREFIX, du.feedId, du.registryVersion, du.canonicalTimestamp));
     }
 
-    function _constructMessage(IVerifier.DataUpdate memory du, uint256 signersBitmap)
-        internal
-        pure
-        returns (bytes32)
-    {
+    function _constructMessage(IVerifier.DataUpdate memory du, uint256 signersBitmap) internal pure returns (bytes32) {
         return keccak256(
-                abi.encodePacked(
-                    MESSAGE_PREFIX,
-                    du.feedId,
-                    du.registryVersion,
-                    du.signaturesRequired,
-                    signersBitmap,
-                    du.value,
-                    du.canonicalTimestamp
-                )
-            );
+            abi.encodePacked(
+                MESSAGE_PREFIX,
+                du.feedId,
+                du.registryVersion,
+                du.signaturesRequired,
+                signersBitmap,
+                du.value,
+                du.canonicalTimestamp
+            )
+        );
     }
 
     /// @dev Collect the first `need` signer indices (1-based) whose bits are set in `bitmap`.
@@ -126,13 +122,11 @@ contract VerifierTest is Test {
         }
     }
 
-    function _buildVerify(
-        Verifier validator,
-        uint256 sigReq,
-        bytes32 feedId,
-        bytes32 value,
-        uint64 canonicalTs
-    ) internal view returns (IVerifier.DataUpdate memory du, IVerifier.SchnorrSignature memory sch) {
+    function _buildVerify(Verifier validator, uint256 sigReq, bytes32 feedId, bytes32 value, uint64 canonicalTs)
+        internal
+        view
+        returns (IVerifier.DataUpdate memory du, IVerifier.SchnorrSignature memory sch)
+    {
         du = IVerifier.DataUpdate({
             feedId: feedId,
             registryVersion: uint32(validator.getRegistryVersion()),
@@ -419,15 +413,13 @@ contract VerifierTest is Test {
         (IVerifier.DataUpdate memory du, IVerifier.SchnorrSignature memory sch) =
             _buildVerify(v, 3, bytes32("job-zero"), bytes32("val"), uint64(1700000001));
 
-        IVerifier.SchnorrSignature memory zeroSigners = IVerifier.SchnorrSignature({
-            signature: sch.signature, commitment: sch.commitment, signersBitmap: 0
-        });
+        IVerifier.SchnorrSignature memory zeroSigners =
+            IVerifier.SchnorrSignature({signature: sch.signature, commitment: sch.commitment, signersBitmap: 0});
         vm.expectRevert(bytes("Zero signers bitmap"));
         v.verify(du, zeroSigners);
 
-        IVerifier.SchnorrSignature memory zeroSignature = IVerifier.SchnorrSignature({
-            signature: 0, commitment: sch.commitment, signersBitmap: sch.signersBitmap
-        });
+        IVerifier.SchnorrSignature memory zeroSignature =
+            IVerifier.SchnorrSignature({signature: 0, commitment: sch.commitment, signersBitmap: sch.signersBitmap});
         vm.expectRevert(bytes("Zero signature"));
         v.verify(du, zeroSignature);
 

@@ -20,7 +20,9 @@ contract NodeGroupBitmapLibTest is Test {
     }
 
     function test_selection_domain_constant() public pure {
-        assertEq(keccak256("MOLPHA_SELECTION_DERIVE"), 0x492848fe5e85d4ce2231d693a58f0820a4056e2822fe5dcad7c756afe044b70b);
+        assertEq(
+            keccak256("MOLPHA_SELECTION_DERIVE"), 0x492848fe5e85d4ce2231d693a58f0820a4056e2822fe5dcad7c756afe044b70b
+        );
     }
 
     function test_derive_deterministic() public pure {

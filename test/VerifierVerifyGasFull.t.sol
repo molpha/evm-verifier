@@ -71,8 +71,7 @@ contract VerifierVerifyGasFullTest is Test {
         pure
         returns (IVerifier.SchnorrProof memory pop)
     {
-        bytes32 digest =
-            keccak256(abi.encodePacked(POP_DOMAIN, validatorAddr, compressedPubKey));
+        bytes32 digest = keccak256(abi.encodePacked(POP_DOMAIN, validatorAddr, compressedPubKey));
         LibSecp256k1.Point memory pubKey = LibSecp256k1.mulAffine(LibSecp256k1.G(), sk);
         (bytes32 sig, address cmt) = LibSchnorrTestSign.sign(pubKey, sk, digest, 0);
         pop = IVerifier.SchnorrProof({signature: sig, commitment: cmt});
@@ -86,22 +85,18 @@ contract VerifierVerifyGasFullTest is Test {
         return keccak256(abi.encodePacked(SELECTION_SEED_PREFIX, du.feedId, du.registryVersion, du.canonicalTimestamp));
     }
 
-    function _constructMessage(IVerifier.DataUpdate memory du, uint256 signersBitmap)
-        internal
-        pure
-        returns (bytes32)
-    {
+    function _constructMessage(IVerifier.DataUpdate memory du, uint256 signersBitmap) internal pure returns (bytes32) {
         return keccak256(
-                abi.encodePacked(
-                    MESSAGE_PREFIX,
-                    du.feedId,
-                    du.registryVersion,
-                    du.signaturesRequired,
-                    signersBitmap,
-                    du.value,
-                    du.canonicalTimestamp
-                )
-            );
+            abi.encodePacked(
+                MESSAGE_PREFIX,
+                du.feedId,
+                du.registryVersion,
+                du.signaturesRequired,
+                signersBitmap,
+                du.value,
+                du.canonicalTimestamp
+            )
+        );
     }
 
     function _pickSignerIndices(uint256 bitmap, uint256 nRegistered, uint256 need)
@@ -213,25 +208,11 @@ contract VerifierVerifyGasFullTest is Test {
         vm.warp(1_000_000);
         uint64 tsBase = uint64(block.timestamp);
 
-        fs.call1 = _buildVerifyCall(
-            fs.reg,
-            allPubkeys,
-            allSecrets,
-            s.threshold,
-            feedId,
-            bytes32(uint256(1)),
-            tsBase + 1
-        );
+        fs.call1 =
+            _buildVerifyCall(fs.reg, allPubkeys, allSecrets, s.threshold, feedId, bytes32(uint256(1)), tsBase + 1);
 
-        fs.call2 = _buildVerifyCall(
-            fs.reg,
-            allPubkeys,
-            allSecrets,
-            s.threshold,
-            feedId,
-            bytes32(uint256(2)),
-            tsBase + 2
-        );
+        fs.call2 =
+            _buildVerifyCall(fs.reg, allPubkeys, allSecrets, s.threshold, feedId, bytes32(uint256(2)), tsBase + 2);
 
         fs.calldataCost1 = _calldataCost(abi.encodeCall(IVerifier.verify, (fs.call1.dataUpdate, fs.call1.schnorr)));
         fs.calldataCost2 = _calldataCost(abi.encodeCall(IVerifier.verify, (fs.call2.dataUpdate, fs.call2.schnorr)));

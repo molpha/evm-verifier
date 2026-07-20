@@ -41,11 +41,7 @@ contract VerifierFixtureJsonTest is Test {
         });
     }
 
-    function _loadSchnorrSignature(string memory json)
-        internal
-        view
-        returns (IVerifier.SchnorrSignature memory sch)
-    {
+    function _loadSchnorrSignature(string memory json) internal view returns (IVerifier.SchnorrSignature memory sch) {
         sch = IVerifier.SchnorrSignature({
             signature: json.readBytes32(".schnorrSignature.signature"),
             commitment: json.readAddress(".schnorrSignature.commitment"),

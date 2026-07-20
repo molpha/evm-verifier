@@ -19,11 +19,9 @@ contract VerifierCompatFixtureTest is Test {
     uint256 internal constant REGISTERED_NODE_COUNT = 8;
     uint256 internal constant FIXTURE_REGISTRY_VERSION = 8;
 
-    bytes32 internal constant FIXTURE_JOB_ID =
-        0xe1dd7a3c71d4405dc3c7c172413fa866e19584f5f1259b6c508b08541238cc8b;
+    bytes32 internal constant FIXTURE_JOB_ID = 0xe1dd7a3c71d4405dc3c7c172413fa866e19584f5f1259b6c508b08541238cc8b;
 
-    bytes32 internal constant FIXTURE_VALUE =
-        0x14e9eed69e93058c250c39f1adc7ef572441f9fa2ff89d314b56e77b6aa648de;
+    bytes32 internal constant FIXTURE_VALUE = 0x14e9eed69e93058c250c39f1adc7ef572441f9fa2ff89d314b56e77b6aa648de;
 
     uint64 internal constant FIXTURE_CANONICAL_TIMESTAMP = 1_708_783_016;
 
