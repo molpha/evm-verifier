@@ -147,7 +147,7 @@ The proof signs:
 
 ```text
 popMessage = keccak256(
-  keccak256("MOLPHA_VALIDATOR_V1") ||
+  keccak256("MOLPHA_VERIFIER_V1") ||
   verifierAddress ||
   compressedPubKey
 )

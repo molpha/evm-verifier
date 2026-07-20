@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.31;
 
 import {LibSecp256k1} from "../../src/libs/LibSecp256k1.sol";

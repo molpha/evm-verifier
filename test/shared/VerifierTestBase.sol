@@ -15,7 +15,7 @@ abstract contract VerifierTestBase is Test {
     error EmptySignerSet();
     error InsufficientSelectedSigners();
 
-    bytes32 internal constant POP_DOMAIN = keccak256("MOLPHA_VALIDATOR_V1");
+    bytes32 internal constant POP_DOMAIN = keccak256("MOLPHA_VERIFIER_V1");
     bytes32 internal constant MESSAGE_PREFIX = keccak256("MOLPHA_MESSAGE_V1");
     bytes32 internal constant SELECTION_SEED_PREFIX = keccak256("MOLPHA_SELECTION_V1");
 
