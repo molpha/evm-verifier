@@ -37,7 +37,7 @@ jobs:
         run: forge fmt --check
 
       - name: Build
-        run: forge build --sizes
+        run: forge build --sizes --deny warnings
 
       - name: Test
         run: forge test -vvv
