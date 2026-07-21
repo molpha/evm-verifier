@@ -92,7 +92,12 @@ contract VerifierGasTest is VerifierTestBase {
     }
 
     function testGas_verifyScenarios() public {
-        Scenario[13] memory scenarios = [
+        Scenario[17] memory scenarios = [
+            Scenario({nodeCount: 128, threshold: 1}),
+            Scenario({nodeCount: 128, threshold: 3}),
+            Scenario({nodeCount: 128, threshold: 5}),
+            Scenario({nodeCount: 128, threshold: 9}),
+            Scenario({nodeCount: 128, threshold: 18}),
             Scenario({nodeCount: 5, threshold: 3}),
             Scenario({nodeCount: 10, threshold: 5}),
             Scenario({nodeCount: 12, threshold: 3}),
@@ -102,7 +107,6 @@ contract VerifierGasTest is VerifierTestBase {
             Scenario({nodeCount: 32, threshold: 18}),
             Scenario({nodeCount: 64, threshold: 18}),
             Scenario({nodeCount: 64, threshold: 32}),
-            Scenario({nodeCount: 128, threshold: 18}),
             Scenario({nodeCount: 128, threshold: 32}),
             Scenario({nodeCount: 256, threshold: 18}),
             Scenario({nodeCount: 256, threshold: 64})

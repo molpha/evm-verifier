@@ -84,6 +84,22 @@ For aggregate verification, the verifier:
 
 Invalid signatures return `false`. Malformed inputs, invalid registry versions, insufficient signers, unselected signers, zero signature fields, and invalid signature scalars revert with custom errors from `IVerifier`.
 
+### `verify` gas metrics
+
+Measured with `FOUNDRY_PROFILE=gas forge test -vv --match-contract VerifierGasTest` using the repository Foundry
+settings: Solidity `0.8.31`, Cancun EVM, IR compilation, optimizer enabled with one million runs.
+
+The table below isolates the number of submitted aggregate signers on a fixed 128-node registry with redundancy buffer
+`2`. `Total` includes the measured execution gas, calldata gas, and the `21,000` base transaction gas.
+
+| Active nodes | Signers | Cold execution | Cold total | Warm execution | Warm total |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 128 | 1 | 10,735 | 33,927 | 10,458 | 33,650 |
+| 128 | 3 | 15,891 | 39,107 | 15,346 | 38,550 |
+| 128 | 5 | 19,182 | 42,398 | 18,357 | 41,585 |
+| 128 | 9 | 25,957 | 49,209 | 24,861 | 48,125 |
+| 128 | 18 | 40,181 | 63,505 | 38,548 | 61,848 |
+
 ## Contracts
 
 | Path | Purpose |
