@@ -1,6 +1,6 @@
-# molpha-evm-verifier
+# Molpha EVM Verifier
 
-[![CI](https://github.com/Molpha/molpha-evm-verifier/actions/workflows/ci.yml/badge.svg)](https://github.com/Molpha/molpha-evm-verifier/actions/workflows/ci.yml)
+[![CI](https://github.com/molpha/evm-verifier/actions/workflows/ci.yml/badge.svg)](https://github.com/molpha/evm-verifier/actions/workflows/ci.yml)
 
 EVM contracts for Molpha's oracle-node registry and aggregate Schnorr signature verification on secp256k1.
 
@@ -216,8 +216,8 @@ Solidity also exposes public getters for `protocolAdmin`, `redundancyBuffer`, `r
 ### Setup
 
 ```bash
-git clone --recurse-submodules https://github.com/Molpha/molpha-evm-verifier.git
-cd molpha-evm-verifier
+git clone --recurse-submodules https://github.com/Molpha/evm-verifier.git
+cd evm-verifier
 
 forge build
 forge test
