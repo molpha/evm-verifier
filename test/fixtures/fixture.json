@@ -3,8 +3,8 @@
   "payloadKind": "cross-language-golden-vector",
   "registeredNodeCount": 10,
   "registryVersion": 10,
-  "configHash": "0x8845642f1043af0e50a6e432925c887893348dbdaa045f49e6f7b6a7f633481a",
-  "nodeIndexesOneBased": [
+  "nodeIndexes": [
+    0,
     1,
     2,
     3,
@@ -13,8 +13,7 @@
     6,
     7,
     8,
-    9,
-    10
+    9
   ],
   "nodePubkeys": [
     "0x02a6fe671a4f8fc31d46429f11372ce0c5beb43299d80bf2fd21729c4f13dc98cd",
@@ -41,10 +40,9 @@
     "965094881273444228478012228131680315086387503713246597357652171603581200858"
   ],
   "dataUpdate": {
-    "feedId": "0x11d70673c54b7e0bfb0359cce40a7be4fea039e102be62271823a2cfe6358679",
+    "sourceId": "0x8845642f1043af0e50a6e432925c887893348dbdaa045f49e6f7b6a7f633481a",
     "registryVersion": 10,
     "signaturesRequired": 3,
-    "configHash": "0x8845642f1043af0e50a6e432925c887893348dbdaa045f49e6f7b6a7f633481a",
     "value": "0x8a4fb565487814f6a54275bb3adc033b5783fe8c5607800ed4aefb60d98a9f96",
     "canonicalTimestamp": 1704033771
   },

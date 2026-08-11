@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.31;
 
+import {Ownable} from "solady/auth/Ownable.sol";
 import {SSTORE2} from "solady/utils/SSTORE2.sol";
 
 import {Verifier} from "../../src/Verifier.sol";
@@ -29,19 +30,12 @@ contract VerifierRegistryTest is VerifierTestBase {
         emit IVerifier.LogNodeAdded(node, 0, address(0));
         verifier.addNode(compressed, _proofOfPossession(address(verifier), compressed, secret));
 
-        assertTrue(verifier.isNode(node));
-        assertEq(verifier.getNodeIndex(node), 1);
-        assertEq(verifier.nodeIndexes(node), 1);
-        assertEq(verifier.nodeKeyX(1), pubkey.x);
-        assertEq(verifier.nodeKeyY(1), pubkey.y);
         assertEq(verifier.getTotalNodes(), 1);
         assertEq(verifier.getRegistryVersion(), 1);
+        assertFalse(verifier.isLatestVersion(0));
+        assertTrue(verifier.isLatestVersion(1));
         assertEq(verifier.getRegistryPointer(0), initialPointer);
         assertTrue(verifier.getRegistryPointer() != initialPointer);
-
-        (uint256 aggregateX, uint256 aggregateY) = verifier.getAggregateKey();
-        assertEq(aggregateX, pubkey.x);
-        assertEq(aggregateY, pubkey.y);
     }
 
     function test_addNode_revertsForDuplicateNode() public {
@@ -49,7 +43,7 @@ contract VerifierRegistryTest is VerifierTestBase {
         bytes memory compressed = LibSecp256k1.compress(pubkeys[0]);
         IVerifier.SchnorrProof memory proof = _proofOfPossession(address(verifier), compressed, secrets[0]);
 
-        vm.expectRevert(IVerifier.NodeAlreadyAdded.selector);
+        vm.expectRevert(IVerifier.NodeNotEligible.selector);
         verifier.addNode(compressed, proof);
     }
 
@@ -86,6 +80,11 @@ contract VerifierRegistryTest is VerifierTestBase {
 
         vm.expectRevert(LibSecp256k1.CompressedPubkeyXOutOfRange.selector);
         verifier.addNode(abi.encodePacked(bytes1(0x02), bytes32(LibSecp256k1.fieldP())), emptyProof);
+
+        // x = 5 is in range but 5³ + 7 is a quadratic non-residue mod P, so no curve point
+        // carries it. Decompression must reject it rather than return an off-curve point.
+        vm.expectRevert(LibSecp256k1.PointNotOnCurve.selector);
+        verifier.addNode(abi.encodePacked(bytes1(0x02), bytes32(uint256(5))), emptyProof);
     }
 
     function test_addNode_revertsForNonAdmin() public {
@@ -95,7 +94,7 @@ contract VerifierRegistryTest is VerifierTestBase {
         IVerifier.SchnorrProof memory proof = _proofOfPossession(address(verifier), compressed, secret);
 
         vm.prank(makeAddr("caller"));
-        vm.expectRevert(IVerifier.NotProtocolAdmin.selector);
+        vm.expectRevert(Ownable.Unauthorized.selector);
         verifier.addNode(compressed, proof);
     }
 
@@ -105,17 +104,9 @@ contract VerifierRegistryTest is VerifierTestBase {
 
         vm.expectEmit(true, false, false, false, address(verifier));
         emit IVerifier.LogNodeRemoved(node, 0, address(0));
-        verifier.removeNode(node);
+        verifier.removeNode(node, 0);
 
-        assertFalse(verifier.isNode(node));
-        assertEq(verifier.getNodeIndex(node), 0);
         assertEq(verifier.getTotalNodes(), 0);
-        assertEq(verifier.nodeKeyX(1), 0);
-        assertEq(verifier.nodeKeyY(1), 0);
-
-        (uint256 aggregateX, uint256 aggregateY) = verifier.getAggregateKey();
-        assertEq(aggregateX, 0);
-        assertEq(aggregateY, 0);
     }
 
     function test_removeNode_swapsLastNodeIntoRemovedMiddleIndex() public {
@@ -123,22 +114,17 @@ contract VerifierRegistryTest is VerifierTestBase {
         address removed = pubkeys[1].toAddress();
         address swapped = pubkeys[2].toAddress();
 
-        verifier.removeNode(removed);
+        _removeNode(verifier, 1);
 
-        assertFalse(verifier.isNode(removed));
-        assertEq(verifier.getNodeIndex(swapped), 2);
-        assertEq(verifier.nodeKeyX(2), pubkeys[2].x);
-        assertEq(verifier.nodeKeyY(2), pubkeys[2].y);
-        assertEq(verifier.nodeKeyX(3), 0);
-        assertEq(verifier.nodeKeyY(3), 0);
         assertEq(verifier.getTotalNodes(), 2);
+        assertEq(verifier.nodeStatus(removed), RETIRED, "removed node must be retired");
+        assertTrue(verifier.isNode(swapped), "swapped-in node must stay active");
 
-        (uint256 x, uint256 y, uint256 z) =
-            LibSecp256k1.addAffinePointToXYZ(pubkeys[0].x, pubkeys[0].y, 1, pubkeys[2].x, pubkeys[2].y);
-        LibSecp256k1.Point memory expected = LibSecp256k1.toAffineModexpXYZ(x, y, z);
-        (uint256 aggregateX, uint256 aggregateY) = verifier.getAggregateKey();
-        assertEq(aggregateX, expected.x);
-        assertEq(aggregateY, expected.y);
+        // The blob must now be exactly [pubkeys[0], pubkeys[2]] in that order.
+        LibSecp256k1.Point[] memory expected = new LibSecp256k1.Point[](2);
+        expected[0] = pubkeys[0];
+        expected[1] = pubkeys[2];
+        assertEq(_keysCommitmentAt(verifier), _keysCommitmentOf(expected), "key order after swap-and-pop");
     }
 
     function test_removeNode_removesLastWithoutReordering() public {
@@ -147,54 +133,118 @@ contract VerifierRegistryTest is VerifierTestBase {
         address second = pubkeys[1].toAddress();
         address last = pubkeys[2].toAddress();
 
-        verifier.removeNode(last);
+        _removeNode(verifier, 2);
 
-        assertEq(verifier.getNodeIndex(first), 1);
-        assertEq(verifier.getNodeIndex(second), 2);
-        assertEq(verifier.getNodeIndex(last), 0);
         assertEq(verifier.getTotalNodes(), 2);
+        assertEq(verifier.nodeStatus(last), RETIRED, "removed tail node must be retired");
+        assertTrue(verifier.isNode(first), "surviving nodes must stay active");
+        assertTrue(verifier.isNode(second), "surviving nodes must stay active");
+
+        LibSecp256k1.Point[] memory expected = new LibSecp256k1.Point[](2);
+        expected[0] = pubkeys[0];
+        expected[1] = pubkeys[1];
+        assertEq(_keysCommitmentAt(verifier), _keysCommitmentOf(expected), "key order after tail removal");
     }
 
-    function test_removeNode_allowsRemovedNodeToBeRegisteredAgain() public {
+    function test_removeNode_rejectsReAddOfRetiredAddress() public {
         _addNodes(verifier, 2);
         address node = pubkeys[0].toAddress();
         bytes memory compressed = LibSecp256k1.compress(pubkeys[0]);
         IVerifier.SchnorrProof memory proof = _proofOfPossession(address(verifier), compressed, secrets[0]);
 
-        verifier.removeNode(node);
-        verifier.addNode(compressed, proof);
+        verifier.removeNode(node, 0);
 
-        assertTrue(verifier.isNode(node));
-        assertEq(verifier.getNodeIndex(node), 2);
-        assertEq(verifier.getTotalNodes(), 2);
+        vm.expectRevert(IVerifier.NodeNotEligible.selector);
+        verifier.addNode(compressed, proof);
     }
 
-    function test_removeNode_revertsForUnknownNode() public {
-        vm.expectRevert(IVerifier.NotNode.selector);
-        verifier.removeNode(makeAddr("unknown node"));
+    function test_removeNode_revertsForOutOfBoundsIndex() public {
+        _addNodes(verifier, 1);
+
+        vm.expectRevert(IVerifier.IndexWitnessMismatch.selector);
+        verifier.removeNode(pubkeys[0].toAddress(), 1);
+    }
+
+    /// @dev Signer bitmaps are one 256-bit word, so a 257th node would occupy a slot no signature
+    ///      could ever address. The cap counts live nodes, so a removal frees the slot again.
+    function test_addNode_revertsWhenRegistryIsFull() public {
+        _addNodes(verifier, 256);
+        assertEq(verifier.getTotalNodes(), 256);
+
+        uint256 secret = _secret(1000);
+        bytes memory compressed = LibSecp256k1.compress(LibSecp256k1.mulAffine(LibSecp256k1.G(), secret));
+        IVerifier.SchnorrProof memory proof = _proofOfPossession(address(verifier), compressed, secret);
+
+        vm.expectRevert(IVerifier.MaxNodesReached.selector);
+        verifier.addNode(compressed, proof);
+
+        _removeNode(verifier, 0);
+        verifier.addNode(compressed, proof);
+        assertEq(verifier.getTotalNodes(), 256, "the freed slot is reusable");
+    }
+
+    /// @dev Retirement is terminal for the admin path: a second removal must not publish another
+    ///      version, or the registry would advance on a no-op.
+    function test_removeNode_revertsForAlreadyRetiredNode() public {
+        _addNodes(verifier, 2);
+        address node = pubkeys[0].toAddress();
+
+        verifier.removeNode(node, 0);
+        assertEq(verifier.nodeStatus(node), RETIRED);
+        uint256 versionAfterRemoval = verifier.getRegistryVersion();
+
+        vm.expectRevert(IVerifier.NodeNotEligible.selector);
+        verifier.removeNode(node, 0);
+        assertEq(verifier.getRegistryVersion(), versionAfterRemoval, "no version published");
+    }
+
+    function test_removeNode_revertsForNeverRegisteredNode() public {
+        _addNodes(verifier, 2);
+
+        vm.expectRevert(IVerifier.NodeNotEligible.selector);
+        verifier.removeNode(makeAddr("stranger"), 0);
+    }
+
+    /// @dev A flagged key must leave through `removeFlagged`, which keeps the terminal
+    ///      `COMPROMISED` status; the admin path would downgrade it to `RETIRED` and make the key
+    ///      eligible for compromise bookkeeping it has already passed.
+    function test_removeNode_revertsForCompromisedNode() public {
+        _addNodes(verifier, 2);
+        address node = pubkeys[0].toAddress();
+        verifier.flagCompromisedKey(secrets[0], verifier.getRegistryVersion(), 0, SKIP_CURRENT_INDEX);
+
+        vm.expectRevert(IVerifier.NodeNotEligible.selector);
+        verifier.removeNode(node, 0);
+
+        assertEq(verifier.nodeStatus(node), COMPROMISED, "status stays terminal");
     }
 
     function test_removeNode_revertsForNonAdmin() public {
         _addNodes(verifier, 1);
 
         vm.prank(makeAddr("caller"));
-        vm.expectRevert(IVerifier.NotProtocolAdmin.selector);
-        verifier.removeNode(pubkeys[0].toAddress());
+        vm.expectRevert(Ownable.Unauthorized.selector);
+        verifier.removeNode(pubkeys[0].toAddress(), 0);
+    }
+
+    function test_removeNode_revertsWhenNodeDoesNotMatchIndex() public {
+        _addNodes(verifier, 2);
+
+        vm.expectRevert(IVerifier.IndexWitnessMismatch.selector);
+        verifier.removeNode(pubkeys[1].toAddress(), 0);
     }
 
     function test_registryPointersRemainImmutableAcrossMutations() public {
-        address pointer0 = verifier.getRegistryPointer();
         _addNodes(verifier, 2);
-        address pointer1 = verifier.getRegistryPointer(1);
-        address pointer2 = verifier.getRegistryPointer(2);
+        address pointer1 = verifier.getRegistryPointer(0);
+        address pointer2 = verifier.getRegistryPointer(1);
 
-        verifier.removeNode(pubkeys[0].toAddress());
+        _removeNode(verifier, 0);
 
         assertEq(verifier.getRegistryVersion(), 3);
-        assertEq(verifier.getRegistryPointer(0), pointer0);
-        assertEq(verifier.getRegistryPointer(1), pointer1);
-        assertEq(verifier.getRegistryPointer(2), pointer2);
-        assertTrue(verifier.getRegistryPointer(3) != pointer2);
+        assertEq(verifier.getRegistryPointer(0), pointer1);
+        assertEq(verifier.getRegistryPointer(1), pointer2);
+        assertTrue(verifier.getRegistryPointer(2) != pointer2);
     }
 
     function test_getRegistryPointer_revertsForUnknownVersion() public {
@@ -202,14 +252,33 @@ contract VerifierRegistryTest is VerifierTestBase {
         verifier.getRegistryPointer(1);
     }
 
-    function test_getNodesSetHash_isStableUntilRegistryChanges() public {
-        bytes32 emptyHash = verifier.getNodesSetHash();
-        assertEq(verifier.getNodesSetHash(), emptyHash);
+    function test_isLatestVersion_revertsForUnknownVersion() public {
+        vm.expectRevert(IVerifier.InvalidRegistryVersion.selector);
+        verifier.isLatestVersion(1);
+    }
 
+    function test_isLatestVersion_tracksExactlyOneHeadAcrossMutations() public {
+        assertTrue(verifier.isLatestVersion(0));
+
+        _addNodes(verifier, 2);
+        assertFalse(verifier.isLatestVersion(0));
+        assertFalse(verifier.isLatestVersion(1));
+        assertTrue(verifier.isLatestVersion(2));
+
+        _removeNode(verifier, 0);
+        assertFalse(verifier.isLatestVersion(2));
+        assertTrue(verifier.isLatestVersion(3));
+
+        verifier.setRedundancyBuffer(5);
+        assertFalse(verifier.isLatestVersion(3));
+        assertTrue(verifier.isLatestVersion(4));
+    }
+
+    function test_keysCommitment_isStableUntilRegistryChanges() public {
         _addNodes(verifier, 1);
-        bytes32 oneNodeHash = verifier.getNodesSetHash();
-        assertTrue(oneNodeHash != emptyHash);
-        assertEq(verifier.getNodesSetHash(), oneNodeHash);
+        bytes32 oneNodeHash = _keysCommitmentAt(verifier);
+        assertEq(_keysCommitmentAt(verifier), oneNodeHash);
+        assertEq(_keysCommitmentAt(verifier, verifier.getRegistryVersion()), oneNodeHash);
     }
 
     function testFuzz_registryLifecycleInvariants_randomAddRemoveSequences(uint256 seed) public {
@@ -235,7 +304,7 @@ contract VerifierRegistryTest is VerifierTestBase {
                 activePubkeyIndexes.push(pubkeys.length - 1);
             } else {
                 uint256 removeIndex = uint256(keccak256(abi.encodePacked(seed, step, "remove"))) % activeNodes.length;
-                target.removeNode(activeNodes[removeIndex]);
+                _removeNode(target, removeIndex);
                 _removeExpectedNode(removeIndex);
             }
 
@@ -249,15 +318,10 @@ contract VerifierRegistryTest is VerifierTestBase {
         address removed = pubkeys[0].toAddress();
         address swappedFromIndex256 = pubkeys[255].toAddress();
 
-        verifier.removeNode(removed);
+        _removeNode(verifier, 0);
 
-        assertFalse(verifier.isNode(removed));
-        assertEq(verifier.getTotalNodes(), 255);
-        assertEq(verifier.getNodeIndex(swappedFromIndex256), 1);
-        assertEq(verifier.nodeKeyX(1), pubkeys[255].x);
-        assertEq(verifier.nodeKeyY(1), pubkeys[255].y);
-        assertEq(verifier.nodeKeyX(256), 0);
-        assertEq(verifier.nodeKeyY(256), 0);
+        assertEq(verifier.nodeStatus(removed), RETIRED);
+        assertTrue(verifier.isNode(swappedFromIndex256));
     }
 
     function _recordRegistryPointer(Verifier target) internal {
@@ -284,61 +348,27 @@ contract VerifierRegistryTest is VerifierTestBase {
             address pointer = target.getRegistryPointer(version);
             assertEq(pointer, expectedRegistryPointers[version], "historical pointer");
             assertEq(keccak256(SSTORE2.read(pointer)), expectedRegistryHashes[version], "historical blob hash");
+            assertEq(target.isLatestVersion(version), version == currentVersion, "latest flag");
         }
 
         bytes memory blob = SSTORE2.read(target.getRegistryPointer());
         uint256 totalNodes = activeNodes.length;
         assertEq(target.getTotalNodes(), totalNodes, "total nodes");
-        assertEq(blob.getNodesLength(), totalNodes + 1, "blob length");
+        assertEq(blob.getNodesLength(), totalNodes, "blob length");
 
         for (uint256 i; i < totalNodes; ++i) {
             LibSecp256k1.Point memory expected = pubkeys[activePubkeyIndexes[i]];
-            LibSecp256k1.Point memory stored = blob.getNode(i + 1);
+            LibSecp256k1.Point memory stored = blob.getNode(i);
             address node = stored.toAddress();
 
             assertEq(stored.x, expected.x, "blob node x");
             assertEq(stored.y, expected.y, "blob node y");
             assertEq(node, activeNodes[i], "blob node address");
-            assertTrue(target.isNode(node), "active node");
-            assertEq(target.nodeIndexes(node), i + 1, "node index");
-            assertEq(target.getNodeIndex(node), i + 1, "get node index");
-            assertEq(target.nodeKeyX(i + 1), stored.x, "node key x");
-            assertEq(target.nodeKeyY(i + 1), stored.y, "node key y");
+            assertEq(target.nodeStatus(node), ACTIVE, "active node status");
 
             for (uint256 j = i + 1; j < totalNodes; ++j) {
                 assertTrue(node != activeNodes[j], "duplicate active node");
             }
-        }
-
-        LibSecp256k1.Point memory expectedAggregate = _recomputeActiveAggregate();
-        LibSecp256k1.Point memory storedAggregate = blob.getNode(0);
-        (uint256 aggregateX, uint256 aggregateY) = target.getAggregateKey();
-
-        assertEq(storedAggregate.x, expectedAggregate.x, "stored aggregate x");
-        assertEq(storedAggregate.y, expectedAggregate.y, "stored aggregate y");
-        assertEq(aggregateX, expectedAggregate.x, "aggregate x");
-        assertEq(aggregateY, expectedAggregate.y, "aggregate y");
-
-        if (totalNodes == 0) {
-            assertEq(target.nodeKeyX(1), 0, "empty node key x");
-            assertEq(target.nodeKeyY(1), 0, "empty node key y");
-        } else {
-            assertEq(target.nodeKeyX(totalNodes + 1), 0, "stale node key x");
-            assertEq(target.nodeKeyY(totalNodes + 1), 0, "stale node key y");
-        }
-    }
-
-    function _recomputeActiveAggregate() internal view returns (LibSecp256k1.Point memory aggregate) {
-        if (activePubkeyIndexes.length == 0) {
-            return LibSecp256k1.ZERO_POINT();
-        }
-
-        aggregate = pubkeys[activePubkeyIndexes[0]];
-        for (uint256 i = 1; i < activePubkeyIndexes.length; ++i) {
-            LibSecp256k1.Point memory next = pubkeys[activePubkeyIndexes[i]];
-            (uint256 x, uint256 y, uint256 z) =
-                LibSecp256k1.addAffinePointToXYZ(aggregate.x, aggregate.y, 1, next.x, next.y);
-            aggregate = LibSecp256k1.toAffineModexpXYZ(x, y, z);
         }
     }
 }

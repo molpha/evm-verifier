@@ -5,6 +5,7 @@ import {console2} from "forge-std/Test.sol";
 
 import {Verifier} from "../../src/Verifier.sol";
 import {IVerifier} from "../../src/interfaces/IVerifier.sol";
+import {VerifyCodes} from "../../src/libs/VerifyCodes.sol";
 import {VerifierTestBase} from "../shared/VerifierTestBase.sol";
 
 /// @dev Run with `FOUNDRY_PROFILE=gas forge test -vv`.
@@ -44,71 +45,73 @@ contract VerifierGasTest is VerifierTestBase {
             benchmark.target, scenario.threshold, keccak256("MOLPHA_VERIFY_GAS_JOB"), bytes32(uint256(2)), 1_700_000_002
         );
         benchmark.firstCalldataCost =
-            _calldataCost(abi.encodeCall(IVerifier.verify, (benchmark.firstUpdate, benchmark.firstSignature)));
+            _calldataCost(abi.encodeCall(IVerifier.verify, (benchmark.firstUpdate, benchmark.firstSignature, 0)));
         benchmark.secondCalldataCost =
-            _calldataCost(abi.encodeCall(IVerifier.verify, (benchmark.secondUpdate, benchmark.secondSignature)));
+            _calldataCost(abi.encodeCall(IVerifier.verify, (benchmark.secondUpdate, benchmark.secondSignature, 0)));
 
+        vm.resumeGasMetering();
+    }
+
+    /// @dev The first call pays cold storage/account access — what a real first-in-block
+    ///      transaction costs. The second is warm, and is the number comparable across
+    ///      historical benchmark runs.
+    function _measure(BenchmarkSetup memory benchmark) private returns (uint256 cold, uint256 warm) {
+        // Undo the warming that `_setup` did, so the first call pays what production pays.
+        vm.cool(address(benchmark.target));
+
+        uint256 gasBefore = gasleft();
+        (bool firstVerified, uint8 firstCode) =
+            benchmark.target.verify(benchmark.firstUpdate, benchmark.firstSignature, 0);
+        cold = gasBefore - gasleft();
+
+        gasBefore = gasleft();
+        (bool secondVerified, uint8 secondCode) =
+            benchmark.target.verify(benchmark.secondUpdate, benchmark.secondSignature, 0);
+        warm = gasBefore - gasleft();
+
+        vm.pauseGasMetering();
+        assertTrue(firstVerified);
+        assertEq(firstCode, VerifyCodes.R_OK);
+        assertTrue(secondVerified);
+        assertEq(secondCode, VerifyCodes.R_OK);
         vm.resumeGasMetering();
     }
 
     function _run(Scenario memory scenario) internal {
         BenchmarkSetup memory benchmark = _setup(scenario);
-
-        uint256 gasBefore = gasleft();
-        bool firstVerified = benchmark.target.verify(benchmark.firstUpdate, benchmark.firstSignature);
-        uint256 coldExecution = gasBefore - gasleft();
-
-        gasBefore = gasleft();
-        bool secondVerified = benchmark.target.verify(benchmark.secondUpdate, benchmark.secondSignature);
-        uint256 warmExecution = gasBefore - gasleft();
+        (uint256 cold, uint256 warm) = _measure(benchmark);
 
         vm.pauseGasMetering();
-        assertTrue(firstVerified);
-        assertTrue(secondVerified);
         console2.log(
             string.concat("nodes=", vm.toString(scenario.nodeCount), " signers=", vm.toString(scenario.threshold))
         );
-        console2.log(
-            string.concat(
-                "  cold | execution=",
-                vm.toString(coldExecution),
-                " calldata=",
-                vm.toString(benchmark.firstCalldataCost),
-                " total=",
-                vm.toString(coldExecution + benchmark.firstCalldataCost + BASE_TRANSACTION_GAS)
-            )
-        );
-        console2.log(
-            string.concat(
-                "  warm | execution=",
-                vm.toString(warmExecution),
-                " calldata=",
-                vm.toString(benchmark.secondCalldataCost),
-                " total=",
-                vm.toString(warmExecution + benchmark.secondCalldataCost + BASE_TRANSACTION_GAS)
-            )
-        );
+        _logMeasurement("  cold execution=", cold, benchmark.firstCalldataCost);
+        _logMeasurement("       execution=", warm, benchmark.secondCalldataCost);
         vm.resumeGasMetering();
     }
 
+    function _logMeasurement(string memory label, uint256 execution, uint256 calldataCost) private view {
+        console2.log(
+            string.concat(
+                label,
+                vm.toString(execution),
+                " calldata=",
+                vm.toString(calldataCost),
+                " total=",
+                vm.toString(execution + calldataCost + BASE_TRANSACTION_GAS)
+            )
+        );
+    }
+
     function testGas_verifyScenarios() public {
-        Scenario[17] memory scenarios = [
-            Scenario({nodeCount: 128, threshold: 1}),
-            Scenario({nodeCount: 128, threshold: 3}),
-            Scenario({nodeCount: 128, threshold: 5}),
-            Scenario({nodeCount: 128, threshold: 9}),
-            Scenario({nodeCount: 128, threshold: 18}),
-            Scenario({nodeCount: 5, threshold: 3}),
-            Scenario({nodeCount: 10, threshold: 5}),
-            Scenario({nodeCount: 12, threshold: 3}),
-            Scenario({nodeCount: 12, threshold: 8}),
-            Scenario({nodeCount: 20, threshold: 8}),
-            Scenario({nodeCount: 32, threshold: 8}),
-            Scenario({nodeCount: 32, threshold: 18}),
-            Scenario({nodeCount: 64, threshold: 18}),
-            Scenario({nodeCount: 64, threshold: 32}),
-            Scenario({nodeCount: 128, threshold: 32}),
+        Scenario[7] memory scenarios = [
+            // Scenario({nodeCount: 1, threshold: 1}),
+            Scenario({nodeCount: 8, threshold: 5}),
+            Scenario({nodeCount: 256, threshold: 1}),
+            Scenario({nodeCount: 256, threshold: 5}),
+            Scenario({nodeCount: 256, threshold: 9}),
             Scenario({nodeCount: 256, threshold: 18}),
+            Scenario({nodeCount: 256, threshold: 32}),
             Scenario({nodeCount: 256, threshold: 64})
         ];
 

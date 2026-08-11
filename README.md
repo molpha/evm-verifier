@@ -4,7 +4,7 @@
 
 EVM contracts for Molpha's oracle-node registry and aggregate Schnorr signature verification on secp256k1.
 
-This repository contains the on-chain verification layer only. It does not aggregate signatures, publish feed values, store consumed updates, enforce timestamp freshness, or decide whether a feed is authorized for a consuming application. Integrators call `Verifier.verify(...)` and apply their own application-level checks around the returned result.
+This repository contains the on-chain verification layer only. It does not aggregate signatures, publish feed values, store consumed updates, or decide whether a feed is authorized for a consuming application. Integrators call `Verifier.verify(...)` with an optional `maxAge` for on-chain freshness, and apply their own application-level checks around the returned result.
 
 ## Contents
 
@@ -28,8 +28,8 @@ This repository contains the on-chain verification layer only. It does not aggre
 - Node registration requires a Schnorr proof-of-possession over the node's compressed secp256k1 public key.
 - Every registry mutation creates an immutable SSTORE2-backed public-key snapshot.
 - Historical registry versions remain verifiable after later node additions or removals.
-- Signer groups are selected deterministically from `feedId`, `registryVersion`, and `canonicalTimestamp`.
-- The protocol admin can configure a redundancy buffer so each selected group can contain more nodes than the required threshold.
+- Signer groups are selected deterministically from `sourceId`, `registryVersion`, and `canonicalTimestamp`.
+- The owner can configure a redundancy buffer so each selected group can contain more nodes than the required threshold.
 - Aggregate Schnorr signatures are verified against the plain-sum public key of the submitted signer coalition.
 
 The contract is intentionally narrow. It answers one question: "Did enough selected Molpha nodes sign this exact data update under the stated registry version?" Everything after that is up to the caller.
@@ -41,10 +41,11 @@ The contract is intentionally narrow. It answers one question: "Did enough selec
 The registry stores public keys as ABI-encoded `LibSecp256k1.Point[]` blobs written with Solady's `SSTORE2`.
 
 - Registry version `0` is created in the constructor and contains no active nodes.
-- Array index `0` is reserved for the aggregate public key of the active set.
-- Active node keys use one-based indices: node index `1` maps to signer bitmap bit `0`, node index `2` maps to bit `1`, and so on.
-- `addNode` appends a key, updates the aggregate key, writes a new blob, and increments the registry version.
-- `removeNode` removes a key, updates the aggregate key, writes a new blob, and increments the registry version.
+- Active node keys use zero-based blob indices: node index `i` maps to signer bitmap bit `i`.
+- Each published version carries an `activatesAt` timestamp and a chained `registryRoot`.
+- Retired versions remain verifiable for `PREVIOUS_GRACE` (60 seconds) after the successor version activates.
+- `addNode` appends a key, writes a new blob, publishes a new registry version, and chains a new `registryRoot`.
+- `removeNode` removes a key, writes a new blob, publishes a new registry version, and chains a new `registryRoot`.
 - If a removed node is not the tail node, the current tail node is swapped into the removed index. Consumers should not assume node indices are stable across registry versions.
 
 ### Signer selection
@@ -54,7 +55,7 @@ For each update, the contract derives a selection seed:
 ```text
 keccak256(
   keccak256("MOLPHA_SELECTION_V1") ||
-  feedId ||
+  sourceId ||
   registryVersion ||
   canonicalTimestamp
 )
@@ -78,27 +79,33 @@ For aggregate verification, the verifier:
 
 1. Loads the registry snapshot requested by `dataUpdate.registryVersion`.
 2. Derives the deterministic selected signer group.
-3. Checks that the submitted bitmap contains enough selected signers.
-4. Sums the selected signers' public keys in ascending index order.
+3. Checks that the submitted bitmap is a subset of the selected group and that enough uncompromised signers remain after discounting compromised keys.
+4. Sums the public keys of every set bit in the submitted signer bitmap.
 5. Verifies the aggregate Schnorr signature against the signed message digest.
 
-Invalid signatures return `false`. Malformed inputs, invalid registry versions, insufficient signers, unselected signers, zero signature fields, and invalid signature scalars revert with custom errors from `IVerifier`.
+`verify` is non-reverting: predicate failures and invalid signatures return `(false, code)` using the shared result codes in `VerifyCodes`. Compromised signers are discounted from the threshold count but still included in the aggregate public key. See `docs/registry-v2.md` for the full registry-v2 semantics.
 
 ### `verify` gas metrics
 
 Measured with `FOUNDRY_PROFILE=gas forge test -vv --match-contract VerifierGasTest` using the repository Foundry
 settings: Solidity `0.8.31`, Cancun EVM, IR compilation, optimizer enabled with one million runs.
 
-The table below isolates the number of submitted aggregate signers on a fixed 128-node registry with redundancy buffer
-`2`. `Total` includes the measured execution gas, calldata gas, and the `21,000` base transaction gas.
+The table below isolates the number of submitted aggregate signers, with redundancy buffer `2`. `Total` includes the
+measured execution gas, calldata gas, and the `21,000` base transaction gas.
 
-| Active nodes | Signers | Cold execution | Cold total | Warm execution | Warm total |
-| ---: | ---: | ---: | ---: | ---: | ---: |
-| 128 | 1 | 10,735 | 33,927 | 10,458 | 33,650 |
-| 128 | 3 | 15,891 | 39,107 | 15,346 | 38,550 |
-| 128 | 5 | 19,182 | 42,398 | 18,357 | 41,585 |
-| 128 | 9 | 25,957 | 49,209 | 24,861 | 48,125 |
-| 128 | 18 | 40,181 | 63,505 | 38,548 | 61,848 |
+| Active nodes | Signers | Execution | Calldata | Total |
+| ---: | ---: | ---: | ---: | ---: |
+| 8 | 5 | 13,979 | 2,308 | 37,287 |
+| 256 | 1 | 9,251 | 2,320 | 32,571 |
+| 256 | 5 | 15,428 | 2,344 | 38,772 |
+| 256 | 9 | 19,921 | 2,392 | 43,313 |
+| 256 | 18 | 29,782 | 2,488 | 53,270 |
+| 256 | 32 | 44,834 | 2,524 | 68,358 |
+| 256 | 64 | 80,724 | 2,644 | 104,368 |
+
+These are warm-state figures: the benchmark calls `verify` twice and reports the second call. A first-in-block
+transaction additionally pays a cold-access surcharge of roughly `2,000`–`5,300` gas — one cold `SLOAD` for the
+registry entry and one cold account access for the key blob.
 
 ## Contracts
 
@@ -110,6 +117,10 @@ The table below isolates the number of submitted aggregate signers on a fixed 12
 | `src/libs/LibSecp256k1.sol` | secp256k1 point arithmetic, compression, decompression, and key utilities |
 | `src/libs/NodeGroupBitmapLib.sol` | Deterministic unbiased signer-group bitmap derivation |
 | `src/libs/PubkeyBlobLib.sol` | Helpers for SSTORE2-encoded public-key registry blobs |
+| `src/libs/VerifierLib.sol` | Packed registry entries, signer selection, and aggregate key math |
+| `src/libs/VerifyCodes.sol` | Shared `verify` result codes |
+| `src/libs/KeysCommitmentLib.sol` | Canonical ordered-coordinate commitment used in registry roots |
+| `src/libs/CompromiseLib.sol` | Compromise bitmap helpers for registry transitions and verification |
 | `script/Deploy.s.sol` | Deterministic CREATE2 deployment script |
 | `script/AddNode.s.sol` | Single-node and batch node-registration script |
 | `script/libs/DeployConstants.sol` | Shared deployment salt and initial redundancy buffer |
@@ -121,10 +132,10 @@ Consumers pass the data update and the aggregate Schnorr signature:
 
 ```solidity
 struct DataUpdate {
-    bytes32 feedId;
+    bytes32 value;
+    bytes32 sourceId;
     uint32 registryVersion;
     uint32 signaturesRequired;
-    bytes32 value;
     uint64 canonicalTimestamp;
 }
 
@@ -140,7 +151,7 @@ The signed message is:
 ```text
 keccak256(
   keccak256("MOLPHA_MESSAGE_V1") ||
-  feedId ||
+  sourceId ||
   registryVersion ||
   signaturesRequired ||
   signersBitmap ||
@@ -177,17 +188,24 @@ All concatenations above use Solidity `abi.encodePacked` with the field types sh
 | Function | Description |
 | --- | --- |
 | `addNode(bytes compressedPubKey, SchnorrProof pop)` | Registers a node after validating its compressed public key and proof-of-possession |
-| `removeNode(address node)` | Removes an active node and writes a new registry snapshot |
-| `setRedundancyBuffer(uint256 newRedundancyBuffer)` | Sets the extra nodes included in each selected signer group |
-| `transferProtocolAdmin(address newProtocolAdmin)` | Transfers the protocol admin role |
+| `removeNode(address node, uint256 index)` | Removes the node at `index` after checking the `(node, index)` witness, and writes a new registry snapshot |
+| `setRedundancyBuffer(uint256 newRedundancyBuffer)` | Publishes a new registry version with the updated redundancy buffer |
 
-Admin functions revert unless `msg.sender == protocolAdmin`.
+Admin functions revert unless `msg.sender == owner()`.
+
+### Permissionless functions
+
+| Function | Description |
+| --- | --- |
+| `flagCompromisedKey(uint256 privKey, uint256 witnessVersion, uint256 witnessIndex, uint256 currentIndex)` | Proves a leaked private key and seeds compromised bitmaps for the witnessed versions |
+| `backfillCompromised(address node, uint256 version, uint256 index)` | Seeds a compromised key into a historical version the flag did not reach |
+| `removeFlagged(uint256 index, address node)` | Removes a currently registered compromised node after checking the index witness |
 
 ### Verification function
 
 | Function | Description |
 | --- | --- |
-| `verify(DataUpdate dataUpdate, SchnorrSignature schnorrData)` | Returns `true` when the aggregate Schnorr signature is valid for the selected signer coalition |
+| `verify(DataUpdate dataUpdate, SchnorrSignature schnorrData, uint256 maxAge)` | Returns `(true, VerifyCodes.R_OK)` when the aggregate Schnorr signature is valid. Pass `maxAge > 0` to also require `canonicalTimestamp` within that age of `block.timestamp`; `maxAge = 0` skips freshness. Other outcomes return `(false, code)` without reverting. |
 
 `verify` is `view`. A successful call does not persist state and does not prevent replay by itself.
 
@@ -198,13 +216,16 @@ Admin functions revert unless `msg.sender == protocolAdmin`.
 | `getRegistryVersion()` | Latest registry version |
 | `getRegistryPointer()` | SSTORE2 pointer for the latest registry snapshot |
 | `getRegistryPointer(uint256 registryVersion)` | SSTORE2 pointer for a historical registry snapshot |
-| `isNode(address node)` | Whether a node is currently active |
+| `getRegistryRoot()` / `getRegistryRoot(uint256)` | Chained registry root for the current or historical version |
+| `activatesAt(uint256 registryVersion)` | Unix timestamp when a version became live |
+| `retiredAt(uint256 registryVersion)` | Unix timestamp when a version was superseded |
+| `isLatestVersion(uint256 registryVersion)` | Whether a version is the current registry head |
+| `isNode(address node)` | Whether a node is currently active (not retired or compromised) |
 | `getTotalNodes()` | Number of active nodes in the latest registry |
-| `getNodesSetHash()` | Hash of the latest encoded registry blob |
-| `getAggregateKey()` | Plain-sum aggregate public key for the latest active set |
-| `getNodeIndex(address node)` | Current one-based node index, or `0` if inactive |
+| `nodeStatus(address)` | Eligibility status: `0` never, `1` active, `2` retired, `3` compromised |
 
-Solidity also exposes public getters for `protocolAdmin`, `redundancyBuffer`, `registryPointers`, `nodeIndexes`, `nodeKeyX`, and `nodeKeyY`.
+Solidity also exposes public getters for `owner`, `redundancyBuffer`, and `nodeStatus`. Registry snapshots are stored in
+a private mapping and read through `getRegistryPointer`.
 
 ## Development
 
@@ -316,7 +337,7 @@ The script maps common chain IDs to readable folder names, including `ethereum`,
 
 ## Node registration
 
-Only the current `protocolAdmin` can add or remove nodes.
+Only the current `owner()` can add or remove nodes.
 
 ### Single node from a private key
 
@@ -408,12 +429,13 @@ When integrating `Verifier` into a consumer contract or off-chain client:
 
 - Pass the registry version that was used during off-chain signing.
 - Treat node indices as version-specific. They can change after removals because the registry swaps the tail node into the removed slot.
-- Build signer bitmaps with zero-based bit positions: bit `i - 1` represents one-based registry index `i`.
-- Reject stale updates by comparing `canonicalTimestamp` against your own freshness policy.
+- Build signer bitmaps with zero-based bit positions: bit `i` represents registry index `i`.
+- Pass `maxAge > 0` to reject updates whose `canonicalTimestamp` is older than that many seconds relative to `block.timestamp` (or in the future). Pass `maxAge = 0` to skip on-chain freshness and enforce your own policy.
 - Reject duplicate or replayed updates according to your consumer state machine.
-- Validate that the `feedId` is authorized for your application before trusting `value`.
+- Validate that the `sourceId` is authorized for your application before trusting `value`.
 - Decide how many signatures your feed requires and pass that value in `DataUpdate.signaturesRequired`.
-- Handle both outcomes from `verify`: malformed inputs or unselected signers may revert; well-formed but invalid signatures return `false`.
+- Handle `false` returns from `verify` as failed updates and inspect the returned `code` (`VerifyCodes`) to distinguish malformed input, stale timestamps, expired versions, quorum failures, and bad signatures.
+- Respect registry version lifetimes: `canonicalTimestamp` must be at or after `activatesAt`, and non-latest versions expire `PREVIOUS_GRACE` seconds after the successor activates.
 - Remember that `value` is an opaque `bytes32`. Consumers define the encoding, scale, and semantic meaning.
 - Pin deployments, registry versions, and expected chain IDs in production configuration.
 

@@ -1,17 +1,10 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.31;
 
 /// @title NodeGroupBitmapLib
-/// @notice Deterministic without-replacement node selection.
-///
-/// - PRF: `keccak256(seed || domain || counter)` — three 32-byte big-endian words (96 bytes);
-///   `domain = keccak256("MOLPHA_SELECTION_DERIVE")` (`0x492848fe…b70b`), `counter` starts at 0.
-/// - Each digest yields eight big-endian `uint32` limbs (MSB first).
-/// - Unbiased index: reject `limb >= floor(2^32 / nCount) * nCount`, then `pos = limb % nCount`.
-/// - Without replacement: skip positions already set in `bitmap`.
-/// - If `groupSize > nCount / 2`, sample `nCount - groupSize` exclusions and complement the mask.
-///
-/// Requires `nCount <= 256` (result fits in one `uint256` bitmap).
+/// @notice Deterministic without-replacement node selection for a fixed registry size.
+/// @dev PRF: `keccak256(seed || domain || counter)` with rejection sampling; complements
+///      the mask when `groupSize > nCount / 2`. Requires `nCount <= 256`.
 library NodeGroupBitmapLib {
     error GroupSizeExceedsNodeCount();
     error NodeCountExceedsMax();
@@ -50,41 +43,33 @@ library NodeGroupBitmapLib {
         pure
         returns (uint256 bitmap)
     {
-        uint256 limit = (uint256(1) << 32) - ((uint256(1) << 32) % nCount);
-        uint256 selected;
-        uint256 counter;
-        while (selected < groupSize) {
-            bytes32 digest = _hashRound(seed, counter);
-            unchecked {
-                ++counter;
-            }
-            uint256 word = uint256(digest);
-            for (uint256 w; w < 8 && selected < groupSize;) {
-                uint256 limb = word >> 224;
-                word <<= 32;
-                if (limb < limit) {
-                    uint256 bit = uint256(1) << (limb % nCount);
-                    if (bitmap & bit == 0) {
-                        bitmap |= bit;
-                        ++selected;
-                    }
-                }
-                unchecked {
-                    ++w;
-                }
-            }
-        }
-    }
-
-    /// @dev `keccak256(seed || SELECTION_DOMAIN || counter)`; reuses `0x40` scratch (96-byte preimage).
-    function _hashRound(bytes32 seed, uint256 counter) private pure returns (bytes32 digest) {
         bytes32 domain = SELECTION_DOMAIN;
         assembly ("memory-safe") {
             let ptr := mload(0x40)
             mstore(ptr, seed)
             mstore(add(ptr, 0x20), domain)
-            mstore(add(ptr, 0x40), counter)
-            digest := keccak256(ptr, 0x60)
+
+            let limit := sub(0x100000000, mod(0x100000000, nCount))
+            let selected := 0
+            let counter := 0
+
+            for {} lt(selected, groupSize) {} {
+                mstore(add(ptr, 0x40), counter)
+                counter := add(counter, 1)
+                let word := keccak256(ptr, 0x60)
+
+                for { let w := 0 } and(lt(w, 8), lt(selected, groupSize)) { w := add(w, 1) } {
+                    let limb := shr(224, word)
+                    word := shl(32, word)
+                    if lt(limb, limit) {
+                        let bit := shl(mod(limb, nCount), 1)
+                        if iszero(and(bitmap, bit)) {
+                            bitmap := or(bitmap, bit)
+                            selected := add(selected, 1)
+                        }
+                    }
+                }
+            }
         }
     }
 }
