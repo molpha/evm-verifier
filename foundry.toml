@@ -12,7 +12,8 @@ no_match_path = "test/gas/*.t.sol"
 no_match_coverage = "^(script|test)/"
 # forge-std v1.9.7 emits Solidity 0.8.31 warning 2424 from dependency assembly
 # comments, then Solidity wraps the flood with aggregate warning 4591.
-ignored_error_codes = [2424, 4591]
+# solady Ownable keeps `virtual` modifiers until Solidity 0.9.0 (vectorized/solady#1519).
+ignored_error_codes = [2424, 4591, 8429]
 
 [lint]
 ignore = ["test/**/*.sol", "test/*.sol"]
