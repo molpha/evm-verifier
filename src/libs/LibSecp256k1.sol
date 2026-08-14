@@ -130,11 +130,24 @@ library LibSecp256k1 {
         pure
         returns (uint256 nax, uint256 nay, uint256 naz)
     {
+        if (jz == 0) {
+            return (px, py, 1);
+        }
+
+        uint256 z2 = mulmod(jz, jz, _P);
+        uint256 z3 = mulmod(z2, jz, _P);
+        uint256 h = addmod(mulmod(px, z2, _P), _P - jx, _P);
+
+        if (h == 0) {
+            uint256 r = mulmod(2, addmod(mulmod(py, z3, _P), _P - jy, _P), _P);
+            if (r == 0) {
+                return jacobianDoubleXYZ(jx, jy, jz);
+            }
+            return (0, 0, 0);
+        }
+
         assembly ("memory-safe") {
             let P := 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFC2F
-            let z2 := mulmod(jz, jz, P)
-            let z3 := mulmod(z2, jz, P)
-            let h := addmod(mulmod(px, z2, P), sub(P, jx), P)
             let h2 := mulmod(h, h, P)
             let i2 := mulmod(4, h2, P)
             let v := mulmod(jx, i2, P)
@@ -144,6 +157,32 @@ library LibSecp256k1 {
             naz := addmod(mulmod(azh, azh, P), addmod(sub(P, z2), sub(P, h2), P), P)
             nax := addmod(mulmod(r, r, P), addmod(sub(P, j), sub(P, mulmod(2, v, P)), P), P)
             nay := addmod(mulmod(r, addmod(v, sub(P, nax), P), P), sub(P, mulmod(2, mulmod(jy, j, P), P)), P)
+        }
+    }
+
+    /// @dev Jacobian point doubling (a = 0), dbl-2009-l; scalar form of `jacobianDouble`.
+    function jacobianDoubleXYZ(uint256 x1, uint256 y1, uint256 z1)
+        internal
+        pure
+        returns (uint256 x3, uint256 y3, uint256 z3)
+    {
+        if (z1 == 0) {
+            return (x1, y1, 0);
+        }
+        unchecked {
+            uint256 a = mulmod(x1, x1, _P);
+            uint256 b = mulmod(y1, y1, _P);
+            uint256 c = mulmod(b, b, _P);
+            uint256 d = addmod(x1, b, _P);
+            d = mulmod(d, d, _P);
+            d = addmod(addmod(d, _P - a, _P), _P - c, _P);
+            d = mulmod(2, d, _P);
+            uint256 e = mulmod(3, a, _P);
+            uint256 f = mulmod(e, e, _P);
+            x3 = addmod(f, _P - mulmod(2, d, _P), _P);
+            y3 = mulmod(e, addmod(d, _P - x3, _P), _P);
+            y3 = addmod(y3, _P - mulmod(8, c, _P), _P);
+            z3 = mulmod(2, mulmod(y1, z1, _P), _P);
         }
     }
 
@@ -159,30 +198,7 @@ library LibSecp256k1 {
 
     /// @dev Jacobian point doubling (a = 0), dbl-2009-l; mutates `self` in place.
     function jacobianDouble(JacobianPoint memory self) internal pure {
-        uint256 z1 = self.z;
-        if (z1 == 0) {
-            return;
-        }
-        uint256 x1 = self.x;
-        uint256 y1 = self.y;
-        unchecked {
-            uint256 a = mulmod(x1, x1, _P);
-            uint256 b = mulmod(y1, y1, _P);
-            uint256 c = mulmod(b, b, _P);
-            uint256 d = addmod(x1, b, _P);
-            d = mulmod(d, d, _P);
-            d = addmod(addmod(d, _P - a, _P), _P - c, _P);
-            d = mulmod(2, d, _P);
-            uint256 e = mulmod(3, a, _P);
-            uint256 f = mulmod(e, e, _P);
-            uint256 x3 = addmod(f, _P - mulmod(2, d, _P), _P);
-            uint256 y3 = mulmod(e, addmod(d, _P - x3, _P), _P);
-            y3 = addmod(y3, _P - mulmod(8, c, _P), _P);
-            uint256 z3 = mulmod(2, mulmod(y1, z1, _P), _P);
-            self.x = x3;
-            self.y = y3;
-            self.z = z3;
-        }
+        (self.x, self.y, self.z) = jacobianDoubleXYZ(self.x, self.y, self.z);
     }
 
     /// @dev Scalar multiplication in the secp256k1 group (affine non-zero point, scalar mod order domain handled by caller).

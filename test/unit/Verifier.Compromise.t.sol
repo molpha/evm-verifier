@@ -111,6 +111,19 @@ contract VerifierCompromiseTest is VerifierTestBase {
         assertEq(verifier.nodeStatus(node), COMPROMISED);
     }
 
+    /// @dev An active node flagged via a historical witness must supply its live index; otherwise
+    ///      `nodeStatus` becomes terminal while the live bitmap stays clean.
+    function test_flagCompromisedKey_revertsWhenActiveNodeSkipsCurrentIndex() public {
+        _addNodes(verifier, 3);
+        uint256 historicalVersion = verifier.getRegistryVersion();
+        verifier.setRedundancyBuffer(3);
+
+        vm.expectRevert(IVerifier.MissingCurrentIndex.selector);
+        verifier.flagCompromisedKey(secrets[1], historicalVersion, 1, SKIP_CURRENT_INDEX);
+
+        assertEq(verifier.nodeStatus(pubkeys[1].toAddress()), ACTIVE, "status untouched by the failed flag");
+    }
+
     /// @dev For a still-active node the live-version witness is checked, so a wrong `currentIndex`
     ///      has to fail loudly instead of seeding the wrong bit.
     function test_flagCompromisedKey_revertsForWrongCurrentIndex() public {

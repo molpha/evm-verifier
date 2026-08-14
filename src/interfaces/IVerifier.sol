@@ -17,6 +17,7 @@ interface IVerifier {
     error KeyNotCompromised();
     error InvalidPrivateKeyScalar();
     error WitnessMismatch();
+    error MissingCurrentIndex();
     error AlreadyCounted();
 
     /// @notice Generic Schnorr proof data used for PoP and aggregate verification inputs.
@@ -104,7 +105,8 @@ interface IVerifier {
     /// @param privKey Leaked secp256k1 scalar
     /// @param witnessVersion Registry version containing the key
     /// @param witnessIndex 0-based blob index within that version
-    /// @param currentIndex 0-based blob index in the live version, or `type(uint256).max` to skip
+    /// @param currentIndex 0-based blob index in the live version; required when the node is
+    ///        `ACTIVE`, or `type(uint256).max` when the node is `RETIRED` and absent from the live blob
     function flagCompromisedKey(uint256 privKey, uint256 witnessVersion, uint256 witnessIndex, uint256 currentIndex)
         external;
 

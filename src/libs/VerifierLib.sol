@@ -139,6 +139,56 @@ library VerifierLib {
             let P := 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFC2F
             let rem := signersBitmap
 
+            // Mixed Jacobian+affine step: handles infinity, cancellation, doubling, and madd-2007-bl.
+            function addMixed(x1, y1, z1, px, py, p) -> x3, y3, z3 {
+                if iszero(z1) {
+                    x3 := px
+                    y3 := py
+                    z3 := 1
+                    leave
+                }
+
+                let z2 := mulmod(z1, z1, p)
+                let z1cubed := mulmod(z2, z1, p)
+                let h := addmod(mulmod(px, z2, p), sub(p, x1), p)
+
+                if h {
+                    let r := mulmod(2, addmod(mulmod(py, z1cubed, p), sub(p, y1), p), p)
+                    let h2 := mulmod(h, h, p)
+                    let i2 := mulmod(4, h2, p)
+                    let v := mulmod(x1, i2, p)
+                    let j := mulmod(h, i2, p)
+                    let azh := addmod(z1, h, p)
+                    z3 := addmod(mulmod(azh, azh, p), addmod(sub(p, z2), sub(p, h2), p), p)
+                    x3 := addmod(mulmod(r, r, p), addmod(sub(p, j), sub(p, mulmod(2, v, p)), p), p)
+                    y3 := mulmod(r, addmod(v, sub(p, x3), p), p)
+                    y3 := addmod(y3, sub(p, mulmod(2, mulmod(y1, j, p), p)), p)
+                    leave
+                }
+
+                let r := mulmod(2, addmod(mulmod(py, z1cubed, p), sub(p, y1), p), p)
+                if iszero(r) {
+                    let a := mulmod(x1, x1, p)
+                    let b := mulmod(y1, y1, p)
+                    let c := mulmod(b, b, p)
+                    let d := addmod(x1, b, p)
+                    d := mulmod(d, d, p)
+                    d := addmod(addmod(d, sub(p, a), p), sub(p, c), p)
+                    d := mulmod(2, d, p)
+                    let e := mulmod(3, a, p)
+                    let f := mulmod(e, e, p)
+                    x3 := addmod(f, sub(p, mulmod(2, d, p)), p)
+                    y3 := mulmod(e, addmod(d, sub(p, x3), p), p)
+                    y3 := addmod(y3, sub(p, mulmod(8, c, p)), p)
+                    z3 := mulmod(2, mulmod(y1, z1, p), p)
+                    leave
+                }
+
+                x3 := 0
+                y3 := 0
+                z3 := 0
+            }
+
             // Seed accumulator with the first signer (affine: z = 1).
             ax, ay := readLowestKey(entry, rem)
             az := 1
@@ -147,23 +197,7 @@ library VerifierLib {
             for {} rem {} {
                 let px, py := readLowestKey(entry, rem)
                 rem := and(rem, sub(rem, 1))
-
-                // madd-2007-bl: add affine (px, py) into Jacobian (ax, ay, az).
-                let z2 := mulmod(az, az, P)
-                let z3 := mulmod(z2, az, P)
-                let h := addmod(mulmod(px, z2, P), sub(P, ax), P) // x2*Z1^2 - X1
-                let h2 := mulmod(h, h, P)
-                let i2 := mulmod(4, h2, P)
-                let v := mulmod(ax, i2, P)
-                let j := mulmod(h, i2, P)
-                let r := mulmod(2, addmod(mulmod(py, z3, P), sub(P, ay), P), P) // 2*(y2*Z1^3 - Y1)
-
-                let azh := addmod(az, h, P)
-                az := addmod(mulmod(azh, azh, P), addmod(sub(P, z2), sub(P, h2), P), P) // Z3
-
-                let nax := addmod(mulmod(r, r, P), addmod(sub(P, j), sub(P, mulmod(2, v, P)), P), P) // X3
-                ay := addmod(mulmod(r, addmod(v, sub(P, nax), P), P), sub(P, mulmod(2, mulmod(ay, j, P), P)), P) // Y3
-                ax := nax
+                ax, ay, az := addMixed(ax, ay, az, px, py, P)
             }
         }
 

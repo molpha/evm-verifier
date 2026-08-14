@@ -208,10 +208,12 @@ contract Verifier is IVerifier, Ownable {
         _requireWitness(node, witnessVersion, witnessIndex);
         _seedCompromised(witnessVersion, witnessIndex);
 
-        // Seed the live version when the caller supplies a current-index witness.
-        if (currentIndex != type(uint256).max) {
+        // Active nodes stay in the live blob, so their current index must be seeded now. Retired
+        // nodes are gone from the live version and may pass the skip sentinel instead.
+        if (status == ACTIVE) {
             uint256 currentVersion = registryVersionCount;
-            if (currentVersion != witnessVersion && nodeStatus[node] == ACTIVE) {
+            if (currentVersion != witnessVersion) {
+                if (currentIndex == type(uint256).max) revert MissingCurrentIndex();
                 _requireWitness(node, currentVersion, currentIndex);
                 _seedCompromised(currentVersion, currentIndex);
             }
