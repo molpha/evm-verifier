@@ -79,9 +79,6 @@ contract VerifierFixtureJsonTest is Test {
         IVerifier.SchnorrSignature memory sch = _loadSchnorrSignature(json);
 
         (bool verified, uint8 code) = validator.verify(du, sch, 0);
-        if (!verified) {
-            vm.skip(true, "fixture signature stale; regenerate fixture with sourceId in message/selection preimages");
-        }
         assertEq(code, VerifyCodes.R_OK);
     }
 }
