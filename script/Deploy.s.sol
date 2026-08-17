@@ -92,6 +92,6 @@ contract Deploy is Script {
         vm.writeJson(vm.serializeUint(deploymentMeta, "chainId", block.chainid), _addresses, ".deployment");
 
         vm.writeJson(vm.serializeAddress("", type(Verifier).name, deployed), _addresses, ".addresses");
-        vm.writeJson(vm.serializeAddress("", "ProtocolAdmin", verifier.protocolAdmin()), _addresses, ".addresses");
+        vm.writeJson(vm.serializeAddress("", "ProtocolAdmin", verifier.owner()), _addresses, ".addresses");
     }
 }

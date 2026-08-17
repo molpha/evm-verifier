@@ -6,6 +6,7 @@ import {stdJson} from "forge-std/StdJson.sol";
 
 import {Verifier} from "../../src/Verifier.sol";
 import {IVerifier} from "../../src/interfaces/IVerifier.sol";
+import {VerifyCodes} from "../../src/libs/VerifyCodes.sol";
 import {LibSecp256k1} from "../../src/libs/LibSecp256k1.sol";
 import {LibSchnorrTestSign} from "../libs/LibSchnorrTestSign.sol";
 
@@ -33,7 +34,7 @@ contract VerifierFixtureJsonTest is Test {
 
     function _loadDataUpdate(string memory json) internal view returns (IVerifier.DataUpdate memory du) {
         du = IVerifier.DataUpdate({
-            feedId: json.readBytes32(".dataUpdate.feedId"),
+            sourceId: json.readBytes32(".dataUpdate.sourceId"),
             registryVersion: uint32(json.readUint(".dataUpdate.registryVersion")),
             signaturesRequired: uint32(json.readUint(".dataUpdate.signaturesRequired")),
             value: json.readBytes32(".dataUpdate.value"),
@@ -77,6 +78,7 @@ contract VerifierFixtureJsonTest is Test {
         IVerifier.DataUpdate memory du = _loadDataUpdate(json);
         IVerifier.SchnorrSignature memory sch = _loadSchnorrSignature(json);
 
-        assertTrue(validator.verify(du, sch), "fixture.json verify must pass");
+        (bool verified, uint8 code) = validator.verify(du, sch, 0);
+        assertEq(code, VerifyCodes.R_OK);
     }
 }

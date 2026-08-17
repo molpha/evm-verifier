@@ -40,7 +40,7 @@ contract AddNode is Script {
 
         uint256 adminKey = vm.envUint("PRIVATE_KEY");
         address admin = vm.addr(adminKey);
-        if (verifier.protocolAdmin() != admin) revert PrivateKeyNotProtocolAdmin();
+        if (verifier.owner() != admin) revert PrivateKeyNotProtocolAdmin();
         vm.startBroadcast(adminKey);
 
         for (uint256 i = 0; i < nodes.length; ++i) {
@@ -49,7 +49,6 @@ contract AddNode is Script {
             console2.log("--- node", i);
             console2.log("  address:", node);
             verifier.addNode(nodes[i].compressedPubKey, nodes[i].pop);
-            console2.log("  index:", verifier.getNodeIndex(node));
         }
 
         vm.stopBroadcast();
@@ -115,7 +114,7 @@ contract AddNode is Script {
         });
     }
 
-    function _fromPrivateKey(address verifierAddr, uint256 nodeSk) private pure returns (NodeCred memory node) {
+    function _fromPrivateKey(address verifierAddr, uint256 nodeSk) private view returns (NodeCred memory node) {
         LibSecp256k1.Point memory pubkey = LibSecp256k1.mulAffine(LibSecp256k1.G(), nodeSk);
         node.compressedPubKey = LibSecp256k1.compress(pubkey);
 

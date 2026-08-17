@@ -16,7 +16,7 @@ library LibSchnorrTestSign {
     /// @param nonceSalt Varies the deterministic nonce search if the first attempts fail rare edge cases.
     function sign(LibSecp256k1.Point memory pubKey, uint256 privateKey, bytes32 message, uint256 nonceSalt)
         internal
-        pure
+        view
         returns (bytes32 signature, address commitment)
     {
         uint256 Q = LibSecp256k1.Q();

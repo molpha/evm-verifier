@@ -9,13 +9,13 @@ import {PubkeyBlobLib} from "../../src/libs/PubkeyBlobLib.sol";
 contract PubkeyBlobHarness {
     using PubkeyBlobLib for bytes;
 
-    function add(bytes calldata encoded, LibSecp256k1.Point calldata pubkey, LibSecp256k1.Point calldata aggregate)
+    function add(bytes calldata encoded, LibSecp256k1.Point calldata pubkey)
         external
         pure
         returns (bytes memory result)
     {
         result = encoded;
-        result.addPubkeyWithAggregate(pubkey, aggregate);
+        result.addPubkey(pubkey);
     }
 
     function remove(bytes calldata encoded, uint256 index)
@@ -25,24 +25,6 @@ contract PubkeyBlobHarness {
     {
         result = encoded;
         orderChanged = result.removePubkey(index);
-    }
-
-    function removeWithAggregate(bytes calldata encoded, uint256 index, LibSecp256k1.Point calldata aggregate)
-        external
-        pure
-        returns (bytes memory result, bool orderChanged)
-    {
-        result = encoded;
-        orderChanged = result.removePubkeyWithAggregate(index, aggregate);
-    }
-
-    function set(bytes calldata encoded, uint256 index, LibSecp256k1.Point calldata pubkey)
-        external
-        pure
-        returns (bytes memory result)
-    {
-        result = encoded;
-        result.setNode(index, pubkey);
     }
 
     function get(bytes calldata encoded, uint256 index) external pure returns (LibSecp256k1.Point memory) {
@@ -81,21 +63,6 @@ contract PubkeyBlobLibTest is Test {
         _assertPointEq(harness.get(encoded, 1), points[1]);
     }
 
-    function test_addPubkeyWithAggregate_replacesAggregateAndAppendsPubkey() public view {
-        LibSecp256k1.Point[] memory points = new LibSecp256k1.Point[](2);
-        points[0] = _point(10, 11);
-        points[1] = _point(20, 21);
-        LibSecp256k1.Point memory newAggregate = _point(30, 31);
-        LibSecp256k1.Point memory newPubkey = _point(40, 41);
-
-        bytes memory result = harness.add(_encode(points), newPubkey, newAggregate);
-
-        assertEq(harness.length(result), 3);
-        _assertPointEq(harness.get(result, 0), newAggregate);
-        _assertPointEq(harness.get(result, 1), points[1]);
-        _assertPointEq(harness.get(result, 2), newPubkey);
-    }
-
     function test_removePubkey_swapsLastPointIntoMiddleIndex() public view {
         LibSecp256k1.Point[] memory points = new LibSecp256k1.Point[](4);
         points[0] = _point(10, 11);
@@ -126,31 +93,17 @@ contract PubkeyBlobLibTest is Test {
         _assertPointEq(harness.get(result, 1), points[1]);
     }
 
-    function test_removePubkeyWithAggregate_updatesAggregateAndRemovesNode() public view {
-        LibSecp256k1.Point[] memory points = new LibSecp256k1.Point[](3);
-        points[0] = _point(10, 11);
-        points[1] = _point(20, 21);
-        points[2] = _point(30, 31);
-        LibSecp256k1.Point memory newAggregate = _point(50, 51);
-
-        (bytes memory result, bool orderChanged) = harness.removeWithAggregate(_encode(points), 1, newAggregate);
-
-        assertTrue(orderChanged);
-        assertEq(harness.length(result), 2);
-        _assertPointEq(harness.get(result, 0), newAggregate);
-        _assertPointEq(harness.get(result, 1), points[2]);
-    }
-
-    function test_setNode_overwritesOnlyRequestedPoint() public view {
+    function test_addPubkey_appendsWithoutDisturbingExistingPoints() public view {
         LibSecp256k1.Point[] memory points = new LibSecp256k1.Point[](2);
         points[0] = _point(10, 11);
         points[1] = _point(20, 21);
-        LibSecp256k1.Point memory replacement = _point(60, 61);
+        LibSecp256k1.Point memory appended = _point(60, 61);
 
-        bytes memory result = harness.set(_encode(points), 1, replacement);
+        bytes memory result = harness.add(_encode(points), appended);
 
-        assertEq(harness.length(result), 2);
+        assertEq(harness.length(result), 3);
         _assertPointEq(harness.get(result, 0), points[0]);
-        _assertPointEq(harness.get(result, 1), replacement);
+        _assertPointEq(harness.get(result, 1), points[1]);
+        _assertPointEq(harness.get(result, 2), appended);
     }
 }

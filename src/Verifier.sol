@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.31;
 
+import {Ownable} from "solady/auth/Ownable.sol";
 import {SSTORE2} from "solady/utils/SSTORE2.sol";
 import {LibBit} from "solady/utils/LibBit.sol";
 
@@ -8,298 +9,472 @@ import {LibSecp256k1} from "./libs/LibSecp256k1.sol";
 import {LibSchnorr} from "./libs/LibSchnorr.sol";
 import {IVerifier} from "./interfaces/IVerifier.sol";
 import {PubkeyBlobLib} from "./libs/PubkeyBlobLib.sol";
-import {NodeGroupBitmapLib} from "./libs/NodeGroupBitmapLib.sol";
+import {VerifyCodes} from "./libs/VerifyCodes.sol";
+import {VerifierLib} from "./libs/VerifierLib.sol";
+import {KeysCommitmentLib} from "./libs/KeysCommitmentLib.sol";
+import {CompromiseLib} from "./libs/CompromiseLib.sol";
 
 /// @title Verifier
 /// @notice Registry for managing nodes and verifying Schnorr signatures
-/// @dev Uses SSTORE2 for efficient storage of node public keys, supports up to 256 nodes
-contract Verifier is IVerifier {
+/// @dev Uses SSTORE2 for efficient storage of node public keys, supports up to 256 nodes.
+///      Every mutation publishes a new registry version; historical versions stay verifiable
+///      until their successor's activation plus `PREVIOUS_GRACE`. See `docs/registry-v2.md`.
+contract Verifier is IVerifier, Ownable {
     using LibSchnorr for LibSecp256k1.Point;
     using LibSecp256k1 for LibSecp256k1.Point;
+    using VerifierLib for IVerifier.DataUpdate;
+    using VerifierLib for uint256;
     using PubkeyBlobLib for bytes;
     using LibBit for uint256;
 
-    uint256 constant MAX_NODES = 256;
-    uint256 constant START_INDEX = 1;
-    uint256 private constant KEYS_ARRAY_HEAD = 64;
-    uint256 private constant SSTORE2_DATA_OFFSET = 1;
-    uint256 private constant POINT_COORD_BYTES = 64;
+    uint256 private constant MAX_NODES = 256;
+    uint8 private constant NEVER = 0;
+    uint8 private constant ACTIVE = 1;
+    uint8 private constant RETIRED = 2;
+    uint8 private constant COMPROMISED = 3;
+    uint8 private constant OP_ADD = 1;
+    uint8 private constant OP_REMOVE = 2;
+    uint8 private constant OP_BUFFER = 3;
+
+    /// @dev Seconds a retired version stays acceptable after its successor activates.
+    uint256 private constant PREVIOUS_GRACE = 60;
 
     bytes32 private constant POP_DOMAIN = keccak256("MOLPHA_VERIFIER_V1");
-    bytes32 private constant SELECTION_SEED_PREFIX = keccak256("MOLPHA_SELECTION_V1");
-    bytes32 private constant MESSAGE_PREFIX = keccak256("MOLPHA_MESSAGE_V1");
+    bytes32 private constant TRANSITION_DOMAIN = keccak256("MOLPHA_REGISTRY_TRANSITION_V1");
+    bytes32 private constant GENESIS_ROOT = keccak256("MOLPHA_REGISTRY_GENESIS_V1");
 
-    mapping(address node => uint256 index) public nodeIndexes;
+    /// @dev Packed per-version state; see `VerifierLib` for the bit layout.
+    ///      A zero entry means the version does not exist, since the key-blob pointer is never zero.
+    mapping(uint256 version => uint256 entry) private registryEntries;
+    mapping(uint256 version => bytes32 root) private registryRoots;
+    mapping(uint256 version => uint256 bitmap) private compromisedBitmaps;
+    mapping(address node => uint8 status) public nodeStatus;
 
-    address[] public registryPointers;
-
-    /// @notice Per-index coordinates for O(1) removal aggregate update.
-    mapping(uint256 index => uint256 x) public nodeKeyX;
-    mapping(uint256 index => uint256 y) public nodeKeyY;
-
-    uint256 public redundancyBuffer;
-
-    address public protocolAdmin;
-
-    modifier onlyProtocolAdmin() {
-        if (msg.sender != protocolAdmin) revert NotProtocolAdmin();
-        _;
-    }
+    uint256 private registryVersionCount;
 
     constructor(address initialProtocolAdmin, uint256 initialRedundancyBuffer) {
         if (initialProtocolAdmin == address(0)) revert ZeroAdmin();
-        if (initialRedundancyBuffer > MAX_NODES) revert RedundancyBufferExceedsMax();
+        if (initialRedundancyBuffer > MAX_NODES) {
+            revert RedundancyBufferExceedsMax();
+        }
 
-        redundancyBuffer = initialRedundancyBuffer;
-        protocolAdmin = initialProtocolAdmin;
+        _initializeOwner(initialProtocolAdmin);
 
-        LibSecp256k1.Point[] memory emptyArray = new LibSecp256k1.Point[](1);
-        emptyArray[0] = LibSecp256k1.ZERO_POINT();
-        registryPointers.push(SSTORE2.write(abi.encode(emptyArray)));
+        LibSecp256k1.Point[] memory empty = new LibSecp256k1.Point[](0);
+        address genesisPointer = SSTORE2.write(abi.encode(empty));
+        // Genesis: activatesAt = 0, compromisedIn = 0.
+        registryEntries[0] = VerifierLib.packEntry(genesisPointer, 0, initialRedundancyBuffer, 0, 0, true);
+        registryRoots[0] = GENESIS_ROOT;
     }
 
+    // -------------------------------------------------------------------------
+    // Verification
+    // -------------------------------------------------------------------------
+
     /// @inheritdoc IVerifier
-    function verify(DataUpdate calldata dataUpdate, SchnorrSignature calldata schnorrData)
+    function verify(DataUpdate calldata dataUpdate, SchnorrSignature calldata schnorrData, uint256 maxAge)
         external
         view
-        returns (bool isVerified)
+        returns (bool success, uint8 code)
     {
-        if (dataUpdate.registryVersion >= registryPointers.length) revert InvalidRegistryVersion();
+        // Ordered cheapest-first: calldata-only checks, then hashing, then storage.
+        if (dataUpdate.signaturesRequired == 0) return (false, VerifyCodes.R_MALFORMED);
+        if (schnorrData.signersBitmap == 0) return (false, VerifyCodes.R_MALFORMED);
+        if (schnorrData.signature == 0) return (false, VerifyCodes.R_MALFORMED);
+        if (uint256(schnorrData.signature) >= LibSecp256k1.Q()) return (false, VerifyCodes.R_MALFORMED);
+        if (schnorrData.commitment == address(0)) return (false, VerifyCodes.R_MALFORMED);
+        if (schnorrData.signersBitmap.popCount() < dataUpdate.signaturesRequired) {
+            return (false, VerifyCodes.R_MALFORMED);
+        }
 
-        bytes32 selectionSeed = keccak256(
-            abi.encodePacked(
-                SELECTION_SEED_PREFIX, dataUpdate.feedId, dataUpdate.registryVersion, dataUpdate.canonicalTimestamp
-            )
-        );
-
-        address keysPtr = registryPointers[dataUpdate.registryVersion];
-
-        /// @dev Index 0 holds the aggregate key; indices `1..keysLen-1` are registered nodes.
-        uint256 keysLen = _blobEncodedKeysLength(keysPtr);
-        if (keysLen <= 1) revert NoNodes();
-        uint256 nodeCount = keysLen - 1;
-
-        if (dataUpdate.signaturesRequired == 0) revert ZeroSignaturesRequired();
-        if (schnorrData.signersBitmap == 0) revert ZeroSignersBitmap();
-        if (schnorrData.signature == 0) revert ZeroSignature();
-        if (uint256(schnorrData.signature) >= LibSecp256k1.Q()) revert InvalidSignatureScalar();
-        if (schnorrData.commitment == address(0)) revert ZeroCommitment();
-
-        uint256 grpSize = dataUpdate.signaturesRequired + redundancyBuffer;
-        grpSize = grpSize > nodeCount ? nodeCount : grpSize;
-
-        uint256 signerCount = schnorrData.signersBitmap.popCount();
-        if (signerCount < dataUpdate.signaturesRequired) revert NotEnoughSignatures();
-
-        uint256 selectionBitmap = NodeGroupBitmapLib.derive(selectionSeed, nodeCount, grpSize);
-
-        if (schnorrData.signersBitmap & ~selectionBitmap != 0) revert SignerNotSelected();
-
-        // Ascending 1-based index order: peel lowest set bit from `rem` each iteration.
-        bool aggInit;
-        uint256 ax;
-        uint256 ay;
-        uint256 az;
-        uint256 rem = schnorrData.signersBitmap;
-        while (rem != 0) {
-            uint256 pos;
+        // Freshness is defined against wall-clock time, so `block.timestamp` is the intended
+        // reference; the caller opts in by passing a non-zero `maxAge` and chooses a window
+        // wide enough to absorb the few seconds a proposer could shift it.
+        // forge-lint: disable-start(block-timestamp)
+        if (maxAge != 0) {
+            uint256 ts = dataUpdate.canonicalTimestamp;
+            if (ts > block.timestamp) return (false, VerifyCodes.R_MALFORMED);
             unchecked {
-                pos = rem.ffs();
-                rem &= rem - 1;
+                if (block.timestamp - ts > maxAge) return (false, VerifyCodes.R_STALE);
             }
+        }
+        // forge-lint: disable-end(block-timestamp)
 
-            uint256 signerIndex = pos + 1;
-            (uint256 epx, uint256 epy) = _readNodeKeyXY(keysPtr, signerIndex);
-            if (!aggInit) {
-                (ax, ay, az) = (epx, epy, 1);
-                aggInit = true;
-            } else {
-                (ax, ay, az) = LibSecp256k1.addAffinePointToXYZ(ax, ay, az, epx, epy);
+        uint256 entry = registryEntries[dataUpdate.registryVersion];
+        if (entry == 0) return (false, VerifyCodes.R_BAD_REGISTRY_VERSION);
+
+        if (dataUpdate.canonicalTimestamp < entry.activatesAt()) {
+            return (false, VerifyCodes.R_NOT_YET_ACTIVE);
+        }
+
+        if (!entry.isLatest()) {
+            uint256 successor = registryEntries[dataUpdate.registryVersion + 1];
+            if (successor != 0 && dataUpdate.canonicalTimestamp > successor.activatesAt() + PREVIOUS_GRACE) {
+                return (false, VerifyCodes.R_VERSION_EXPIRED);
             }
         }
 
-        if (az == 0) revert InvalidAggregatePublicKey();
-        LibSecp256k1.Point memory aggPubKey = LibSecp256k1.toAffineModexpXYZ(ax, ay, az);
-
-        isVerified = aggPubKey.verifySignatureTrusted(
-            _constructMessage(dataUpdate, schnorrData.signersBitmap), schnorrData.signature, schnorrData.commitment
-        );
+        return _verifySignature(dataUpdate, schnorrData, entry);
     }
 
+    // -------------------------------------------------------------------------
+    // Registry administration
+    // -------------------------------------------------------------------------
+
     /// @inheritdoc IVerifier
-    function addNode(bytes memory compressedPubKey, SchnorrProof calldata pop) external onlyProtocolAdmin {
+    function addNode(bytes memory compressedPubKey, SchnorrProof calldata pop) external onlyOwner {
         LibSecp256k1.Point memory pubkey = LibSecp256k1.decompress(compressedPubKey);
         if (pubkey.isZeroPoint()) revert InvalidPublicKey();
-        if (pubkey.toAddress() == address(0)) revert ZeroAddress();
-        _verifyPop(pubkey, compressedPubKey, pop);
-
-        uint256 registryVersion = registryPointers.length - 1;
-        address keysPtr = registryPointers[registryVersion];
-        bytes memory keysBlob = SSTORE2.read(keysPtr);
-
-        uint256 nextIndex = keysBlob.getNodesLength();
-        if (nextIndex - START_INDEX >= MAX_NODES) revert MaxNodesReached();
 
         address node = pubkey.toAddress();
+        if (node == address(0)) revert ZeroAddress();
+        if (nodeStatus[node] != NEVER) revert NodeNotEligible();
 
-        if (nodeIndexes[node] != 0) revert NodeAlreadyAdded();
+        uint256 registryVersion = registryVersionCount;
+        uint256 entry = registryEntries[registryVersion];
+        uint256 nodeCount = entry.nodeCount();
+        if (nodeCount >= MAX_NODES) revert MaxNodesReached();
 
-        /// @dev Index 0 holds the running aggregate, `(0, 0)` when the node set sums to infinity.
-        ///      `addAffine` handles that sentinel plus the doubling / mutual-negation cases.
-        LibSecp256k1.Point memory agg = LibSecp256k1.addAffine(keysBlob.getNode(0), pubkey);
+        _verifyPop(pubkey, compressedPubKey, pop);
 
-        keysBlob.addPubkeyWithAggregate(pubkey, agg);
+        bytes memory keysBlob = SSTORE2.read(entry.pointerOf());
+        keysBlob.addPubkey(pubkey);
         address newPointer = SSTORE2.write(keysBlob);
-        registryPointers.push(newPointer);
 
-        nodeIndexes[node] = nextIndex;
-        nodeKeyX[nextIndex] = pubkey.x;
-        nodeKeyY[nextIndex] = pubkey.y;
+        // A flagged key can never be added, so the appended bit is always clear and the
+        // bitmap carries forward unchanged (registry-v2 §5.2).
+        _publishRegistryTransition(
+            registryVersion,
+            newPointer,
+            nodeCount + 1,
+            entry.buffer(),
+            _compromiseBitmapOf(registryVersion, entry),
+            keysBlob,
+            OP_ADD
+        );
 
-        emit LogNodeAdded(node, nextIndex, newPointer);
+        nodeStatus[node] = ACTIVE;
+
+        emit LogNodeAdded(node, nodeCount, newPointer);
     }
 
-    function removeNode(address node) external onlyProtocolAdmin {
-        uint256 index = nodeIndexes[node];
-        if (index == 0) revert NotNode();
+    /// @inheritdoc IVerifier
+    function removeNode(address node, uint256 index) external override onlyOwner {
+        _removeNodeAt(node, index, false);
+    }
 
-        uint256 registryVersion = registryPointers.length - 1;
-        address keysPtr = registryPointers[registryVersion];
-
-        bytes memory keysBlob = SSTORE2.read(keysPtr);
-        uint256 len = keysBlob.getNodesLength();
-        if (index >= len) revert BadIndex();
-
-        uint256 px = nodeKeyX[index];
-        uint256 py = nodeKeyY[index];
-        /// @dev Subtracting is adding the negated key; `addAffine` collapses to `(0, 0)` when the
-        ///      removed node was the whole aggregate, and handles a `(0, 0)` starting aggregate.
-        LibSecp256k1.Point memory nextAgg =
-            LibSecp256k1.addAffine(keysBlob.getNode(0), LibSecp256k1.Point({x: px, y: LibSecp256k1.fieldP() - py}));
-
-        if (index != len - 1) {
-            LibSecp256k1.Point memory swappedNode = keysBlob.getNode(len - 1);
-            keysBlob.setNode(index, swappedNode);
-            nodeIndexes[swappedNode.toAddress()] = index;
-            nodeKeyX[index] = swappedNode.x;
-            nodeKeyY[index] = swappedNode.y;
+    /// @inheritdoc IVerifier
+    function setRedundancyBuffer(uint256 newRedundancyBuffer) external override onlyOwner {
+        if (newRedundancyBuffer > MAX_NODES) {
+            revert RedundancyBufferExceedsMax();
         }
 
-        keysBlob.removePubkeyWithAggregate(index, nextAgg);
-        address newPointer = SSTORE2.write(keysBlob);
-        registryPointers.push(newPointer);
-        delete nodeKeyX[len - 1];
-        delete nodeKeyY[len - 1];
-        delete nodeIndexes[node];
+        uint256 registryVersion = registryVersionCount;
+        uint256 entry = registryEntries[registryVersion];
+        address pointer = entry.pointerOf();
 
-        emit LogNodeRemoved(node, index, newPointer);
-    }
+        // The buffer feeds signer selection, so it is versioned state rather than a mutable
+        // knob: the key blob and compromise bitmap carry forward untouched (registry-v2 §5.4).
+        _publishRegistryTransition(
+            registryVersion,
+            pointer,
+            entry.nodeCount(),
+            newRedundancyBuffer,
+            _compromiseBitmapOf(registryVersion, entry),
+            SSTORE2.read(pointer),
+            OP_BUFFER
+        );
 
-    /// @inheritdoc IVerifier
-    function transferProtocolAdmin(address newProtocolAdmin) external override onlyProtocolAdmin {
-        if (newProtocolAdmin == address(0)) revert ZeroAdmin();
-        address previousAdmin = protocolAdmin;
-        protocolAdmin = newProtocolAdmin;
-        emit LogProtocolAdminTransferred(previousAdmin, newProtocolAdmin);
-    }
-
-    /// @inheritdoc IVerifier
-    function setRedundancyBuffer(uint256 newRedundancyBuffer) external override onlyProtocolAdmin {
-        if (newRedundancyBuffer > MAX_NODES) revert RedundancyBufferExceedsMax();
-        redundancyBuffer = newRedundancyBuffer;
         emit LogRedundancyBufferUpdated(newRedundancyBuffer);
     }
 
+    // -------------------------------------------------------------------------
+    // Key compromise (permissionless)
+    // -------------------------------------------------------------------------
+
     /// @inheritdoc IVerifier
-    function getRegistryVersion() external view returns (uint256 registryVersion) {
-        registryVersion = registryPointers.length - 1;
+    function flagCompromisedKey(uint256 privKey, uint256 witnessVersion, uint256 witnessIndex, uint256 currentIndex)
+        external
+    {
+        if (privKey == 0 || privKey >= LibSecp256k1.Q()) revert InvalidPrivateKeyScalar();
+
+        address node = LibSecp256k1.pubkeyAddressFromScalar(privKey);
+        if (node == address(0)) revert InvalidPrivateKeyScalar();
+
+        uint8 status = nodeStatus[node];
+        if (status == COMPROMISED) revert KeyAlreadyCompromised();
+        if (status != ACTIVE && status != RETIRED) revert NodeNotEligible();
+
+        _requireWitness(node, witnessVersion, witnessIndex);
+        _seedCompromised(witnessVersion, witnessIndex);
+
+        // Active nodes stay in the live blob, so their current index must be seeded now. Retired
+        // nodes are gone from the live version and may pass the skip sentinel instead.
+        if (status == ACTIVE) {
+            uint256 currentVersion = registryVersionCount;
+            if (currentVersion != witnessVersion) {
+                if (currentIndex == type(uint256).max) revert MissingCurrentIndex();
+                _requireWitness(node, currentVersion, currentIndex);
+                _seedCompromised(currentVersion, currentIndex);
+            }
+        }
+
+        nodeStatus[node] = COMPROMISED;
+
+        emit KeyCompromised(node, witnessVersion, witnessIndex);
     }
 
     /// @inheritdoc IVerifier
-    function getRegistryPointer() external view returns (address registryPointer) {
-        uint256 registryVersion = registryPointers.length - 1;
-        registryPointer = registryPointers[registryVersion];
+    function backfillCompromised(address node, uint256 version, uint256 index) external {
+        if (nodeStatus[node] != COMPROMISED) revert KeyNotCompromised();
+        if (_compromiseBitSet(version, index)) revert AlreadyCounted();
+
+        _requireWitness(node, version, index);
+
+        _seedCompromised(version, index);
+        emit CompromiseBackfilled(node, version, index);
+    }
+
+    /// @inheritdoc IVerifier
+    function removeFlagged(uint256 index, address node) external {
+        if (nodeStatus[node] != COMPROMISED) revert KeyNotCompromised();
+
+        uint256 newVersion = _removeNodeAt(node, index, true);
+        emit FlaggedNodeRemoved(newVersion, node);
+    }
+
+    // -------------------------------------------------------------------------
+    // Views
+    // -------------------------------------------------------------------------
+
+    /// @inheritdoc IVerifier
+    function redundancyBuffer() external view returns (uint256) {
+        return registryEntries[registryVersionCount].buffer();
+    }
+
+    /// @inheritdoc IVerifier
+    function getRegistryVersion() external view returns (uint256) {
+        return registryVersionCount;
+    }
+
+    /// @inheritdoc IVerifier
+    function getRegistryPointer() external view returns (address) {
+        return registryEntries[registryVersionCount].pointerOf();
     }
 
     /// @inheritdoc IVerifier
     function getRegistryPointer(uint256 registryVersion) external view returns (address registryPointer) {
-        registryPointer = registryPointers[registryVersion];
-    }
-
-    function isNode(address node) external view returns (bool isActive) {
-        isActive = nodeIndexes[node] != 0;
+        registryPointer = _existingEntry(registryVersion).pointerOf();
     }
 
     /// @inheritdoc IVerifier
     function getTotalNodes() external view override returns (uint256 totalSigners) {
-        uint256 registryVersion = registryPointers.length - 1;
-        address keysPtr = registryPointers[registryVersion];
-        uint256 keysLen = _blobEncodedKeysLength(keysPtr);
-        totalSigners = keysLen > START_INDEX ? keysLen - START_INDEX : 0;
-    }
-
-    function getNodesSetHash() external view override returns (bytes32 hash) {
-        uint256 registryVersion = registryPointers.length - 1;
-        address keysPtr = registryPointers[registryVersion];
-        hash = keccak256(SSTORE2.read(keysPtr));
+        totalSigners = registryEntries[registryVersionCount].nodeCount();
     }
 
     /// @inheritdoc IVerifier
-    function getAggregateKey() external view override returns (uint256 x, uint256 y) {
-        uint256 registryVersion = registryPointers.length - 1;
-        address keysPtr = registryPointers[registryVersion];
-        (x, y) = _readNodeKeyXY(keysPtr, 0);
+    function getRegistryRoot() external view returns (bytes32 root) {
+        root = registryRoots[registryVersionCount];
     }
 
     /// @inheritdoc IVerifier
-    function getNodeIndex(address node) external view returns (uint256 index) {
-        index = nodeIndexes[node];
+    function getRegistryRoot(uint256 registryVersion) external view returns (bytes32 root) {
+        if (registryEntries[registryVersion] == 0) revert InvalidRegistryVersion();
+        root = registryRoots[registryVersion];
     }
 
-    /// @dev Derives the dynamic array length from the SSTORE2 bytecode size.
-    ///      SSTORE2 stores one STOP byte before the payload, and
-    ///      `abi.encode(LibSecp256k1.Point[])` is `0x40 + len * 0x40` bytes.
-    function _blobEncodedKeysLength(address ptr) private view returns (uint256 keysLen) {
+    /// @inheritdoc IVerifier
+    function activatesAt(uint256 registryVersion) external view returns (uint256 ts) {
+        ts = _existingEntry(registryVersion).activatesAt();
+    }
+
+    /// @inheritdoc IVerifier
+    function retiredAt(uint256 registryVersion) external view returns (uint256 ts) {
+        // Versions are dense, so a stored successor implies `registryVersion` itself exists;
+        // an unknown or still-current version has none and reverts here.
+        ts = _existingEntry(registryVersion + 1).activatesAt();
+    }
+
+    /// @inheritdoc IVerifier
+    function isLatestVersion(uint256 registryVersion) external view returns (bool latest) {
+        latest = _existingEntry(registryVersion).isLatest();
+    }
+
+    /// @inheritdoc IVerifier
+    function isNode(address node) external view returns (bool) {
+        return nodeStatus[node] == ACTIVE;
+    }
+
+    // -------------------------------------------------------------------------
+    // Internals
+    // -------------------------------------------------------------------------
+
+    /// @dev Loads a registry entry, reverting when the version was never published.
+    function _existingEntry(uint256 version) private view returns (uint256 entry) {
+        entry = registryEntries[version];
+        if (entry == 0) revert InvalidRegistryVersion();
+    }
+
+    /// @dev Reads a version's compromise bitmap, skipping the SLOAD when the packed entry
+    ///      already proves the version is clean.
+    function _compromiseBitmapOf(uint256 version, uint256 entry) private view returns (uint256) {
+        return entry.compromisedIn() == 0 ? 0 : compromisedBitmaps[version];
+    }
+
+    /// @dev Proves `node` sat at 0-based `index` of `version`. O(1) membership witness:
+    ///      without it the contract would have to search every version (registry-v2 §6.1).
+    function _requireWitness(address node, uint256 version, uint256 index) private view {
+        uint256 entry = _existingEntry(version);
+        if (index >= entry.nodeCount()) revert WitnessMismatch();
+        if (entry.nodeAt(index).toAddress() != node) revert WitnessMismatch();
+    }
+
+    /// @dev Whether bit `blobIndex` (0-based) is set in `version`'s compromise bitmap.
+    function _compromiseBitSet(uint256 version, uint256 blobIndex) private view returns (bool) {
+        return (compromisedBitmaps[version] & (uint256(1) << blobIndex)) != 0;
+    }
+
+    /// @dev Sets bit `blobIndex` (0-based) in `version` and refreshes the entry's `compromisedIn`.
+    ///      The set bit is the dedup record for that (node, version) pair; `compromisedIn` is always
+    ///      re-derived from the bitmap so gate and payload cannot drift.
+    function _seedCompromised(uint256 version, uint256 blobIndex) private {
+        if (_compromiseBitSet(version, blobIndex)) return;
+
+        uint256 bitmap = CompromiseLib.setBit(compromisedBitmaps[version], blobIndex);
+        compromisedBitmaps[version] = bitmap;
+        registryEntries[version] = registryEntries[version].withCompromisedIn(bitmap.popCount());
+    }
+
+    /// @dev Swap-and-pop removal of blob index `index` from the current version.
+    /// @param flaggedRemoval When true, `node` must be `COMPROMISED` and status stays terminal.
+    /// @return newVersion The version published by the removal.
+    function _removeNodeAt(address node, uint256 index, bool flaggedRemoval) private returns (uint256 newVersion) {
+        uint256 registryVersion = registryVersionCount;
+        uint256 entry = registryEntries[registryVersion];
+        uint256 nodeCount = entry.nodeCount();
+        if (flaggedRemoval) {
+            if (nodeStatus[node] != COMPROMISED) revert KeyNotCompromised();
+        } else if (nodeStatus[node] != ACTIVE) {
+            revert NodeNotEligible();
+        }
+        if (nodeCount == 0 || index >= nodeCount) revert IndexWitnessMismatch();
+
+        bytes memory keysBlob = SSTORE2.read(entry.pointerOf());
+        if (node != keysBlob.getNode(index).toAddress()) revert IndexWitnessMismatch();
+
+        // Index of the entry that gets swapped into the hole, and the post-removal count.
+        uint256 last;
         unchecked {
-            keysLen = (ptr.code.length - SSTORE2_DATA_OFFSET - KEYS_ARRAY_HEAD) / POINT_COORD_BYTES;
+            last = nodeCount - 1; // `nodeCount != 0` was just checked
         }
-    }
 
-    /// @dev Reads one affine key (64 bytes) from the SSTORE2 `abi.encode(LibSecp256k1.Point[])` blob.
-    function _readNodeKeyXY(address ptr, uint256 idx) private view returns (uint256 x, uint256 y) {
-        uint256 codeStart = SSTORE2_DATA_OFFSET + KEYS_ARRAY_HEAD + idx * 64;
-        assembly ("memory-safe") {
-            let scratch := mload(0x40)
-            extcodecopy(ptr, scratch, codeStart, 64)
-            x := mload(scratch)
-            y := mload(add(scratch, 32))
-        }
-    }
+        if (!flaggedRemoval) nodeStatus[node] = RETIRED;
 
-    function _constructMessage(DataUpdate calldata dataUpdate, uint256 signersBitmap)
-        internal
-        pure
-        returns (bytes32 message)
-    {
-        message = keccak256(
-            abi.encodePacked(
-                MESSAGE_PREFIX,
-                dataUpdate.feedId,
-                dataUpdate.registryVersion,
-                dataUpdate.signaturesRequired,
-                signersBitmap,
-                dataUpdate.value,
-                dataUpdate.canonicalTimestamp
-            )
+        keysBlob.removePubkey(index);
+        address newPointer = SSTORE2.write(keysBlob);
+
+        newVersion = _publishRegistryTransition(
+            registryVersion,
+            newPointer,
+            last,
+            entry.buffer(),
+            CompromiseLib.permuteOnRemove(_compromiseBitmapOf(registryVersion, entry), index, nodeCount),
+            keysBlob,
+            OP_REMOVE
         );
+
+        emit LogNodeRemoved(node, index, newPointer);
     }
 
+    /// @dev Common transition tail (registry-v2 §5.1): stamps activation, commits the key set,
+    ///      chains the root, and advances the version. Every mutation ends here.
+    /// @param previousVersion Version being superseded.
+    /// @param newCompromisedBitmap Compromise bitmap for the new version, already permuted by the caller.
+    function _publishRegistryTransition(
+        uint256 previousVersion,
+        address newPointer,
+        uint256 nodeCount,
+        uint256 buffer,
+        uint256 newCompromisedBitmap,
+        bytes memory keysBlob,
+        uint8 op
+    ) private returns (uint256 newVersion) {
+        unchecked {
+            newVersion = previousVersion + 1;
+            uint256 activatesAtTs = block.timestamp;
+
+            // New-version slots start zeroed, so a clean bitmap needs no write.
+            if (newCompromisedBitmap != 0) {
+                compromisedBitmaps[newVersion] = newCompromisedBitmap;
+            }
+
+            bytes32 commitment = KeysCommitmentLib.commitment(keysBlob);
+
+            // Widths are fixed by the cross-chain preimage spec (registry-v2 §4); every value is
+            // bounded well below its type (counts ≤ MAX_NODES, timestamp < 2^40 until year ~36800).
+            // forge-lint: disable-start(unsafe-typecast)
+            bytes32 newRoot = keccak256(
+                abi.encodePacked(
+                    TRANSITION_DOMAIN,
+                    registryRoots[previousVersion],
+                    uint32(newVersion),
+                    commitment,
+                    uint16(nodeCount),
+                    uint16(buffer),
+                    uint40(activatesAtTs)
+                )
+            );
+            // forge-lint: disable-end(unsafe-typecast)
+
+            registryRoots[newVersion] = newRoot;
+            registryEntries[previousVersion] = registryEntries[previousVersion].withIsLatest(false);
+            registryEntries[newVersion] = VerifierLib.packEntry(
+                newPointer, nodeCount, buffer, newCompromisedBitmap.popCount(), activatesAtTs, true
+            );
+            registryVersionCount = newVersion;
+
+            emit RegistryAdvanced(newVersion, newRoot, op);
+        }
+    }
+
+    function _verifySignature(DataUpdate calldata dataUpdate, SchnorrSignature calldata schnorrData, uint256 entry)
+        private
+        view
+        returns (bool success, uint8 code)
+    {
+        // Compromised signers are discounted from the threshold count, never subtracted from the
+        // coalition key (registry-v2 §6.4). A clean version costs no bitmap SLOAD at all.
+        if (entry.compromisedIn() != 0) {
+            uint256 uncompromised = CompromiseLib.effectiveSignerCount(
+                schnorrData.signersBitmap, compromisedBitmaps[dataUpdate.registryVersion]
+            );
+            if (uncompromised < dataUpdate.signaturesRequired) {
+                return (false, VerifyCodes.R_COMPROMISED_QUORUM);
+            }
+        }
+
+        if (!dataUpdate.selectionOk(entry, schnorrData.signersBitmap)) {
+            return (false, VerifyCodes.R_BAD_QUORUM);
+        }
+
+        // Aggregate over the FULL signersBitmap, including any discounted keys.
+        LibSecp256k1.Point memory aggPubKey = entry.aggregatePubKey(schnorrData.signersBitmap);
+        if (aggPubKey.isZeroPoint()) return (false, VerifyCodes.R_BAD_AGGREGATE);
+
+        bytes32 message = dataUpdate.constructMessage(schnorrData.signersBitmap);
+        if (!aggPubKey.verifySignatureTrusted(message, schnorrData.signature, schnorrData.commitment)) {
+            return (false, VerifyCodes.R_BAD_SIGNATURE);
+        }
+
+        return (true, VerifyCodes.R_OK);
+    }
+
+    /// @dev Binds the proof to this deployment, so a PoP cannot be replayed onto another chain's verifier.
     function _verifyPop(LibSecp256k1.Point memory pubkey, bytes memory compressedPubKey, SchnorrProof calldata pop)
         private
         view
     {
         bytes32 digest = keccak256(abi.encodePacked(POP_DOMAIN, address(this), compressedPubKey));
-        bool isValid = pubkey.verifySignature(digest, pop.signature, pop.commitment);
-        if (!isValid) revert InvalidPoP();
+        if (!pubkey.verifySignature(digest, pop.signature, pop.commitment)) revert InvalidPoP();
     }
 }

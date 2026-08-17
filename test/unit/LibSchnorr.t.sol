@@ -10,7 +10,7 @@ import {LibSchnorrTestSign} from "../libs/LibSchnorrTestSign.sol";
 contract LibSchnorrHarness {
     function verify(LibSecp256k1.Point calldata pubkey, bytes32 message, bytes32 signature, address commitment)
         external
-        pure
+        view
         returns (bool)
     {
         return LibSchnorr.verifySignature(pubkey, message, signature, commitment);
@@ -18,7 +18,7 @@ contract LibSchnorrHarness {
 
     function verifyTrusted(LibSecp256k1.Point calldata pubkey, bytes32 message, bytes32 signature, address commitment)
         external
-        pure
+        view
         returns (bool)
     {
         return LibSchnorr.verifySignatureTrusted(pubkey, message, signature, commitment);
@@ -33,7 +33,7 @@ contract LibSchnorrTest is Test {
 
     function _validSignature()
         internal
-        pure
+        view
         returns (LibSecp256k1.Point memory pubkey, bytes32 signature, address commitment)
     {
         pubkey = LibSecp256k1.mulAffine(LibSecp256k1.G(), SECRET);
