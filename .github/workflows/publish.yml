@@ -1,0 +1,76 @@
+name: Publish
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions: {}
+
+jobs:
+  publish:
+    name: npm publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          submodules: recursive
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.7.1
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+
+      # CI only triggers on pull_request, so a tag build must re-run the suite itself.
+      - name: Build and test
+        run: |
+          set -euo pipefail
+          forge build --sizes --deny warnings
+          forge test -vvv
+          FOUNDRY_PROFILE=floor forge build --deny warnings
+          FOUNDRY_PROFILE=examples forge build --deny warnings
+
+      - name: Check the tag matches package.json
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME#v}"
+          pkg="$(node -p "require('./package.json').version")"
+          [ "$tag" = "$pkg" ] || { echo "tag $tag != package.json $pkg"; exit 1; }
+
+      # A stable release must not ship the provisional address placeholder. Pre-release tags
+      # (1.0.0-rc.1) may, because there is nothing deployed to point at yet.
+      - name: Require a real verifier address for stable tags
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME#v}"
+          case "$tag" in
+            *-*) echo "pre-release $tag: provisional address permitted"; exit 0 ;;
+          esac
+          if grep -q 'VERIFIER = address(0)' src/consumer/MolphaAddresses.sol; then
+            echo "stable tag $tag still carries the PROVISIONAL address placeholder"
+            exit 1
+          fi
+          forge test --match-contract MolphaAddressesPinTest -vvv
+
+      - name: Stage and verify the package
+        run: |
+          set -euo pipefail
+          bash scripts/pack-npm.sh
+          node scripts/check-imports.mjs npm-dist
+
+      - name: Publish
+        run: npm publish npm-dist --access public --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

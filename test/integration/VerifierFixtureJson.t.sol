@@ -8,7 +8,7 @@ import {Verifier} from "../../src/Verifier.sol";
 import {IVerifier} from "../../src/interfaces/IVerifier.sol";
 import {VerifyCodes} from "../../src/libs/VerifyCodes.sol";
 import {LibSecp256k1} from "../../src/libs/LibSecp256k1.sol";
-import {LibSchnorrTestSign} from "../libs/LibSchnorrTestSign.sol";
+import {MolphaSigLib} from "../../src/test-utils/MolphaSigLib.sol";
 
 /// @title VerifierFixtureJsonTest
 /// @dev Golden compatibility test driven by `test/fixtures/fixture.json` from the Molpha node/SDK.
@@ -28,12 +28,12 @@ contract VerifierFixtureJsonTest is Test {
     {
         bytes32 digest = keccak256(abi.encodePacked(POP_DOMAIN, validatorAddr, compressed));
         LibSecp256k1.Point memory pk = LibSecp256k1.decompress(compressed);
-        (bytes32 sig, address cmt) = LibSchnorrTestSign.sign(pk, sk, digest, 0);
+        (bytes32 sig, address cmt) = MolphaSigLib.sign(pk, sk, digest, 0);
         pop = IVerifier.SchnorrProof({signature: sig, commitment: cmt});
     }
 
-    function _loadDataUpdate(string memory json) internal view returns (IVerifier.DataUpdate memory du) {
-        du = IVerifier.DataUpdate({
+    function _loadPayload(string memory json) internal view returns (IVerifier.AttestationPayload memory du) {
+        du = IVerifier.AttestationPayload({
             sourceId: json.readBytes32(".dataUpdate.sourceId"),
             registryVersion: uint32(json.readUint(".dataUpdate.registryVersion")),
             signaturesRequired: uint32(json.readUint(".dataUpdate.signaturesRequired")),
@@ -75,10 +75,10 @@ contract VerifierFixtureJsonTest is Test {
         assertEq(validator.getRegistryVersion(), expectedRegistryVersion, "registryVersion");
         assertEq(validator.getTotalNodes(), registeredNodeCount, "registered nodes");
 
-        IVerifier.DataUpdate memory du = _loadDataUpdate(json);
+        IVerifier.AttestationPayload memory du = _loadPayload(json);
         IVerifier.SchnorrSignature memory sch = _loadSchnorrSignature(json);
 
-        (bool verified, uint8 code) = validator.verify(du, sch, 0);
+        (bool verified, uint8 code) = validator.verify(IVerifier.Attestation({payload: du, signature: sch}), 0);
         assertEq(code, VerifyCodes.R_OK);
     }
 }

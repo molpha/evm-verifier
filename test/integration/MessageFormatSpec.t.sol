@@ -11,11 +11,15 @@ import {Verifier} from "../../src/Verifier.sol";
 
 /// @dev `constructMessage` and `getSelectionSeed` take calldata, so they need an external frame.
 contract MessagePreimageHarness {
-    function message(IVerifier.DataUpdate calldata dataUpdate, uint256 signersBitmap) external pure returns (bytes32) {
+    function message(IVerifier.AttestationPayload calldata dataUpdate, uint256 signersBitmap)
+        external
+        pure
+        returns (bytes32)
+    {
         return VerifierLib.constructMessage(dataUpdate, signersBitmap);
     }
 
-    function selectionSeed(IVerifier.DataUpdate calldata dataUpdate) external pure returns (bytes32) {
+    function selectionSeed(IVerifier.AttestationPayload calldata dataUpdate) external pure returns (bytes32) {
         return VerifierLib.getSelectionSeed(dataUpdate);
     }
 }
@@ -42,8 +46,8 @@ contract MessageFormatSpecTest is Test {
     bytes32 internal constant EXPECTED_SELECTION_SEED =
         0x24d3c035b75a33faa60438e66159dbb2011438056b4e86b892e6a89839b2a6fa;
 
-    function _update() internal pure returns (IVerifier.DataUpdate memory) {
-        return IVerifier.DataUpdate({
+    function _update() internal pure returns (IVerifier.AttestationPayload memory) {
+        return IVerifier.AttestationPayload({
             sourceId: SOURCE_ID,
             registryVersion: REGISTRY_VERSION,
             signaturesRequired: SIGNATURES_REQUIRED,
@@ -147,7 +151,7 @@ contract MessageFormatSpecTest is Test {
     function test_constructMessage_dependsOnEverySignedField() public view {
         bytes32 base = harness.message(_update(), SIGNERS_BITMAP);
 
-        IVerifier.DataUpdate memory update = _update();
+        IVerifier.AttestationPayload memory update = _update();
         update.sourceId = bytes32(uint256(2));
         assertTrue(harness.message(update, SIGNERS_BITMAP) != base, "sourceId");
 
@@ -184,7 +188,7 @@ contract MessageFormatSpecTest is Test {
     function test_getSelectionSeed_dependsOnRoundIdentityOnly() public view {
         bytes32 base = harness.selectionSeed(_update());
 
-        IVerifier.DataUpdate memory update = _update();
+        IVerifier.AttestationPayload memory update = _update();
         update.signaturesRequired = SIGNATURES_REQUIRED + 1;
         assertEq(harness.selectionSeed(update), base, "signaturesRequired is outside the seed");
 

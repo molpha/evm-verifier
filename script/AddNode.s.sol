@@ -6,7 +6,7 @@ import {stdJson} from "forge-std/StdJson.sol";
 import {Verifier} from "../src/Verifier.sol";
 import {IVerifier} from "../src/interfaces/IVerifier.sol";
 import {LibSecp256k1} from "../src/libs/LibSecp256k1.sol";
-import {PopSignLib} from "./libs/PopSignLib.sol";
+import {MolphaSigLib} from "../src/test-utils/MolphaSigLib.sol";
 
 bytes32 constant POP_DOMAIN = keccak256("MOLPHA_VERIFIER_V1");
 
@@ -119,7 +119,7 @@ contract AddNode is Script {
         node.compressedPubKey = LibSecp256k1.compress(pubkey);
 
         bytes32 digest = keccak256(abi.encodePacked(POP_DOMAIN, verifierAddr, node.compressedPubKey));
-        (bytes32 sig, address cmt) = PopSignLib.sign(pubkey, nodeSk, digest, 0);
+        (bytes32 sig, address cmt) = MolphaSigLib.sign(pubkey, nodeSk, digest, 0);
         node.pop = IVerifier.SchnorrProof({signature: sig, commitment: cmt});
     }
 }

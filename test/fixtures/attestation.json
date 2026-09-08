@@ -1,0 +1,69 @@
+{
+  "producer": "molpha-evm-verifier",
+  "payloadKind": "consumer-sdk-attestation-vector",
+  "version": 1,
+  "note": "Shares the 12 keys of fixture.json. messageHash and replayKey are the cross-VM parity anchors.",
+  "registeredNodeCount": 12,
+  "redundancyBuffer": 2,
+  "registryVersion": 12,
+  "keysFrom": "test/fixtures/fixture.json",
+  "cases": [
+    {
+      "name": "kindA-int256",
+      "kind": "A",
+      "attestation": {
+        "payload": {
+          "value": "0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffb2e",
+          "sourceId": "0xa6729f7c91f13795a38aa67f4bc816fae5bef9ffbeb4319c69a9242f2e68cdbc",
+          "registryVersion": 12,
+          "signaturesRequired": 5,
+          "canonicalTimestamp": 1700000000
+        },
+        "signature": {
+          "signature": "0x55ff9bf688335d053577281b40b41d25dc32ab5e9a49ebf8e2c8b97e6c2cdc97",
+          "commitment": "0xA149d082c4281d91959f9462c6543303D3E1D719",
+          "signersBitmap": 339
+        }
+      },
+      "policy": { "sourceId": "0xa6729f7c91f13795a38aa67f4bc816fae5bef9ffbeb4319c69a9242f2e68cdbc", "minSignatures": 5, "maxAge": 0 },
+      "expected": {
+        "verifyOk": true,
+        "verifyCode": 0,
+        "libOk": true,
+        "libCode": 0,
+        "messageHash": "0x0732619e5c01980a8dd5f54771c317428352aa53c3c9ec1a0f5efd252642a761",
+        "replayKey": "0xffde348d79e780f26957e72afd9efb817d8b73c46199700a8f51520d61422cd2",
+        "asInt256": "-1234"
+      }
+    },
+    {
+      "name": "kindB-tuple",
+      "kind": "B",
+      "encodedFields": "0x000000000000000000000000000000000000000000000000000000000000002a6d6f6c70686100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000060000000000000000000000000000000000000000000000000000000000000000863726f73732d766d000000000000000000000000000000000000000000000000",
+      "attestation": {
+        "payload": {
+          "value": "0x47869257dae795e85b30cb6a0ac7f82fe977ec5ced28d96a70f3fe2cb514ff1a",
+          "sourceId": "0xa6729f7c91f13795a38aa67f4bc816fae5bef9ffbeb4319c69a9242f2e68cdbc",
+          "registryVersion": 12,
+          "signaturesRequired": 5,
+          "canonicalTimestamp": 1700000000
+        },
+        "signature": {
+          "signature": "0x6568d453e16ee4cbc22c7adec7dd76a309f21c4605f4e1021227a8e653fdaa4d",
+          "commitment": "0x2D35FC7075ef54ADc5CC11af5472A5D28D85DD31",
+          "signersBitmap": 339
+        }
+      },
+      "policy": { "sourceId": "0xa6729f7c91f13795a38aa67f4bc816fae5bef9ffbeb4319c69a9242f2e68cdbc", "minSignatures": 5, "maxAge": 0 },
+      "expected": {
+        "verifyOk": true,
+        "verifyCode": 0,
+        "libOk": true,
+        "libCode": 0,
+        "messageHash": "0x395c56b08e84271c28f939c542a8511ee9e96afb63a71ed63caf102e95564318",
+        "replayKey": "0xffde348d79e780f26957e72afd9efb817d8b73c46199700a8f51520d61422cd2",
+        "tuple": [42, "molpha", "cross-vm"]
+      }
+    }
+  ]
+}

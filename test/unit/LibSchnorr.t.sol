@@ -5,7 +5,7 @@ import {Test} from "forge-std/Test.sol";
 
 import {LibSecp256k1} from "../../src/libs/LibSecp256k1.sol";
 import {LibSchnorr} from "../../src/libs/LibSchnorr.sol";
-import {LibSchnorrTestSign} from "../libs/LibSchnorrTestSign.sol";
+import {MolphaSigLib} from "../../src/test-utils/MolphaSigLib.sol";
 
 contract LibSchnorrHarness {
     function verify(LibSecp256k1.Point calldata pubkey, bytes32 message, bytes32 signature, address commitment)
@@ -37,7 +37,7 @@ contract LibSchnorrTest is Test {
         returns (LibSecp256k1.Point memory pubkey, bytes32 signature, address commitment)
     {
         pubkey = LibSecp256k1.mulAffine(LibSecp256k1.G(), SECRET);
-        (signature, commitment) = LibSchnorrTestSign.sign(pubkey, SECRET, MESSAGE, 0);
+        (signature, commitment) = MolphaSigLib.sign(pubkey, SECRET, MESSAGE, 0);
     }
 
     function test_verifySignature_acceptsValidSignature() public view {

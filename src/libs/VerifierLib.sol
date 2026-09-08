@@ -32,7 +32,7 @@ library VerifierLib {
     uint256 private constant TIMESTAMP_MASK = 0xffffffffff;
     uint256 private constant IS_LATEST_MASK = uint256(1) << IS_LATEST_SHIFT;
 
-    function constructMessage(IVerifier.DataUpdate calldata dataUpdate, uint256 signersBitmap)
+    function constructMessage(IVerifier.AttestationPayload calldata payload, uint256 signersBitmap)
         internal
         pure
         returns (bytes32 message)
@@ -40,20 +40,24 @@ library VerifierLib {
         message = keccak256(
             abi.encodePacked(
                 MESSAGE_PREFIX,
-                dataUpdate.sourceId,
-                dataUpdate.registryVersion,
-                dataUpdate.signaturesRequired,
+                payload.sourceId,
+                payload.registryVersion,
+                payload.signaturesRequired,
                 signersBitmap,
-                dataUpdate.value,
-                dataUpdate.canonicalTimestamp
+                payload.value,
+                payload.canonicalTimestamp
             )
         );
     }
 
-    function getSelectionSeed(IVerifier.DataUpdate calldata dataUpdate) internal pure returns (bytes32 selectionSeed) {
+    function getSelectionSeed(IVerifier.AttestationPayload calldata payload)
+        internal
+        pure
+        returns (bytes32 selectionSeed)
+    {
         selectionSeed = keccak256(
             abi.encodePacked(
-                SELECTION_SEED_PREFIX, dataUpdate.sourceId, dataUpdate.registryVersion, dataUpdate.canonicalTimestamp
+                SELECTION_SEED_PREFIX, payload.sourceId, payload.registryVersion, payload.canonicalTimestamp
             )
         );
     }
@@ -61,7 +65,7 @@ library VerifierLib {
     /// @dev Every signer must sit inside the round's deterministically derived selection group.
     ///      Compromised signers are handled separately by discounting them from the threshold
     ///      count (registry-v2 §6.4), never by rejecting them here.
-    function selectionOk(IVerifier.DataUpdate calldata dataUpdate, uint256 entry, uint256 signersBitmap)
+    function selectionOk(IVerifier.AttestationPayload calldata payload, uint256 entry, uint256 signersBitmap)
         internal
         pure
         returns (bool valid)
@@ -69,10 +73,10 @@ library VerifierLib {
         uint256 n = nodeCount(entry);
         if (n == 0) return false;
 
-        uint256 groupSize = dataUpdate.signaturesRequired + buffer(entry);
+        uint256 groupSize = payload.signaturesRequired + buffer(entry);
         if (groupSize > n) groupSize = n;
 
-        uint256 selectionBitmap = NodeGroupBitmapLib.derive(getSelectionSeed(dataUpdate), n, groupSize);
+        uint256 selectionBitmap = NodeGroupBitmapLib.derive(getSelectionSeed(payload), n, groupSize);
         valid = signersBitmap & ~selectionBitmap == 0;
     }
 

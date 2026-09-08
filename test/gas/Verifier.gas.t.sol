@@ -19,9 +19,9 @@ contract VerifierGasTest is VerifierTestBase {
 
     struct BenchmarkSetup {
         Verifier target;
-        IVerifier.DataUpdate firstUpdate;
+        IVerifier.AttestationPayload firstUpdate;
         IVerifier.SchnorrSignature firstSignature;
-        IVerifier.DataUpdate secondUpdate;
+        IVerifier.AttestationPayload secondUpdate;
         IVerifier.SchnorrSignature secondSignature;
         uint256 firstCalldataCost;
         uint256 secondCalldataCost;
@@ -44,10 +44,12 @@ contract VerifierGasTest is VerifierTestBase {
         (benchmark.secondUpdate, benchmark.secondSignature) = _buildVerifyCall(
             benchmark.target, scenario.threshold, keccak256("MOLPHA_VERIFY_GAS_JOB"), bytes32(uint256(2)), 1_700_000_002
         );
-        benchmark.firstCalldataCost =
-            _calldataCost(abi.encodeCall(IVerifier.verify, (benchmark.firstUpdate, benchmark.firstSignature, 0)));
-        benchmark.secondCalldataCost =
-            _calldataCost(abi.encodeCall(IVerifier.verify, (benchmark.secondUpdate, benchmark.secondSignature, 0)));
+        benchmark.firstCalldataCost = _calldataCost(
+            abi.encodeCall(IVerifier.verify, (_attestation(benchmark.firstUpdate, benchmark.firstSignature), 0))
+        );
+        benchmark.secondCalldataCost = _calldataCost(
+            abi.encodeCall(IVerifier.verify, (_attestation(benchmark.secondUpdate, benchmark.secondSignature), 0))
+        );
 
         vm.resumeGasMetering();
     }
@@ -61,12 +63,12 @@ contract VerifierGasTest is VerifierTestBase {
 
         uint256 gasBefore = gasleft();
         (bool firstVerified, uint8 firstCode) =
-            benchmark.target.verify(benchmark.firstUpdate, benchmark.firstSignature, 0);
+            benchmark.target.verify(_attestation(benchmark.firstUpdate, benchmark.firstSignature), 0);
         cold = gasBefore - gasleft();
 
         gasBefore = gasleft();
         (bool secondVerified, uint8 secondCode) =
-            benchmark.target.verify(benchmark.secondUpdate, benchmark.secondSignature, 0);
+            benchmark.target.verify(_attestation(benchmark.secondUpdate, benchmark.secondSignature), 0);
         warm = gasBefore - gasleft();
 
         vm.pauseGasMetering();

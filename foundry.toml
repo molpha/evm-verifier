@@ -8,8 +8,13 @@ optimizer_runs = 1000000
 via_ir = true
 fs_permissions = [{ access = "read-write", path = "./" }]
 evm_version = "cancun"
+# The CREATE2 address consumers pin in `MolphaAddresses` must depend on source semantics only.
+# The default `ipfs` bytecode hash embeds a metadata digest that changes when a comment moves,
+# which would silently invalidate the pinned address on a docs-only change.
+bytecode_hash = "none"
+cbor_metadata = false
 no_match_path = "test/gas/*.t.sol"
-no_match_coverage = "^(script|test)/"
+no_match_coverage = "^(script|test|src/test-utils)/"
 # forge-std v1.9.7 emits Solidity 0.8.31 warning 2424 from dependency assembly
 # comments, then Solidity wraps the flood with aggregate warning 4591.
 # solady Ownable keeps `virtual` modifiers until Solidity 0.9.0 (vectorized/solady#1519).
@@ -26,3 +31,22 @@ no_match_path = "test/never/*.t.sol"
 no_match_test = "(test_verify_bitmapBoundaries_nodesOneAnd256AndFullUint256Bitmap|test_removeNode_swapsNodeFromIndex256IntoRemovedBoundarySlot)"
 
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options
+
+# Proves the examples still compile even if their tests are ever deleted. Root `examples/` is
+# outside the default source set, so it is only built transitively by `test/examples/*.t.sol`.
+[profile.examples]
+src = "examples"
+test = "examples"
+script = "examples"
+
+# The only real proof of the `>=0.8.4` pragma floor the consumer SDK advertises. `evm_version` is
+# deliberately unset: solc 0.8.4 predates `berlin` (added in 0.8.5) and defaults to `istanbul`.
+[profile.floor]
+solc_version = "0.8.4"
+via_ir = false
+optimizer = false
+# All three paths point at the consumer surface: `test`/`script` would otherwise keep their
+# defaults and drag the 0.8.31-pinned suite into a 0.8.4 build.
+src = "src/consumer"
+test = "src/consumer"
+script = "src/consumer"

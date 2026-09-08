@@ -11,7 +11,7 @@ import {VerifyCodes} from "../../src/libs/VerifyCodes.sol";
 import {LibSecp256k1} from "../../src/libs/LibSecp256k1.sol";
 import {NodeGroupBitmapLib} from "../../src/libs/NodeGroupBitmapLib.sol";
 import {KeysCommitmentLib} from "../../src/libs/KeysCommitmentLib.sol";
-import {LibSchnorrTestSign} from "../libs/LibSchnorrTestSign.sol";
+import {MolphaSigLib} from "../../src/test-utils/MolphaSigLib.sol";
 
 abstract contract VerifierTestBase is Test {
     using LibSecp256k1 for LibSecp256k1.Point;
@@ -46,7 +46,7 @@ abstract contract VerifierTestBase is Test {
     }
 
     function _secret(uint256 slot) internal pure returns (uint256) {
-        return (uint256(keccak256(abi.encodePacked("MOLPHA_VERIFIER_TEST_KEY", slot))) % (LibSecp256k1.Q() - 1)) + 1;
+        return MolphaSigLib.testSecret(slot);
     }
 
     function _proofOfPossession(address verifierAddress, bytes memory compressedPubkey, uint256 secret)
@@ -54,10 +54,7 @@ abstract contract VerifierTestBase is Test {
         view
         returns (IVerifier.SchnorrProof memory proof)
     {
-        bytes32 digest = keccak256(abi.encodePacked(POP_DOMAIN, verifierAddress, compressedPubkey));
-        LibSecp256k1.Point memory pubkey = LibSecp256k1.decompress(compressedPubkey);
-        (bytes32 signature, address commitment) = LibSchnorrTestSign.sign(pubkey, secret, digest, 0);
-        proof = IVerifier.SchnorrProof({signature: signature, commitment: commitment});
+        proof = MolphaSigLib.proofOfPossession(verifierAddress, compressedPubkey, secret);
     }
 
     function _appendNode(Verifier target, uint256 slot) internal returns (address node) {
@@ -100,24 +97,16 @@ abstract contract VerifierTestBase is Test {
         secrets.pop();
     }
 
-    function _selectionSeed(IVerifier.DataUpdate memory update) internal pure returns (bytes32) {
-        return keccak256(
-            abi.encodePacked(SELECTION_SEED_PREFIX, update.sourceId, update.registryVersion, update.canonicalTimestamp)
-        );
+    function _selectionSeed(IVerifier.AttestationPayload memory update) internal pure returns (bytes32) {
+        return MolphaSigLib.selectionSeed(update);
     }
 
-    function _message(IVerifier.DataUpdate memory update, uint256 signersBitmap) internal pure returns (bytes32) {
-        return keccak256(
-            abi.encodePacked(
-                MESSAGE_PREFIX,
-                update.sourceId,
-                update.registryVersion,
-                update.signaturesRequired,
-                signersBitmap,
-                update.value,
-                update.canonicalTimestamp
-            )
-        );
+    function _message(IVerifier.AttestationPayload memory update, uint256 signersBitmap)
+        internal
+        pure
+        returns (bytes32)
+    {
+        return MolphaSigLib.message(update, signersBitmap);
     }
 
     function _pickSignerIndices(uint256 bitmap, uint256 registeredNodes, uint256 count)
@@ -125,34 +114,15 @@ abstract contract VerifierTestBase is Test {
         pure
         returns (uint256[] memory indices)
     {
-        indices = new uint256[](count);
-        uint256 found;
-        for (uint256 position; position < registeredNodes; ++position) {
-            if (bitmap & (uint256(1) << position) == 0) continue;
-            indices[found] = position;
-            unchecked {
-                ++found;
-            }
-            if (found == count) return indices;
-        }
-        revert InsufficientSelectedSigners();
+        return MolphaSigLib.pickSignerIndices(bitmap, registeredNodes, count);
     }
 
     function _sumPubkeys(uint256[] memory indices) internal view returns (LibSecp256k1.Point memory aggregate) {
-        if (indices.length == 0) revert EmptySignerSet();
-        aggregate = pubkeys[indices[0]];
-        for (uint256 i = 1; i < indices.length; ++i) {
-            LibSecp256k1.Point memory next = pubkeys[indices[i]];
-            (uint256 x, uint256 y, uint256 z) =
-                LibSecp256k1.addAffinePointToXYZ(aggregate.x, aggregate.y, 1, next.x, next.y);
-            aggregate = LibSecp256k1.toAffineModexpXYZ(x, y, z);
-        }
+        return MolphaSigLib.sumPubkeys(pubkeys, indices);
     }
 
     function _sumSecrets(uint256[] memory indices) internal view returns (uint256 aggregateSecret) {
-        for (uint256 i; i < indices.length; ++i) {
-            aggregateSecret = addmod(aggregateSecret, secrets[indices[i]], LibSecp256k1.Q());
-        }
+        return MolphaSigLib.sumSecrets(secrets, indices);
     }
 
     function _buildVerifyCall(
@@ -162,8 +132,8 @@ abstract contract VerifierTestBase is Test {
         bytes32 sourceId,
         bytes32 value,
         uint64 canonicalTimestamp
-    ) internal view returns (IVerifier.DataUpdate memory update, IVerifier.SchnorrSignature memory schnorr) {
-        update = IVerifier.DataUpdate({
+    ) internal view returns (IVerifier.AttestationPayload memory update, IVerifier.SchnorrSignature memory schnorr) {
+        update = IVerifier.AttestationPayload({
             sourceId: sourceId,
             registryVersion: uint32(target.getRegistryVersion()),
             signaturesRequired: uint32(signaturesRequired),
@@ -185,7 +155,7 @@ abstract contract VerifierTestBase is Test {
 
         LibSecp256k1.Point memory aggregatePubkey = _sumPubkeys(indices);
         (bytes32 signature, address commitment) =
-            LibSchnorrTestSign.sign(aggregatePubkey, _sumSecrets(indices), _message(update, signersBitmap), 0);
+            MolphaSigLib.sign(aggregatePubkey, _sumSecrets(indices), _message(update, signersBitmap), 0);
         schnorr =
             IVerifier.SchnorrSignature({signature: signature, commitment: commitment, signersBitmap: signersBitmap});
     }
@@ -196,38 +166,61 @@ abstract contract VerifierTestBase is Test {
         bytes32 sourceId,
         bytes32 value,
         uint64 canonicalTimestamp
-    ) internal view returns (IVerifier.DataUpdate memory update, IVerifier.SchnorrSignature memory schnorr) {
+    ) internal view returns (IVerifier.AttestationPayload memory update, IVerifier.SchnorrSignature memory schnorr) {
         return _buildVerifyCall(target, signaturesRequired, signaturesRequired, sourceId, value, canonicalTimestamp);
     }
 
     function _buildVerifyCall(Verifier target, uint256 signaturesRequired, bytes32 sourceId, bytes32 value)
         internal
         view
-        returns (IVerifier.DataUpdate memory update, IVerifier.SchnorrSignature memory schnorr)
+        returns (IVerifier.AttestationPayload memory update, IVerifier.SchnorrSignature memory schnorr)
     {
         return _buildVerifyCall(target, signaturesRequired, sourceId, value, uint64(block.timestamp));
     }
 
-    function _verify(Verifier target, IVerifier.DataUpdate memory update, IVerifier.SchnorrSignature memory schnorr)
+    /// @dev Packs the legacy `(payload, signature)` test tuple into the wire struct. Existing
+    ///      suites keep building the two halves separately; only the call boundary changed.
+    function _attestation(IVerifier.AttestationPayload memory update, IVerifier.SchnorrSignature memory schnorr)
         internal
-        view
-        returns (bool ok, uint8 code)
+        pure
+        returns (IVerifier.Attestation memory)
     {
-        return target.verify(update, schnorr, 0);
+        return IVerifier.Attestation({payload: update, signature: schnorr});
+    }
+
+    /// @dev `_buildVerifyCall` in the shape new tests want.
+    function _buildAttestation(
+        Verifier target,
+        uint256 signaturesRequired,
+        bytes32 sourceId,
+        bytes32 value,
+        uint64 canonicalTimestamp
+    ) internal view returns (IVerifier.Attestation memory) {
+        (IVerifier.AttestationPayload memory update, IVerifier.SchnorrSignature memory schnorr) =
+            _buildVerifyCall(target, signaturesRequired, sourceId, value, canonicalTimestamp);
+        return _attestation(update, schnorr);
     }
 
     function _verify(
         Verifier target,
-        IVerifier.DataUpdate memory update,
-        IVerifier.SchnorrSignature memory schnorr,
-        uint256 maxAge
+        IVerifier.AttestationPayload memory update,
+        IVerifier.SchnorrSignature memory schnorr
     ) internal view returns (bool ok, uint8 code) {
-        return target.verify(update, schnorr, maxAge);
+        return target.verify(_attestation(update, schnorr), 0);
+    }
+
+    function _verify(
+        Verifier target,
+        IVerifier.AttestationPayload memory update,
+        IVerifier.SchnorrSignature memory schnorr,
+        uint64 maxAge
+    ) internal view returns (bool ok, uint8 code) {
+        return target.verify(_attestation(update, schnorr), maxAge);
     }
 
     function _assertVerifyOk(
         Verifier target,
-        IVerifier.DataUpdate memory update,
+        IVerifier.AttestationPayload memory update,
         IVerifier.SchnorrSignature memory schnorr
     ) internal view {
         (bool ok, uint8 code) = _verify(target, update, schnorr);
@@ -237,9 +230,9 @@ abstract contract VerifierTestBase is Test {
 
     function _assertVerifyOk(
         Verifier target,
-        IVerifier.DataUpdate memory update,
+        IVerifier.AttestationPayload memory update,
         IVerifier.SchnorrSignature memory schnorr,
-        uint256 maxAge
+        uint64 maxAge
     ) internal view {
         (bool ok, uint8 code) = _verify(target, update, schnorr, maxAge);
         assertTrue(ok);
@@ -248,7 +241,7 @@ abstract contract VerifierTestBase is Test {
 
     function _assertVerifyFails(
         Verifier target,
-        IVerifier.DataUpdate memory update,
+        IVerifier.AttestationPayload memory update,
         IVerifier.SchnorrSignature memory schnorr
     ) internal view {
         (bool ok,) = _verify(target, update, schnorr);
@@ -257,7 +250,7 @@ abstract contract VerifierTestBase is Test {
 
     function _assertVerifyFails(
         Verifier target,
-        IVerifier.DataUpdate memory update,
+        IVerifier.AttestationPayload memory update,
         IVerifier.SchnorrSignature memory schnorr,
         uint8 expectedCode
     ) internal view {
@@ -268,9 +261,9 @@ abstract contract VerifierTestBase is Test {
 
     function _assertVerifyFails(
         Verifier target,
-        IVerifier.DataUpdate memory update,
+        IVerifier.AttestationPayload memory update,
         IVerifier.SchnorrSignature memory schnorr,
-        uint256 maxAge,
+        uint64 maxAge,
         uint8 expectedCode
     ) internal view {
         (bool ok, uint8 code) = _verify(target, update, schnorr, maxAge);

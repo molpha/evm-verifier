@@ -36,8 +36,24 @@ jobs:
       - name: Check formatting
         run: forge fmt --check
 
+      # `examples/` is outside the default source set, so fmt and lint need it named explicitly.
+      - name: Check formatting (examples)
+        run: forge fmt --check examples
+
+      # Consumers are told to import `@molpha/evm-verifier/...`. This is what proves it resolves.
+      - name: Check remappings
+        run: forge remappings | grep -qx '@molpha/evm-verifier/=src/'
+
       - name: Build
         run: forge build --sizes --deny warnings
+
+      # Survives deletion of test/examples: without this, examples compile only transitively.
+      - name: Build examples standalone
+        run: FOUNDRY_PROFILE=examples forge build --deny warnings
+
+      # The only real proof of the >=0.8.4 floor the consumer SDK advertises.
+      - name: Build consumer SDK at the pragma floor
+        run: FOUNDRY_PROFILE=floor forge build --deny warnings
 
       - name: Test
         run: forge test -vvv
@@ -47,3 +63,57 @@ jobs:
 
       - name: Lint
         run: forge lint
+
+      - name: Lint examples
+        run: forge lint examples
+
+      - name: Guard invariants
+        run: |
+          set -euo pipefail
+          # The pre-Attestation type must not creep back in.
+          ! grep -rn 'DataUpdate' src test script examples
+          # Test utilities must stay cheatcode-free so consumers can use them from any frame.
+          # Code lines only: natspec may still mention `vm.expectCall` as guidance.
+          ! grep -rn --include='*.sol' -E '^[[:space:]]*[^/*[:space:]].*\bvm\.' src/test-utils/
+          # Anything a consumer imports must advertise the loosened pragma.
+          for f in src/interfaces/IVerifier.sol src/consumer/MolphaLib.sol \
+                   src/consumer/MolphaAddresses.sol src/libs/VerifyCodes.sol \
+                   src/test-utils/MockVerifier.sol examples/*.sol; do
+            grep -qx 'pragma solidity >=0.8.4 <0.9.0;' "$f" || { echo "bad pragma: $f"; exit 1; }
+          done
+
+  npm:
+    name: npm package
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Stage the package
+        run: bash scripts/pack-npm.sh
+
+      # Asserts every import resolves inside the tarball and that the consumer surface's
+      # transitive closure has zero external dependencies.
+      - name: Check import resolution
+        run: node scripts/check-imports.mjs npm-dist
+
+      - name: Check tarball layout
+        run: |
+          set -euo pipefail
+          cd npm-dist
+          npm pack --dry-run 2>&1 | tee /tmp/pack.txt
+          # src/ contents must sit at the package root, so one import string works on both channels.
+          ! grep -qE '(^|[[:space:]])src/' /tmp/pack.txt
+          grep -q 'consumer/MolphaLib.sol' /tmp/pack.txt
+          grep -q 'interfaces/IVerifier.sol' /tmp/pack.txt

@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
-pragma solidity ^0.8.31;
+pragma solidity >=0.8.4 <0.9.0;
 
 /// @title VerifyCodes
 /// @notice Result codes returned by `Verifier.verify`
 /// @dev Codes 0–10 match registry-v2 / Cairo / Solana. Do not renumber.
 library VerifyCodes {
     uint8 internal constant R_OK = 0;
+    /// @dev Reserved. Never returned by this implementation; kept so codes are never renumbered.
     uint8 internal constant R_FEED_WITNESS = 1;
     uint8 internal constant R_BAD_REGISTRY_VERSION = 2;
     uint8 internal constant R_MALFORMED = 3;
