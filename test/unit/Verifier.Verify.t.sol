@@ -339,12 +339,14 @@ contract VerifierVerifyTest is VerifierTestBase {
 
         _assertVerifyOk(verifier, edgeUpdate, edgeSchnorr);
 
-        verifier.setRedundancyBuffer(0);
+        // A u8 threshold tops out at 255. A one-node redundancy buffer expands the selected
+        // group to all 256 nodes, so the verifier still exercises a full uint256 bitmap.
+        verifier.setRedundancyBuffer(1);
         bytes32 fullSourceId = bytes32("bitmap full");
         IVerifier.AttestationPayload memory fullUpdate = IVerifier.AttestationPayload({
             sourceId: fullSourceId,
             registryVersion: uint32(verifier.getRegistryVersion()),
-            signaturesRequired: 256,
+            signaturesRequired: 255,
             value: bytes32("full value"),
             canonicalTimestamp: 1_700_000_011
         });

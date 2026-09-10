@@ -136,7 +136,7 @@ abstract contract VerifierTestBase is Test {
         update = IVerifier.AttestationPayload({
             sourceId: sourceId,
             registryVersion: uint32(target.getRegistryVersion()),
-            signaturesRequired: uint32(signaturesRequired),
+            signaturesRequired: uint8(signaturesRequired),
             value: value,
             canonicalTimestamp: canonicalTimestamp
         });

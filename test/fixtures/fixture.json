@@ -3,8 +3,16 @@
   "payloadKind": "cross-language-golden-vector",
   "registeredNodeCount": 12,
   "registryVersion": 12,
-  "messageHash": "0x0cea740d877fc5ba51c244ee6172f51e0862fb42972c6d008e8cffb486b67d16",
-  "nodeIndexesOneBased": [5, 6, 7, 8, 9, 10, 11],
+  "messageHash": "0xa3e58f5c157c98cad4fd8478fd39b18da85f4ad2d581db06b724f53b55afc5b3",
+  "nodeIndexesOneBased": [
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11
+  ],
   "nodePubkeys": [
     "0x031531a401a017486c6fbd1e2819256e759e5f2ec34e250bbbe0f7819f1806537b",
     "0x022c04478953f5d4926f13e38f082820385d3d3cfc43c29790bea9e253ca9438f4",
@@ -41,8 +49,8 @@
     "canonicalTimestamp": 1700034927
   },
   "schnorrSignature": {
-    "signature": "0x7ab916f828c1d9354deb4d90496a975a9ea993764ec64f111972e7e7305bb398",
-    "commitment": "0xa699a2b9aa1011a663f4d575fd531eebeb03813f",
+    "signature": "0x9f52f4fd6b2f82086803269007cbda35cf024c40af57160b7472817e2691ef73",
+    "commitment": "0xAFF31ae9E8f7624c9F8c149f1f12BB00f1606C10",
     "signersBitmap": 2032
   }
 }

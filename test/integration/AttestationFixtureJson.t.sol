@@ -104,7 +104,7 @@ contract AttestationFixtureJsonTest is Test {
                 value: json.readBytes32(string.concat(p, "payload.value")),
                 sourceId: json.readBytes32(string.concat(p, "payload.sourceId")),
                 registryVersion: uint32(json.readUint(string.concat(p, "payload.registryVersion"))),
-                signaturesRequired: uint32(json.readUint(string.concat(p, "payload.signaturesRequired"))),
+                signaturesRequired: uint8(json.readUint(string.concat(p, "payload.signaturesRequired"))),
                 canonicalTimestamp: uint64(json.readUint(string.concat(p, "payload.canonicalTimestamp")))
             }),
             signature: IVerifier.SchnorrSignature({

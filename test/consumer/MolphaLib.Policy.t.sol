@@ -39,7 +39,7 @@ contract MolphaLibPolicyTest is Test {
                 value: value,
                 sourceId: sourceId,
                 registryVersion: 1,
-                signaturesRequired: signaturesRequired,
+                signaturesRequired: uint8(signaturesRequired),
                 canonicalTimestamp: 1_700_000_000
             }),
             signature: IVerifier.SchnorrSignature({

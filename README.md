@@ -135,7 +135,7 @@ struct AttestationPayload {
     bytes32 value;
     bytes32 sourceId;
     uint32 registryVersion;
-    uint32 signaturesRequired;
+    uint8 signaturesRequired;
     uint64 canonicalTimestamp;
 }
 
@@ -151,12 +151,12 @@ The signed message is:
 ```text
 keccak256(
   keccak256("MOLPHA_MESSAGE_V1") ||
+  value ||
   sourceId ||
   registryVersion ||
   signaturesRequired ||
-  signersBitmap ||
-  value ||
-  canonicalTimestamp
+  canonicalTimestamp ||
+  signersBitmap
 )
 ```
 

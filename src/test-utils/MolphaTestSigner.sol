@@ -110,11 +110,12 @@ contract MolphaTestSigner {
         uint32 signerCount,
         uint64 canonicalTimestamp
     ) public view returns (IVerifier.Attestation memory) {
+        require(signaturesRequired <= type(uint8).max, "signaturesRequired exceeds uint8");
         IVerifier.AttestationPayload memory payload = IVerifier.AttestationPayload({
             value: value,
             sourceId: sourceId,
             registryVersion: uint32(verifier.getRegistryVersion()),
-            signaturesRequired: signaturesRequired,
+            signaturesRequired: uint8(signaturesRequired),
             canonicalTimestamp: canonicalTimestamp
         });
         return MolphaSigLib.buildAttestation(_secrets, _pubkeys, payload, verifier.redundancyBuffer(), signerCount);

@@ -93,6 +93,13 @@ contract AddNode is Script {
             string memory base = string.concat(".nodes[", vm.toString(i), "]");
             if (json.keyExists(string.concat(base, ".privateKey"))) {
                 nodes[i] = _fromPrivateKey(verifierAddr, json.readUint(string.concat(base, ".privateKey")));
+            } else if (json.keyExists(string.concat(base, ".evm.privateKey"))) {
+                // Accept the manifest emitted by the Solana node-registration script so one
+                // ordered key set can initialize both verifier registries in cross-VM tests.
+                nodes[i] = _fromPrivateKey(
+                    verifierAddr,
+                    vm.parseUint(string.concat("0x", json.readString(string.concat(base, ".evm.privateKey"))))
+                );
             } else {
                 nodes[i].compressedPubKey = json.readBytes(string.concat(base, ".compressedPubKey"));
                 nodes[i].pop = IVerifier.SchnorrProof({

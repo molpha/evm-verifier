@@ -109,12 +109,12 @@ library MolphaSigLib {
         return keccak256(
             abi.encodePacked(
                 MESSAGE_PREFIX,
+                payload.value,
                 payload.sourceId,
                 payload.registryVersion,
                 payload.signaturesRequired,
-                signersBitmap,
-                payload.value,
-                payload.canonicalTimestamp
+                payload.canonicalTimestamp,
+                signersBitmap
             )
         );
     }

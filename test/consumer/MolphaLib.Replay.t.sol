@@ -147,11 +147,11 @@ contract MolphaLibReplayTest is Test {
         assertTrue(harness.replayKey(_payload(sourceA, 1, tsA)) != harness.replayKey(_payload(sourceB, 1, tsB)));
     }
 
-    function testFuzz_replayKeyIgnoresValueAndThreshold(bytes32 value, uint32 signaturesRequired) public view {
+    function testFuzz_replayKeyIgnoresValueAndThreshold(bytes32 value, uint8 signaturesRequired) public view {
         IVerifier.AttestationPayload memory a = _payload(SOURCE, 1, 100);
         IVerifier.AttestationPayload memory b = _payload(SOURCE, 1, 100);
         b.value = value;
-        b.signaturesRequired = signaturesRequired;
+        b.signaturesRequired = uint8(signaturesRequired);
         assertEq(harness.replayKey(a), harness.replayKey(b));
     }
 }

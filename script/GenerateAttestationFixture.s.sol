@@ -21,7 +21,7 @@ contract GenerateAttestationFixture is Script {
 
     uint256 internal constant NODE_COUNT = 12;
     uint256 internal constant REDUNDANCY_BUFFER = 2;
-    uint32 internal constant SIGNATURES_REQUIRED = 5;
+    uint8 internal constant SIGNATURES_REQUIRED = 5;
     uint64 internal constant CANONICAL_TIMESTAMP = 1_700_000_000;
     bytes32 internal constant SOURCE_ID = keccak256("MOLPHA_CONSUMER_SDK_SOURCE");
 

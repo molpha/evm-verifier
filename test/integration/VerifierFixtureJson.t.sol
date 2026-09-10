@@ -36,7 +36,7 @@ contract VerifierFixtureJsonTest is Test {
         du = IVerifier.AttestationPayload({
             sourceId: json.readBytes32(".dataUpdate.sourceId"),
             registryVersion: uint32(json.readUint(".dataUpdate.registryVersion")),
-            signaturesRequired: uint32(json.readUint(".dataUpdate.signaturesRequired")),
+            signaturesRequired: uint8(json.readUint(".dataUpdate.signaturesRequired")),
             value: json.readBytes32(".dataUpdate.value"),
             canonicalTimestamp: uint64(json.readUint(".dataUpdate.canonicalTimestamp"))
         });

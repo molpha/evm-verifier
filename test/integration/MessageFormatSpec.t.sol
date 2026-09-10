@@ -37,12 +37,12 @@ contract MessageFormatSpecTest is Test {
     // Fixed vector; the digests below are only valid for exactly these values.
     bytes32 internal constant SOURCE_ID = bytes32(uint256(1));
     uint32 internal constant REGISTRY_VERSION = 7;
-    uint32 internal constant SIGNATURES_REQUIRED = 3;
+    uint8 internal constant SIGNATURES_REQUIRED = 3;
     uint256 internal constant SIGNERS_BITMAP = 0x83; // nodes 0, 1 and 7, per the spec's example
     bytes32 internal constant VALUE = bytes32(uint256(0xdeadbeef));
     uint64 internal constant CANONICAL_TIMESTAMP = 1_699_965_440; // 0x65536a00
 
-    bytes32 internal constant EXPECTED_MESSAGE = 0x027e59f0e18c10504080165e51b28423823a90e1371103f17d29270b8b519700;
+    bytes32 internal constant EXPECTED_MESSAGE = 0x7527b765799e48db80cefdd8c8cf76fd1e8feed2838eee5ba7ab862d920b5e61;
     bytes32 internal constant EXPECTED_SELECTION_SEED =
         0x24d3c035b75a33faa60438e66159dbb2011438056b4e86b892e6a89839b2a6fa;
 
@@ -115,36 +115,61 @@ contract MessageFormatSpecTest is Test {
     }
 
     /// @dev Field widths are the part cross-language implementations get wrong most easily:
-    ///      `abi.encodePacked` writes `registryVersion` and `signaturesRequired` as 4 bytes and
-    ///      `canonicalTimestamp` as 8, not as 32-byte words.
+    ///      `abi.encodePacked` writes `registryVersion` as 4 bytes, `signaturesRequired` as one,
+    ///      and `canonicalTimestamp` as 8, not as 32-byte words.
     function test_constructMessage_isSensitiveToFieldWidths() public view {
         bytes32 actual = harness.message(_update(), SIGNERS_BITMAP);
 
         bytes32 wordWidthVersion = keccak256(
             abi.encodePacked(
                 keccak256("MOLPHA_MESSAGE_V1"),
+                VALUE,
                 SOURCE_ID,
                 uint256(REGISTRY_VERSION),
                 SIGNATURES_REQUIRED,
-                SIGNERS_BITMAP,
-                VALUE,
-                CANONICAL_TIMESTAMP
+                CANONICAL_TIMESTAMP,
+                SIGNERS_BITMAP
             )
         );
         assertTrue(actual != wordWidthVersion, "registryVersion must be encoded as uint32");
 
+        bytes32 wordWidthQuorum = keccak256(
+            abi.encodePacked(
+                keccak256("MOLPHA_MESSAGE_V1"),
+                VALUE,
+                SOURCE_ID,
+                REGISTRY_VERSION,
+                uint32(SIGNATURES_REQUIRED),
+                CANONICAL_TIMESTAMP,
+                SIGNERS_BITMAP
+            )
+        );
+        assertTrue(actual != wordWidthQuorum, "signaturesRequired must be encoded as uint8");
+
         bytes32 wordWidthTimestamp = keccak256(
             abi.encodePacked(
                 keccak256("MOLPHA_MESSAGE_V1"),
+                VALUE,
                 SOURCE_ID,
                 REGISTRY_VERSION,
                 SIGNATURES_REQUIRED,
-                SIGNERS_BITMAP,
-                VALUE,
-                uint256(CANONICAL_TIMESTAMP)
+                uint256(CANONICAL_TIMESTAMP),
+                SIGNERS_BITMAP
             )
         );
         assertTrue(actual != wordWidthTimestamp, "canonicalTimestamp must be encoded as uint64");
+    }
+
+    /// @dev Byte-for-byte fixture shared with `molpha-verifier/tests/fixtures/mod.rs` and the SDK.
+    function test_constructMessage_matchesRustAndSdkSharedVector() public view {
+        IVerifier.AttestationPayload memory payload = IVerifier.AttestationPayload({
+            value: 0x12cd90a4cd4351a26f2bd02583d791ae1b1a3285853a3315e718db8d7b85a62d,
+            sourceId: 0x41b87cd1b00231a5caebdfbc3e352d92bb0ec116335cc3544278a4bac95071a7,
+            registryVersion: 12,
+            signaturesRequired: 5,
+            canonicalTimestamp: 1_705_257_421
+        });
+        assertEq(harness.message(payload, 0x0fa8), 0x52e92f58c9c128d2f7e0be6165c4d58f843c39e828c12fcad8cdc566152f2bb1);
     }
 
     /// @dev Every signed field has to reach the digest, or it could be swapped after signing.
