@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-pragma solidity ^0.8.31;
+pragma solidity >=0.8.4 <0.9.0;
 
 /// @title IVerifier
 /// @notice Interface for the Verifier
@@ -40,18 +40,33 @@ interface IVerifier {
         uint256 signersBitmap;
     }
 
-    /// @notice Data update struct containing the data update information
-    /// @param value The value of the data update
+    /// @notice The signed half of an attestation: everything covered by the aggregate signature.
+    /// @dev Field order is load-bearing. It defines the signed preimage built by
+    ///      `VerifierLib.constructMessage` and mirrored by the Cairo, Rust, and node signers.
+    ///      Never reorder, insert, or widen a field without a coordinated cross-VM release.
+    /// @param value Opaque 32-byte result. Either one ABI-encoded word (kind A) or
+    ///        `keccak256(abi.encode(fields...))` (kind B). The verifier never learns which.
     /// @param sourceId Canonical data source identifier
     /// @param registryVersion The registry version
     /// @param signaturesRequired The number of signatures required
-    /// @param canonicalTimestamp The canonical timestamp of the data update
-    struct DataUpdate {
+    /// @param canonicalTimestamp The canonical timestamp of the attestation
+    struct AttestationPayload {
         bytes32 value;
         bytes32 sourceId;
         uint32 registryVersion;
-        uint32 signaturesRequired;
+        uint8 signaturesRequired;
         uint64 canonicalTimestamp;
+    }
+
+    /// @notice A signed payload: what a consumer receives and forwards to `verify`.
+    /// @dev Both members are static structs, so `Attestation` is itself static and encodes
+    ///      inline in the calldata head — the wrapper costs nothing over passing the two
+    ///      members separately.
+    /// @param payload The signed fields
+    /// @param signature The aggregate Schnorr signature over `payload`
+    struct Attestation {
+        AttestationPayload payload;
+        SchnorrSignature signature;
     }
 
     /// @notice Emitted when a new node is added to the set
@@ -121,17 +136,15 @@ interface IVerifier {
     /// @param node The address of the node to remove
     function removeFlagged(uint256 index, address node) external;
 
-    /// @notice Verify a Schnorr signature
-    /// @param dataUpdate The data update
-    /// @param schnorrData The Schnorr signature data
-    /// @param maxAge Maximum age in seconds for `dataUpdate.canonicalTimestamp` relative to
-    ///        `block.timestamp`. Pass `0` to skip the freshness check.
+    /// @notice Verify an attestation's aggregate Schnorr signature
+    /// @dev Total function: never reverts on the verification path. Every rejection is
+    ///      `(false, code)`. Consumers that want reverting semantics should use `MolphaLib`.
+    /// @param attestation The signed payload and its aggregate signature
+    /// @param maxAge Maximum age in seconds for `attestation.payload.canonicalTimestamp` relative
+    ///        to `block.timestamp`. Pass `0` to skip the freshness check.
     /// @return success True when the signature is valid
     /// @return code Result code; see `VerifyCodes`
-    function verify(DataUpdate calldata dataUpdate, SchnorrSignature calldata schnorrData, uint256 maxAge)
-        external
-        view
-        returns (bool success, uint8 code);
+    function verify(Attestation calldata attestation, uint64 maxAge) external view returns (bool success, uint8 code);
 
     /// @notice Get the current registry version
     /// @return registryVersion The current registry version

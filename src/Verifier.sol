@@ -22,7 +22,7 @@ import {CompromiseLib} from "./libs/CompromiseLib.sol";
 contract Verifier is IVerifier, Ownable {
     using LibSchnorr for LibSecp256k1.Point;
     using LibSecp256k1 for LibSecp256k1.Point;
-    using VerifierLib for IVerifier.DataUpdate;
+    using VerifierLib for IVerifier.AttestationPayload;
     using VerifierLib for uint256;
     using PubkeyBlobLib for bytes;
     using LibBit for uint256;
@@ -72,11 +72,11 @@ contract Verifier is IVerifier, Ownable {
     // -------------------------------------------------------------------------
 
     /// @inheritdoc IVerifier
-    function verify(DataUpdate calldata dataUpdate, SchnorrSignature calldata schnorrData, uint256 maxAge)
-        external
-        view
-        returns (bool success, uint8 code)
-    {
+    function verify(Attestation calldata attestation, uint64 maxAge) external view returns (bool success, uint8 code) {
+        // Both members are static structs, so these are compile-time calldata offsets, not copies.
+        AttestationPayload calldata dataUpdate = attestation.payload;
+        SchnorrSignature calldata schnorrData = attestation.signature;
+
         // Ordered cheapest-first: calldata-only checks, then hashing, then storage.
         if (dataUpdate.signaturesRequired == 0) return (false, VerifyCodes.R_MALFORMED);
         if (schnorrData.signersBitmap == 0) return (false, VerifyCodes.R_MALFORMED);
@@ -437,11 +437,11 @@ contract Verifier is IVerifier, Ownable {
         }
     }
 
-    function _verifySignature(DataUpdate calldata dataUpdate, SchnorrSignature calldata schnorrData, uint256 entry)
-        private
-        view
-        returns (bool success, uint8 code)
-    {
+    function _verifySignature(
+        AttestationPayload calldata dataUpdate,
+        SchnorrSignature calldata schnorrData,
+        uint256 entry
+    ) private view returns (bool success, uint8 code) {
         // Compromised signers are discounted from the threshold count, never subtracted from the
         // coalition key (registry-v2 §6.4). A clean version costs no bitmap SLOAD at all.
         if (entry.compromisedIn() != 0) {

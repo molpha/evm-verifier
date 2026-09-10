@@ -77,7 +77,7 @@ Molpha uses Schnorr signatures over secp256k1. `LibSchnorr` verifies signatures 
 
 For aggregate verification, the verifier:
 
-1. Loads the registry snapshot requested by `dataUpdate.registryVersion`.
+1. Loads the registry snapshot requested by `attestation.payload.registryVersion`.
 2. Derives the deterministic selected signer group.
 3. Checks that the submitted bitmap is a subset of the selected group and that enough uncompromised signers remain after discounting compromised keys.
 4. Sums the public keys of every set bit in the submitted signer bitmap.
@@ -131,11 +131,11 @@ registry entry and one cold account access for the key blob.
 Consumers pass the data update and the aggregate Schnorr signature:
 
 ```solidity
-struct DataUpdate {
+struct AttestationPayload {
     bytes32 value;
     bytes32 sourceId;
     uint32 registryVersion;
-    uint32 signaturesRequired;
+    uint8 signaturesRequired;
     uint64 canonicalTimestamp;
 }
 
@@ -151,12 +151,12 @@ The signed message is:
 ```text
 keccak256(
   keccak256("MOLPHA_MESSAGE_V1") ||
+  value ||
   sourceId ||
   registryVersion ||
   signaturesRequired ||
-  signersBitmap ||
-  value ||
-  canonicalTimestamp
+  canonicalTimestamp ||
+  signersBitmap
 )
 ```
 
@@ -205,7 +205,7 @@ Admin functions revert unless `msg.sender == owner()`.
 
 | Function | Description |
 | --- | --- |
-| `verify(DataUpdate dataUpdate, SchnorrSignature schnorrData, uint256 maxAge)` | Returns `(true, VerifyCodes.R_OK)` when the aggregate Schnorr signature is valid. Pass `maxAge > 0` to also require `canonicalTimestamp` within that age of `block.timestamp`; `maxAge = 0` skips freshness. Other outcomes return `(false, code)` without reverting. |
+| `verify(Attestation attestation, uint64 maxAge)` | Returns `(true, VerifyCodes.R_OK)` when the aggregate Schnorr signature is valid. Pass `maxAge > 0` to also require `canonicalTimestamp` within that age of `block.timestamp`; `maxAge = 0` skips freshness. Other outcomes return `(false, code)` without reverting. |
 
 `verify` is `view`. A successful call does not persist state and does not prevent replay by itself.
 
@@ -425,19 +425,78 @@ Never commit `.env`, local node lists, private keys, or RPC credentials.
 
 ## Integration checklist
 
-When integrating `Verifier` into a consumer contract or off-chain client:
+**Use the SDK.** `src/consumer/MolphaLib.sol` is this checklist as code. Import it, set a `Policy`,
+choose a replay guard:
 
-- Pass the registry version that was used during off-chain signing.
-- Treat node indices as version-specific. They can change after removals because the registry swaps the tail node into the removed slot.
-- Build signer bitmaps with zero-based bit positions: bit `i` represents registry index `i`.
-- Pass `maxAge > 0` to reject updates whose `canonicalTimestamp` is older than that many seconds relative to `block.timestamp` (or in the future). Pass `maxAge = 0` to skip on-chain freshness and enforce your own policy.
-- Reject duplicate or replayed updates according to your consumer state machine.
-- Validate that the `sourceId` is authorized for your application before trusting `value`.
-- Decide how many signatures your feed requires and pass that value in `DataUpdate.signaturesRequired`.
-- Handle `false` returns from `verify` as failed updates and inspect the returned `code` (`VerifyCodes`) to distinguish malformed input, stale timestamps, expired versions, quorum failures, and bad signatures.
-- Respect registry version lifetimes: `canonicalTimestamp` must be at or after `activatesAt`, and non-latest versions expire `PREVIOUS_GRACE` seconds after the successor activates.
-- Remember that `value` is an opaque `bytes32`. Consumers define the encoding, scale, and semantic meaning.
+```solidity
+using MolphaLib for IVerifier;
+using MolphaLib for MolphaLib.Latest;
+
+IVerifier immutable VERIFIER = IVerifier(MolphaAddresses.VERIFIER);
+MolphaLib.Policy internal policy;   // sourceId, minSignatures, maxAge — set in the constructor
+MolphaLib.Latest internal latest;
+
+function settle(IVerifier.Attestation calldata att) external {
+    VERIFIER.requireValid(att, policy);   // source, threshold floor, freshness, signature
+    latest.acceptNewer(att.payload);      // replay
+    _apply(MolphaLib.asInt256(att.payload.value));
+}
+```
+
+See [`examples/`](examples) for three complete consumers and [`docs/consumer-sdk.md`](docs/consumer-sdk.md)
+for the full guide. What the library does and does not decide for you:
+
+- **`Policy.minSignatures` is mandatory and is your own floor.** `sourceId` commits the source
+  configuration, *not* the threshold — `signaturesRequired` is chosen by whoever requested the
+  attestation. Today there is no protocol minimum in the verifier beyond rejecting zero, so your
+  floor is the only floor.
+- **`verify` is `view`, so attestations replay forever.** Any state-mutating consumer needs
+  `MolphaLib.Latest` (monotonic, one SSTORE — the default) or `MolphaLib.Consumed` (exact-once,
+  unbounded growth, for out-of-order acceptance).
+- **`maxAge = 0` is not a neutral default.** It disables the only absolute-freshness check;
+  `acceptNewer` enforces monotonicity, not recency, so your first accepted update may be
+  arbitrarily old.
+- **`value` is an opaque `bytes32`.** Kind A is one ABI word — decode with `asUint256`/`asInt256`/
+  `asBool`/`asAddress`, which reject non-canonical encodings. Kind B is `keccak256(encodedFields)`
+  and you pass the unsigned preimage alongside; `MolphaLib` binds the hash, you own the tuple.
+- **Verification is not stable over time.** `flagCompromisedKey` is permissionless, so an
+  attestation returning `R_OK` today can return `R_COMPROMISED_QUORUM` later. Consumers that verify
+  at acceptance are unaffected; consumers that store attestations and re-verify must decide whether
+  "verified at capture" or "verifies now" is authoritative.
+
+Integrating against the raw `IVerifier` instead? Then all of the above is yours to write, plus:
+
+- Pass the registry version used during off-chain signing, and respect version lifetimes:
+  `canonicalTimestamp` must be at or after `activatesAt`, and non-latest versions expire
+  `PREVIOUS_GRACE` seconds after the successor activates.
+- Treat node indices as version-specific — the registry swaps the tail node into a removed slot.
+- Build signer bitmaps with zero-based bit positions: bit `i` is registry index `i`.
+- Handle `false` returns and inspect `code` (`VerifyCodes`) rather than treating all failures alike.
 - Pin deployments, registry versions, and expected chain IDs in production configuration.
+
+## Installing
+
+| Channel | Install | Import root |
+| --- | --- | --- |
+| Foundry | `forge install molpha/evm-verifier` plus the remapping `@molpha/evm-verifier/=lib/evm-verifier/src/` | `@molpha/evm-verifier/…` |
+| npm | `npm i @molpha/evm-verifier` (published with `src/` contents at the package root) | `@molpha/evm-verifier/…` |
+
+Both channels resolve the same string:
+
+```solidity
+import {IVerifier} from "@molpha/evm-verifier/interfaces/IVerifier.sol";
+import {MolphaLib} from "@molpha/evm-verifier/consumer/MolphaLib.sol";
+```
+
+Everything on the consumer surface — `interfaces/IVerifier.sol`, `consumer/MolphaLib.sol`,
+`consumer/MolphaAddresses.sol`, `libs/VerifyCodes.sol`, `test-utils/MockVerifier.sol` — compiles on
+`>=0.8.4 <0.9.0` with zero external dependencies, and CI proves it by building that closure with
+solc 0.8.4. `test-utils/MolphaTestSigner.sol` is the exception: it deploys the real `Verifier`, so it
+is pinned to `^0.8.31` and depends on solady. It is intended for Foundry.
+
+> `MolphaAddresses.VERIFIER` is `address(0)` until the audited build is deployed. Read
+> `deployments.json` for the current state; the package is published as `1.0.0-rc.N` while the
+> placeholder stands.
 
 ## Security
 

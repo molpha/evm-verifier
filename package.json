@@ -1,0 +1,15 @@
+{
+  "name": "@molpha/evm-verifier",
+  "version": "1.0.0-rc.1",
+  "description": "Molpha EVM verifier interface and consumer SDK (MolphaLib)",
+  "license": "Apache-2.0",
+  "sideEffects": false,
+  "keywords": ["ethereum", "solidity", "oracle", "molpha", "schnorr", "attestation"],
+  "repository": { "type": "git", "url": "git+https://github.com/molpha/evm-verifier.git" },
+  "homepage": "https://github.com/molpha/evm-verifier#readme",
+  "bugs": { "url": "https://github.com/molpha/evm-verifier/issues" },
+  "scripts": {
+    "pack:npm": "bash scripts/pack-npm.sh",
+    "check:imports": "node scripts/check-imports.mjs npm-dist"
+  }
+}

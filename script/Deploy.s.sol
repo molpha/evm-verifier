@@ -62,9 +62,10 @@ contract Deploy is Script {
         address deployer = vm.addr(deployerPrivateKey);
         bytes32 salt = _salt();
 
-        (address predicted, bytes32 initCodeHash) = _predictVerifierAddress(deployer, salt);
+        (address predicted, bytes32 initCodeHash) = _predictVerifierAddress(DeployConstants.PROTOCOL_ADMIN, salt);
 
         console2.log("Deployer:", deployer);
+        console2.log("Protocol admin:", DeployConstants.PROTOCOL_ADMIN);
         console2.log("Salt:", vm.toString(salt));
         console2.log("Init code hash:", vm.toString(initCodeHash));
         console2.log("Predicted Verifier:", predicted);
@@ -72,7 +73,7 @@ contract Deploy is Script {
         address deployed = predicted;
         if (predicted.code.length == 0) {
             vm.startBroadcast(deployerPrivateKey);
-            verifier = new Verifier{salt: salt}(deployer, DeployConstants.REDUNDANCY_BUFFER);
+            verifier = new Verifier{salt: salt}(DeployConstants.PROTOCOL_ADMIN, DeployConstants.REDUNDANCY_BUFFER);
             vm.stopBroadcast();
             deployed = address(verifier);
             if (deployed != predicted) revert Create2AddressMismatch();

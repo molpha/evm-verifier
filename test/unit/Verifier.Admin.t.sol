@@ -123,7 +123,7 @@ contract VerifierAdminTest is VerifierTestBase {
         assertEq(verifier.redundancyBuffer(), 2);
 
         // Stay inside [activatesAt, retiredAt + PREVIOUS_GRACE] after the buffer bump.
-        (IVerifier.DataUpdate memory historicalUpdate, IVerifier.SchnorrSignature memory schnorr) =
+        (IVerifier.AttestationPayload memory historicalUpdate, IVerifier.SchnorrSignature memory schnorr) =
             _buildVerifyCall(verifier, 3, bytes32("historical buffer"), bytes32("value"), uint64(block.timestamp + 30));
 
         verifier.setRedundancyBuffer(0);

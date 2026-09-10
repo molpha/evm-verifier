@@ -87,7 +87,7 @@ contract VerifierCompromiseTest is VerifierTestBase {
 
         // Observable through verification: with 3 nodes the whole set is selected, so a 2-of-3
         // coalition drawn from the lowest indices includes the flagged signer at blob index 1.
-        (IVerifier.DataUpdate memory update, IVerifier.SchnorrSignature memory schnorr) =
+        (IVerifier.AttestationPayload memory update, IVerifier.SchnorrSignature memory schnorr) =
             _buildVerifyCall(verifier, 2, 2, bytes32("live-witness"), bytes32("value"), uint64(block.timestamp));
         assertEq(schnorr.signersBitmap & (uint256(1) << 1), uint256(1) << 1, "flagged signer is in the coalition");
         _assertVerifyFails(verifier, update, schnorr, VerifyCodes.R_COMPROMISED_QUORUM);
@@ -309,7 +309,7 @@ contract VerifierCompromiseTest is VerifierTestBase {
 
         // 3 nodes with buffer 2 means the whole set is selected, so a 2-signer coalition drawn from
         // the lowest indices contains slot 1.
-        (IVerifier.DataUpdate memory update, IVerifier.SchnorrSignature memory schnorr) =
+        (IVerifier.AttestationPayload memory update, IVerifier.SchnorrSignature memory schnorr) =
             _buildVerifyCall(verifier, 2, 2, bytes32("swap-discount"), bytes32("value"), uint64(block.timestamp));
         assertEq(schnorr.signersBitmap & (uint256(1) << 1), uint256(1) << 1, "flagged slot signed");
         _assertVerifyFails(verifier, update, schnorr, VerifyCodes.R_COMPROMISED_QUORUM);
@@ -374,7 +374,7 @@ contract VerifierCompromiseTest is VerifierTestBase {
 
     function test_aggregateIntegrity_unrelatedFlagDoesNotBreakValidRound() public {
         _addNodes(verifier, 5);
-        (IVerifier.DataUpdate memory update, IVerifier.SchnorrSignature memory schnorr) =
+        (IVerifier.AttestationPayload memory update, IVerifier.SchnorrSignature memory schnorr) =
             _buildVerifyCall(verifier, 3, bytes32("agg-ok"), bytes32("value"), uint64(block.timestamp));
 
         // Flag a non-signer.

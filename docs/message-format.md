@@ -6,7 +6,7 @@ checked by `Verifier.verify(...)` on chain.
 The verifier accepts one data update and one aggregate Schnorr signature:
 
 ```solidity
-struct DataUpdate {
+struct AttestationPayload {
     bytes32 value;
     bytes32 sourceId;
     uint32 registryVersion;
@@ -189,3 +189,23 @@ Consumers are responsible for:
 - Enforcing feed authorization for the consuming application
 - Handling decimals, scale, status, and invalid-value sentinels in their own
   payload format
+
+## Attestation container
+
+`AttestationPayload` (formerly `DataUpdate`) and `SchnorrSignature` are carried together:
+
+```solidity
+struct Attestation {
+    AttestationPayload payload;
+    SchnorrSignature   signature;
+}
+
+function verify(Attestation calldata attestation, uint64 maxAge)
+    external view returns (bool success, uint8 code);
+```
+
+The rename and the wrapper are container-level only. Field order, the message preimage, the
+selection seed, and the proof-of-possession digest are all unchanged, so signatures produced by the
+Cairo, Rust, and node signers keep verifying without modification. Both members are static structs,
+so `Attestation` encodes inline in the calldata head — byte-identical to passing the two members as
+separate parameters.
