@@ -13,7 +13,7 @@ import {MolphaLibHarness} from "./MolphaLibHarness.sol";
 contract MolphaLibPolicyTest is Test {
     bytes32 internal constant SOURCE = keccak256("MOLPHA_TEST_SOURCE");
     bytes32 internal constant OTHER_SOURCE = keccak256("MOLPHA_OTHER_SOURCE");
-    uint32 internal constant MIN_SIGS = 5;
+    uint8 internal constant MIN_SIGS = 5;
 
     MolphaLibHarness internal harness;
     MockVerifier internal mock;
@@ -29,7 +29,7 @@ contract MolphaLibPolicyTest is Test {
         return MolphaLib.Policy({sourceId: SOURCE, minSignatures: MIN_SIGS, maxAge: MolphaLib.NO_MAX_AGE});
     }
 
-    function _att(bytes32 sourceId, uint32 signaturesRequired, bytes32 value)
+    function _att(bytes32 sourceId, uint8 signaturesRequired, bytes32 value)
         internal
         pure
         returns (IVerifier.Attestation memory)
@@ -39,7 +39,7 @@ contract MolphaLibPolicyTest is Test {
                 value: value,
                 sourceId: sourceId,
                 registryVersion: 1,
-                signaturesRequired: uint8(signaturesRequired),
+                signaturesRequired: signaturesRequired,
                 canonicalTimestamp: 1_700_000_000
             }),
             signature: IVerifier.SchnorrSignature({

@@ -10,7 +10,7 @@ import {MolphaTestSigner} from "@molpha/evm-verifier/test-utils/MolphaTestSigner
 
 contract StructuredPayloadTest is Test {
     bytes32 internal constant SOURCE = keccak256("MOLPHA_STRUCTURED_SOURCE");
-    uint32 internal constant MIN_SIGS = 5;
+    uint8 internal constant MIN_SIGS = 5;
 
     MolphaTestSigner internal signer;
     StructuredPayload internal sink;

@@ -12,7 +12,7 @@ import {VerifyCodes} from "@molpha/evm-verifier/libs/VerifyCodes.sol";
 contract SettleOnWordTest is Test {
     bytes32 internal constant SOURCE = keccak256("MOLPHA_PRICE_SOURCE");
     bytes32 internal constant OTHER = keccak256("MOLPHA_OTHER_SOURCE");
-    uint32 internal constant MIN_SIGS = 5;
+    uint8 internal constant MIN_SIGS = 5;
     int256 internal constant STRIKE = 1_000;
 
     MolphaTestSigner internal signer;
@@ -28,7 +28,7 @@ contract SettleOnWordTest is Test {
         bet = new SettleOnWord{value: 10 ether}(v, SOURCE, MIN_SIGS, MolphaLib.NO_MAX_AGE, STRIKE, below);
     }
 
-    function _att(int256 price, uint32 sigs, bytes32 source, uint64 ts)
+    function _att(int256 price, uint8 sigs, bytes32 source, uint64 ts)
         internal
         view
         returns (IVerifier.Attestation memory)

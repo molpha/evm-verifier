@@ -12,7 +12,7 @@ contract LatestStoreTest is Test {
     bytes32 internal constant SOURCE_A = keccak256("MOLPHA_SOURCE_A");
     bytes32 internal constant SOURCE_B = keccak256("MOLPHA_SOURCE_B");
     bytes32 internal constant UNLISTED = keccak256("MOLPHA_SOURCE_UNLISTED");
-    uint32 internal constant MIN_SIGS = 5;
+    uint8 internal constant MIN_SIGS = 5;
 
     MolphaTestSigner internal signer;
     LatestStore internal store;

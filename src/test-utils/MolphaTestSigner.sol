@@ -84,7 +84,7 @@ contract MolphaTestSigner {
     }
 
     /// @notice Kind A: sign `value` as the result word itself.
-    function attest(bytes32 sourceId, bytes32 value, uint32 signaturesRequired, uint64 canonicalTimestamp)
+    function attest(bytes32 sourceId, bytes32 value, uint8 signaturesRequired, uint64 canonicalTimestamp)
         external
         view
         returns (IVerifier.Attestation memory)
@@ -96,7 +96,7 @@ contract MolphaTestSigner {
     function attestFields(
         bytes32 sourceId,
         bytes memory encodedFields,
-        uint32 signaturesRequired,
+        uint8 signaturesRequired,
         uint64 canonicalTimestamp
     ) external view returns (IVerifier.Attestation memory) {
         return attest(sourceId, keccak256(encodedFields), signaturesRequired, signaturesRequired, canonicalTimestamp);
@@ -106,11 +106,10 @@ contract MolphaTestSigner {
     function attest(
         bytes32 sourceId,
         bytes32 value,
-        uint32 signaturesRequired,
+        uint8 signaturesRequired,
         uint32 signerCount,
         uint64 canonicalTimestamp
     ) public view returns (IVerifier.Attestation memory) {
-        require(signaturesRequired <= type(uint8).max, "signaturesRequired exceeds uint8");
         IVerifier.AttestationPayload memory payload = IVerifier.AttestationPayload({
             value: value,
             sourceId: sourceId,

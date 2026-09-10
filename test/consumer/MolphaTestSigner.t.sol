@@ -13,7 +13,7 @@ import {MolphaLibHarness} from "./MolphaLibHarness.sol";
 ///         signatures against a real local `Verifier`.
 contract MolphaTestSignerTest is Test {
     bytes32 internal constant SOURCE = keccak256("MOLPHA_TEST_SOURCE");
-    uint32 internal constant THRESHOLD = 5;
+    uint8 internal constant THRESHOLD = 5;
 
     MolphaTestSigner internal signer;
     MolphaLibHarness internal harness;
