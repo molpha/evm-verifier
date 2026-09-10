@@ -18,14 +18,12 @@ library VerifierLib {
     ///      bits   0..159   SSTORE2 pointer
     ///      bits 160..168   nodeCount (9)
     ///      bits 169..177   redundancyBuffer (9)
-    ///      bits 178..186   compromisedIn (9)
-    ///      bits 187..195   reserved (9)
+    ///      bits 178..195   reserved (18)
     ///      bits 196..235   activatesAt unix seconds (40)
     ///      bit  236         isLatest (1)
     ///      bits 237..255   reserved (19)
     uint256 private constant NODE_COUNT_SHIFT = 160;
     uint256 private constant BUFFER_SHIFT = 169;
-    uint256 private constant COMPROMISED_SHIFT = 178;
     uint256 private constant ACTIVATES_AT_SHIFT = 196;
     uint256 private constant IS_LATEST_SHIFT = 236;
     uint256 private constant COUNT_MASK = 0x1ff;
@@ -63,8 +61,6 @@ library VerifierLib {
     }
 
     /// @dev Every signer must sit inside the round's deterministically derived selection group.
-    ///      Compromised signers are handled separately by discounting them from the threshold
-    ///      count (registry-v2 §6.4), never by rejecting them here.
     function selectionOk(IVerifier.AttestationPayload calldata payload, uint256 entry, uint256 signersBitmap)
         internal
         pure
@@ -210,22 +206,14 @@ library VerifierLib {
         aggPubKey = LibSecp256k1.toAffineModexpXYZ(ax, ay, az);
     }
 
-    function packEntry(
-        address pointer,
-        uint256 nodeCount_,
-        uint256 buffer_,
-        uint256 compromisedIn_,
-        uint256 activatesAtTs,
-        bool isLatest_
-    ) internal pure returns (uint256 entry) {
+    function packEntry(address pointer, uint256 nodeCount_, uint256 buffer_, uint256 activatesAtTs, bool isLatest_)
+        internal
+        pure
+        returns (uint256 entry)
+    {
         entry = uint256(uint160(pointer)) | (nodeCount_ << NODE_COUNT_SHIFT) | (buffer_ << BUFFER_SHIFT)
-            | (compromisedIn_ << COMPROMISED_SHIFT) | (activatesAtTs << ACTIVATES_AT_SHIFT);
+            | (activatesAtTs << ACTIVATES_AT_SHIFT);
         if (isLatest_) entry |= IS_LATEST_MASK;
-    }
-
-    /// @dev Replaces only the `compromisedIn` field, leaving every other field bit-identical.
-    function withCompromisedIn(uint256 entry, uint256 compromisedIn_) internal pure returns (uint256) {
-        return (entry & ~(COUNT_MASK << COMPROMISED_SHIFT)) | (compromisedIn_ << COMPROMISED_SHIFT);
     }
 
     /// @dev Sets or clears the `isLatest` flag without touching any other packed field.
@@ -240,10 +228,6 @@ library VerifierLib {
 
     function buffer(uint256 entry) internal pure returns (uint256) {
         return (entry >> BUFFER_SHIFT) & COUNT_MASK;
-    }
-
-    function compromisedIn(uint256 entry) internal pure returns (uint256) {
-        return (entry >> COMPROMISED_SHIFT) & COUNT_MASK;
     }
 
     function activatesAt(uint256 entry) internal pure returns (uint256) {

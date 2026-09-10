@@ -82,7 +82,7 @@ contract LibSecp256k1Test is Test {
     }
 
     /// @dev Out-of-domain scalars return the zero address rather than reverting, so callers can
-    ///      treat it as "not a key" — `flagCompromisedKey` relies on that.
+    ///      treat it as "not a key".
     function test_pubkeyAddressFromScalar_returnsZeroOutsideTheScalarField() public pure {
         assertEq(LibSecp256k1.pubkeyAddressFromScalar(0), address(0), "zero scalar");
         assertEq(LibSecp256k1.pubkeyAddressFromScalar(LibSecp256k1.Q()), address(0), "scalar == Q");
