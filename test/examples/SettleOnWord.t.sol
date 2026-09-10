@@ -82,8 +82,24 @@ contract SettleOnWordTest is Test {
     function test_replayingTheSameAttestationIsRejected() public {
         IVerifier.Attestation memory att = _att(STRIKE + 1, MIN_SIGS, SOURCE, uint64(block.timestamp));
         bet.settle(att);
-        vm.expectPartialRevert(MolphaLib.NotNewer.selector);
+        vm.expectRevert(SettleOnWord.AlreadySettled.selector);
         bet.settle(att);
+    }
+
+    function test_newerAttestationCannotResettle() public {
+        uint64 t0 = uint64(block.timestamp);
+        bet.settle(_att(STRIKE + 1, MIN_SIGS, SOURCE, t0));
+        assertEq(bet.winner(), address(this));
+        assertEq(bet.owed(address(this)), 10 ether);
+
+        vm.warp(t0 + 100);
+        IVerifier.Attestation memory newer = _att(STRIKE - 1, MIN_SIGS, SOURCE, t0 + 100);
+        vm.expectRevert(SettleOnWord.AlreadySettled.selector);
+        bet.settle(newer);
+
+        assertEq(bet.winner(), address(this));
+        assertEq(bet.owed(address(this)), 10 ether);
+        assertEq(bet.owed(below), 0);
     }
 
     function test_olderAttestationIsRejectedAfterANewerOne() public {
@@ -91,7 +107,7 @@ contract SettleOnWordTest is Test {
         vm.warp(t0 + 100);
         bet.settle(_att(STRIKE + 1, MIN_SIGS, SOURCE, t0 + 100));
         IVerifier.Attestation memory older = _att(STRIKE + 1, MIN_SIGS, SOURCE, t0);
-        vm.expectPartialRevert(MolphaLib.NotNewer.selector);
+        vm.expectRevert(SettleOnWord.AlreadySettled.selector);
         bet.settle(older);
     }
 

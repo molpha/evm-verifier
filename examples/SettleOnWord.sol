@@ -5,7 +5,8 @@ import {IVerifier} from "@molpha/evm-verifier/interfaces/IVerifier.sol";
 import {MolphaLib} from "@molpha/evm-verifier/consumer/MolphaLib.sol";
 
 /// @notice Kind A + `Latest`: a two-sided bet settled by one signed `int256`.
-/// @dev Shows the default shape — validate, guard, act. Payout is pull, not push, so a hostile
+/// @dev Shows the default shape — validate, guard, act. Settlement is final: a newer attestation
+///      for the same source must not re-credit the pot. Payout is pull, not push, so a hostile
 ///      counterparty cannot brick settlement by rejecting a transfer.
 contract SettleOnWord {
     using MolphaLib for IVerifier;
@@ -22,6 +23,7 @@ contract SettleOnWord {
     address public winner;
     mapping(address => uint256) public owed;
 
+    error AlreadySettled();
     error NotSettled();
     error NothingOwed();
 
@@ -37,6 +39,7 @@ contract SettleOnWord {
     }
 
     function settle(IVerifier.Attestation calldata att) external {
+        if (winner != address(0)) revert AlreadySettled();
         VERIFIER.requireValid(att, policy);
         latest.acceptNewer(att.payload);
 
