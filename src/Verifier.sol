@@ -138,9 +138,7 @@ contract Verifier is IVerifier, Ownable {
         keysBlob.addPubkey(pubkey);
         address newPointer = SSTORE2.write(keysBlob);
 
-        _publishRegistryTransition(
-            registryVersion, newPointer, nodeCount + 1, entry.buffer(), keysBlob, OP_ADD
-        );
+        _publishRegistryTransition(registryVersion, newPointer, nodeCount + 1, entry.buffer(), keysBlob, OP_ADD);
 
         nodeStatus[node] = ACTIVE;
 
@@ -165,12 +163,7 @@ contract Verifier is IVerifier, Ownable {
         // The buffer feeds signer selection, so it is versioned state rather than a mutable
         // knob: the key blob carries forward untouched (registry-v2 §5.4).
         _publishRegistryTransition(
-            registryVersion,
-            pointer,
-            entry.nodeCount(),
-            newRedundancyBuffer,
-            SSTORE2.read(pointer),
-            OP_BUFFER
+            registryVersion, pointer, entry.nodeCount(), newRedundancyBuffer, SSTORE2.read(pointer), OP_BUFFER
         );
 
         emit LogRedundancyBufferUpdated(newRedundancyBuffer);
@@ -271,9 +264,7 @@ contract Verifier is IVerifier, Ownable {
         keysBlob.removePubkey(index);
         address newPointer = SSTORE2.write(keysBlob);
 
-        newVersion = _publishRegistryTransition(
-            registryVersion, newPointer, last, entry.buffer(), keysBlob, OP_REMOVE
-        );
+        newVersion = _publishRegistryTransition(registryVersion, newPointer, last, entry.buffer(), keysBlob, OP_REMOVE);
 
         emit LogNodeRemoved(node, index, newPointer);
     }
@@ -313,8 +304,7 @@ contract Verifier is IVerifier, Ownable {
 
             registryRoots[newVersion] = newRoot;
             registryEntries[previousVersion] = registryEntries[previousVersion].withIsLatest(false);
-            registryEntries[newVersion] =
-                VerifierLib.packEntry(newPointer, nodeCount, buffer, activatesAtTs, true);
+            registryEntries[newVersion] = VerifierLib.packEntry(newPointer, nodeCount, buffer, activatesAtTs, true);
             registryVersionCount = newVersion;
 
             emit RegistryAdvanced(newVersion, newRoot, op);

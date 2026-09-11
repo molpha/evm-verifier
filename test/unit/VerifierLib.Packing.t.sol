@@ -54,8 +54,7 @@ contract VerifierLibPackingTest is Test {
     }
 
     function test_packEntry_leavesReservedBitsClear() public pure {
-        uint256 entry =
-            VerifierLib.packEntry(address(type(uint160).max), MAX_COUNT, MAX_COUNT, MAX_TIMESTAMP, true);
+        uint256 entry = VerifierLib.packEntry(address(type(uint160).max), MAX_COUNT, MAX_COUNT, MAX_TIMESTAMP, true);
         assertEq(entry & RESERVED_MASK, 0, "reserved bits must stay available for future fields");
     }
 
