@@ -12,6 +12,7 @@ library VerifyCodes {
     uint8 internal constant R_MALFORMED = 3;
     uint8 internal constant R_NOT_YET_ACTIVE = 4;
     uint8 internal constant R_VERSION_EXPIRED = 5;
+    /// @dev Reserved. Never returned by this implementation; kept so codes are never renumbered.
     uint8 internal constant R_COMPROMISED_QUORUM = 6;
     uint8 internal constant R_BAD_QUORUM = 7;
     uint8 internal constant R_BAD_AGGREGATE = 8;

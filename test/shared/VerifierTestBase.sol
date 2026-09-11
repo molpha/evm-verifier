@@ -28,8 +28,6 @@ abstract contract VerifierTestBase is Test {
     uint8 internal constant NEVER = 0;
     uint8 internal constant ACTIVE = 1;
     uint8 internal constant RETIRED = 2;
-    uint8 internal constant COMPROMISED = 3;
-    uint256 internal constant SKIP_CURRENT_INDEX = type(uint256).max;
 
     /// @dev Matches Foundry warps used across unit tests so `activatesAt` and signed
     ///      `canonicalTimestamp` values share a coherent window.

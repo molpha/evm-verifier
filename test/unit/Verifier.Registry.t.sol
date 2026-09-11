@@ -205,20 +205,6 @@ contract VerifierRegistryTest is VerifierTestBase {
         verifier.removeNode(makeAddr("stranger"), 0);
     }
 
-    /// @dev A flagged key must leave through `removeFlagged`, which keeps the terminal
-    ///      `COMPROMISED` status; the admin path would downgrade it to `RETIRED` and make the key
-    ///      eligible for compromise bookkeeping it has already passed.
-    function test_removeNode_revertsForCompromisedNode() public {
-        _addNodes(verifier, 2);
-        address node = pubkeys[0].toAddress();
-        verifier.flagCompromisedKey(secrets[0], verifier.getRegistryVersion(), 0, SKIP_CURRENT_INDEX);
-
-        vm.expectRevert(IVerifier.NodeNotEligible.selector);
-        verifier.removeNode(node, 0);
-
-        assertEq(verifier.nodeStatus(node), COMPROMISED, "status stays terminal");
-    }
-
     function test_removeNode_revertsForNonAdmin() public {
         _addNodes(verifier, 1);
 

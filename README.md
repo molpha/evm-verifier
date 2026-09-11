@@ -79,11 +79,11 @@ For aggregate verification, the verifier:
 
 1. Loads the registry snapshot requested by `attestation.payload.registryVersion`.
 2. Derives the deterministic selected signer group.
-3. Checks that the submitted bitmap is a subset of the selected group and that enough uncompromised signers remain after discounting compromised keys.
+3. Checks that the submitted bitmap is a subset of the selected group and contains at least `signaturesRequired` signers.
 4. Sums the public keys of every set bit in the submitted signer bitmap.
 5. Verifies the aggregate Schnorr signature against the signed message digest.
 
-`verify` is non-reverting: predicate failures and invalid signatures return `(false, code)` using the shared result codes in `VerifyCodes`. Compromised signers are discounted from the threshold count but still included in the aggregate public key. See `docs/registry-v2.md` for the full registry-v2 semantics.
+`verify` is non-reverting: predicate failures and invalid signatures return `(false, code)` using the shared result codes in `VerifyCodes`. See `docs/registry-v2.md` for the full registry-v2 semantics.
 
 ### `verify` gas metrics
 
@@ -120,7 +120,6 @@ registry entry and one cold account access for the key blob.
 | `src/libs/VerifierLib.sol` | Packed registry entries, signer selection, and aggregate key math |
 | `src/libs/VerifyCodes.sol` | Shared `verify` result codes |
 | `src/libs/KeysCommitmentLib.sol` | Canonical ordered-coordinate commitment used in registry roots |
-| `src/libs/CompromiseLib.sol` | Compromise bitmap helpers for registry transitions and verification |
 | `script/Deploy.s.sol` | Deterministic CREATE2 deployment script |
 | `script/AddNode.s.sol` | Single-node and batch node-registration script |
 | `script/libs/DeployConstants.sol` | Shared deployment salt and initial redundancy buffer |
@@ -193,14 +192,6 @@ All concatenations above use Solidity `abi.encodePacked` with the field types sh
 
 Admin functions revert unless `msg.sender == owner()`.
 
-### Permissionless functions
-
-| Function | Description |
-| --- | --- |
-| `flagCompromisedKey(uint256 privKey, uint256 witnessVersion, uint256 witnessIndex, uint256 currentIndex)` | Proves a leaked private key and seeds compromised bitmaps for the witnessed versions |
-| `backfillCompromised(address node, uint256 version, uint256 index)` | Seeds a compromised key into a historical version the flag did not reach |
-| `removeFlagged(uint256 index, address node)` | Removes a currently registered compromised node after checking the index witness |
-
 ### Verification function
 
 | Function | Description |
@@ -220,9 +211,9 @@ Admin functions revert unless `msg.sender == owner()`.
 | `activatesAt(uint256 registryVersion)` | Unix timestamp when a version became live |
 | `retiredAt(uint256 registryVersion)` | Unix timestamp when a version was superseded |
 | `isLatestVersion(uint256 registryVersion)` | Whether a version is the current registry head |
-| `isNode(address node)` | Whether a node is currently active (not retired or compromised) |
+| `isNode(address node)` | Whether a node is currently active (not retired) |
 | `getTotalNodes()` | Number of active nodes in the latest registry |
-| `nodeStatus(address)` | Eligibility status: `0` never, `1` active, `2` retired, `3` compromised |
+| `nodeStatus(address)` | Eligibility status: `0` never, `1` active, `2` retired |
 
 Solidity also exposes public getters for `owner`, `redundancyBuffer`, and `nodeStatus`. Registry snapshots are stored in
 a private mapping and read through `getRegistryPointer`.
@@ -459,10 +450,6 @@ for the full guide. What the library does and does not decide for you:
 - **`value` is an opaque `bytes32`.** Kind A is one ABI word — decode with `asUint256`/`asInt256`/
   `asBool`/`asAddress`, which reject non-canonical encodings. Kind B is `keccak256(encodedFields)`
   and you pass the unsigned preimage alongside; `MolphaLib` binds the hash, you own the tuple.
-- **Verification is not stable over time.** `flagCompromisedKey` is permissionless, so an
-  attestation returning `R_OK` today can return `R_COMPROMISED_QUORUM` later. Consumers that verify
-  at acceptance are unaffected; consumers that store attestations and re-verify must decide whether
-  "verified at capture" or "verifies now" is authoritative.
 
 Integrating against the raw `IVerifier` instead? Then all of the above is yours to write, plus:
 

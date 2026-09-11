@@ -232,61 +232,6 @@ contract VerifierVerifyTest is VerifierTestBase {
         _assertVerifyFails(verifier, update, schnorr);
     }
 
-    function test_verify_returnsCompromisedQuorumWhenSignerIsFlaggedAtThreshold() public {
-        _addNodes(verifier, 5);
-        (IVerifier.AttestationPayload memory update, IVerifier.SchnorrSignature memory schnorr) =
-            _buildVerifyCall(verifier, 3, bytes32("compromised"), bytes32("value"), 1_700_000_012);
-
-        // Flag one of the actual signers — effective count drops below threshold.
-        uint256 lowestSignerBit = schnorr.signersBitmap & (~schnorr.signersBitmap + 1);
-        uint256 blobIndex;
-        while ((uint256(1) << blobIndex) != lowestSignerBit) {
-            unchecked {
-                ++blobIndex;
-            }
-        }
-        verifier.flagCompromisedKey(secrets[blobIndex], update.registryVersion, blobIndex, SKIP_CURRENT_INDEX);
-
-        _assertVerifyFails(verifier, update, schnorr, VerifyCodes.R_COMPROMISED_QUORUM);
-    }
-
-    function test_verify_acceptsWhenThresholdPlusOneAndOneSignerFlagged() public {
-        _addNodes(verifier, 5);
-        // Sign with 4 of a threshold-3 update so one flag leaves 3 honest.
-        (IVerifier.AttestationPayload memory update, IVerifier.SchnorrSignature memory schnorr) =
-            _buildVerifyCall(verifier, 3, 4, bytes32("discount-ok"), bytes32("value"), 1_700_000_014);
-
-        uint256 lowestSignerBit = schnorr.signersBitmap & (~schnorr.signersBitmap + 1);
-        uint256 blobIndex;
-        while ((uint256(1) << blobIndex) != lowestSignerBit) {
-            unchecked {
-                ++blobIndex;
-            }
-        }
-        verifier.flagCompromisedKey(secrets[blobIndex], update.registryVersion, blobIndex, SKIP_CURRENT_INDEX);
-
-        _assertVerifyOk(verifier, update, schnorr);
-    }
-
-    function test_verify_acceptsWhenCompromisedBitsDoNotOverlapSigners() public {
-        _addNodes(verifier, 5);
-        (IVerifier.AttestationPayload memory update, IVerifier.SchnorrSignature memory schnorr) =
-            _buildVerifyCall(verifier, 3, bytes32("safe"), bytes32("value"), 1_700_000_013);
-
-        uint256 nonSignerBit = (~schnorr.signersBitmap) & ((uint256(1) << 5) - 1);
-        nonSignerBit = nonSignerBit & (~nonSignerBit + 1); // lowest set non-signer bit
-        assertTrue(nonSignerBit != 0, "need a non-overlapping registered bit");
-        uint256 blobIndex;
-        while ((uint256(1) << blobIndex) != nonSignerBit) {
-            unchecked {
-                ++blobIndex;
-            }
-        }
-        verifier.flagCompromisedKey(secrets[blobIndex], update.registryVersion, blobIndex, SKIP_CURRENT_INDEX);
-
-        _assertVerifyOk(verifier, update, schnorr);
-    }
-
     function test_verify_returnsFalseWhenSelectedCoalitionAggregatesToInfinity() public {
         uint256 secret = _secret(1);
         LibSecp256k1.Point memory pubkey = LibSecp256k1.mulAffine(LibSecp256k1.G(), secret);

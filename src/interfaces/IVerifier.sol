@@ -13,12 +13,6 @@ interface IVerifier {
     error RedundancyBufferExceedsMax();
     error ZeroAddress();
     error ZeroAdmin();
-    error KeyAlreadyCompromised();
-    error KeyNotCompromised();
-    error InvalidPrivateKeyScalar();
-    error WitnessMismatch();
-    error MissingCurrentIndex();
-    error AlreadyCounted();
 
     /// @notice Generic Schnorr proof data used for PoP and aggregate verification inputs.
     /// @param signature Schnorr scalar `s`
@@ -88,15 +82,6 @@ interface IVerifier {
     /// @notice Emitted after every registry mutation from the common transition tail
     event RegistryAdvanced(uint256 indexed newVersion, bytes32 newRoot, uint8 op);
 
-    /// @notice Emitted when a private key is proven compromised
-    event KeyCompromised(address indexed node, uint256 witnessVersion, uint256 witnessIndex);
-
-    /// @notice Emitted when a compromised key is seeded into a historical version bitmap
-    event CompromiseBackfilled(address indexed node, uint256 version, uint256 index);
-
-    /// @notice Emitted when a flagged node is permissionlessly removed
-    event FlaggedNodeRemoved(uint256 indexed newVersion, address indexed node);
-
     /// @notice Add a new node to the verifier
     /// @param compressedPubKey Compressed public key of the node
     /// @param pop Schnorr proof-of-possession by the same key over the registration domain message
@@ -115,26 +100,6 @@ interface IVerifier {
 
     /// @notice The redundancy buffer in force for the current registry version
     function redundancyBuffer() external view returns (uint256);
-
-    /// @notice Prove a node private key is public and seed compromised bitmaps
-    /// @param privKey Leaked secp256k1 scalar
-    /// @param witnessVersion Registry version containing the key
-    /// @param witnessIndex 0-based blob index within that version
-    /// @param currentIndex 0-based blob index in the live version; required when the node is
-    ///        `ACTIVE`, or `type(uint256).max` when the node is `RETIRED` and absent from the live blob
-    function flagCompromisedKey(uint256 privKey, uint256 witnessVersion, uint256 witnessIndex, uint256 currentIndex)
-        external;
-
-    /// @notice Seed a compromised key into a version the flag did not reach
-    /// @param node Compromised node address
-    /// @param version Registry version to seed
-    /// @param index 0-based blob index within that version
-    function backfillCompromised(address node, uint256 version, uint256 index) external;
-
-    /// @notice Permissionlessly remove a currently-registered compromised node
-    /// @param index 0-based blob index of the node to remove
-    /// @param node The address of the node to remove
-    function removeFlagged(uint256 index, address node) external;
 
     /// @notice Verify an attestation's aggregate Schnorr signature
     /// @dev Total function: never reverts on the verification path. Every rejection is
@@ -163,7 +128,7 @@ interface IVerifier {
     /// @return totalNodes The total number of nodes
     function getTotalNodes() external view returns (uint256 totalNodes);
 
-    /// @notice Membership status of `node`: `0` never, `1` active, `2` retired, `3` compromised
+    /// @notice Membership status of `node`: `0` never, `1` active, `2` retired
     function nodeStatus(address node) external view returns (uint8);
 
     /// @notice Whether `node` is currently registered in the live registry version

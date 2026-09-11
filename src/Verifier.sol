@@ -12,7 +12,6 @@ import {PubkeyBlobLib} from "./libs/PubkeyBlobLib.sol";
 import {VerifyCodes} from "./libs/VerifyCodes.sol";
 import {VerifierLib} from "./libs/VerifierLib.sol";
 import {KeysCommitmentLib} from "./libs/KeysCommitmentLib.sol";
-import {CompromiseLib} from "./libs/CompromiseLib.sol";
 
 /// @title Verifier
 /// @notice Registry for managing nodes and verifying Schnorr signatures
@@ -31,7 +30,6 @@ contract Verifier is IVerifier, Ownable {
     uint8 private constant NEVER = 0;
     uint8 private constant ACTIVE = 1;
     uint8 private constant RETIRED = 2;
-    uint8 private constant COMPROMISED = 3;
     uint8 private constant OP_ADD = 1;
     uint8 private constant OP_REMOVE = 2;
     uint8 private constant OP_BUFFER = 3;
@@ -47,7 +45,6 @@ contract Verifier is IVerifier, Ownable {
     ///      A zero entry means the version does not exist, since the key-blob pointer is never zero.
     mapping(uint256 version => uint256 entry) private registryEntries;
     mapping(uint256 version => bytes32 root) private registryRoots;
-    mapping(uint256 version => uint256 bitmap) private compromisedBitmaps;
     mapping(address node => uint8 status) public nodeStatus;
 
     uint256 private registryVersionCount;
@@ -62,8 +59,8 @@ contract Verifier is IVerifier, Ownable {
 
         LibSecp256k1.Point[] memory empty = new LibSecp256k1.Point[](0);
         address genesisPointer = SSTORE2.write(abi.encode(empty));
-        // Genesis: activatesAt = 0, compromisedIn = 0.
-        registryEntries[0] = VerifierLib.packEntry(genesisPointer, 0, initialRedundancyBuffer, 0, 0, true);
+        // Genesis: activatesAt = 0.
+        registryEntries[0] = VerifierLib.packEntry(genesisPointer, 0, initialRedundancyBuffer, 0, true);
         registryRoots[0] = GENESIS_ROOT;
     }
 
@@ -141,17 +138,7 @@ contract Verifier is IVerifier, Ownable {
         keysBlob.addPubkey(pubkey);
         address newPointer = SSTORE2.write(keysBlob);
 
-        // A flagged key can never be added, so the appended bit is always clear and the
-        // bitmap carries forward unchanged (registry-v2 §5.2).
-        _publishRegistryTransition(
-            registryVersion,
-            newPointer,
-            nodeCount + 1,
-            entry.buffer(),
-            _compromiseBitmapOf(registryVersion, entry),
-            keysBlob,
-            OP_ADD
-        );
+        _publishRegistryTransition(registryVersion, newPointer, nodeCount + 1, entry.buffer(), keysBlob, OP_ADD);
 
         nodeStatus[node] = ACTIVE;
 
@@ -160,7 +147,7 @@ contract Verifier is IVerifier, Ownable {
 
     /// @inheritdoc IVerifier
     function removeNode(address node, uint256 index) external override onlyOwner {
-        _removeNodeAt(node, index, false);
+        _removeNodeAt(node, index);
     }
 
     /// @inheritdoc IVerifier
@@ -174,73 +161,12 @@ contract Verifier is IVerifier, Ownable {
         address pointer = entry.pointerOf();
 
         // The buffer feeds signer selection, so it is versioned state rather than a mutable
-        // knob: the key blob and compromise bitmap carry forward untouched (registry-v2 §5.4).
+        // knob: the key blob carries forward untouched (registry-v2 §5.4).
         _publishRegistryTransition(
-            registryVersion,
-            pointer,
-            entry.nodeCount(),
-            newRedundancyBuffer,
-            _compromiseBitmapOf(registryVersion, entry),
-            SSTORE2.read(pointer),
-            OP_BUFFER
+            registryVersion, pointer, entry.nodeCount(), newRedundancyBuffer, SSTORE2.read(pointer), OP_BUFFER
         );
 
         emit LogRedundancyBufferUpdated(newRedundancyBuffer);
-    }
-
-    // -------------------------------------------------------------------------
-    // Key compromise (permissionless)
-    // -------------------------------------------------------------------------
-
-    /// @inheritdoc IVerifier
-    function flagCompromisedKey(uint256 privKey, uint256 witnessVersion, uint256 witnessIndex, uint256 currentIndex)
-        external
-    {
-        if (privKey == 0 || privKey >= LibSecp256k1.Q()) revert InvalidPrivateKeyScalar();
-
-        address node = LibSecp256k1.pubkeyAddressFromScalar(privKey);
-        if (node == address(0)) revert InvalidPrivateKeyScalar();
-
-        uint8 status = nodeStatus[node];
-        if (status == COMPROMISED) revert KeyAlreadyCompromised();
-        if (status != ACTIVE && status != RETIRED) revert NodeNotEligible();
-
-        _requireWitness(node, witnessVersion, witnessIndex);
-        _seedCompromised(witnessVersion, witnessIndex);
-
-        // Active nodes stay in the live blob, so their current index must be seeded now. Retired
-        // nodes are gone from the live version and may pass the skip sentinel instead.
-        if (status == ACTIVE) {
-            uint256 currentVersion = registryVersionCount;
-            if (currentVersion != witnessVersion) {
-                if (currentIndex == type(uint256).max) revert MissingCurrentIndex();
-                _requireWitness(node, currentVersion, currentIndex);
-                _seedCompromised(currentVersion, currentIndex);
-            }
-        }
-
-        nodeStatus[node] = COMPROMISED;
-
-        emit KeyCompromised(node, witnessVersion, witnessIndex);
-    }
-
-    /// @inheritdoc IVerifier
-    function backfillCompromised(address node, uint256 version, uint256 index) external {
-        if (nodeStatus[node] != COMPROMISED) revert KeyNotCompromised();
-        if (_compromiseBitSet(version, index)) revert AlreadyCounted();
-
-        _requireWitness(node, version, index);
-
-        _seedCompromised(version, index);
-        emit CompromiseBackfilled(node, version, index);
-    }
-
-    /// @inheritdoc IVerifier
-    function removeFlagged(uint256 index, address node) external {
-        if (nodeStatus[node] != COMPROMISED) revert KeyNotCompromised();
-
-        uint256 newVersion = _removeNodeAt(node, index, true);
-        emit FlaggedNodeRemoved(newVersion, node);
     }
 
     // -------------------------------------------------------------------------
@@ -315,48 +241,13 @@ contract Verifier is IVerifier, Ownable {
         if (entry == 0) revert InvalidRegistryVersion();
     }
 
-    /// @dev Reads a version's compromise bitmap, skipping the SLOAD when the packed entry
-    ///      already proves the version is clean.
-    function _compromiseBitmapOf(uint256 version, uint256 entry) private view returns (uint256) {
-        return entry.compromisedIn() == 0 ? 0 : compromisedBitmaps[version];
-    }
-
-    /// @dev Proves `node` sat at 0-based `index` of `version`. O(1) membership witness:
-    ///      without it the contract would have to search every version (registry-v2 §6.1).
-    function _requireWitness(address node, uint256 version, uint256 index) private view {
-        uint256 entry = _existingEntry(version);
-        if (index >= entry.nodeCount()) revert WitnessMismatch();
-        if (entry.nodeAt(index).toAddress() != node) revert WitnessMismatch();
-    }
-
-    /// @dev Whether bit `blobIndex` (0-based) is set in `version`'s compromise bitmap.
-    function _compromiseBitSet(uint256 version, uint256 blobIndex) private view returns (bool) {
-        return (compromisedBitmaps[version] & (uint256(1) << blobIndex)) != 0;
-    }
-
-    /// @dev Sets bit `blobIndex` (0-based) in `version` and refreshes the entry's `compromisedIn`.
-    ///      The set bit is the dedup record for that (node, version) pair; `compromisedIn` is always
-    ///      re-derived from the bitmap so gate and payload cannot drift.
-    function _seedCompromised(uint256 version, uint256 blobIndex) private {
-        if (_compromiseBitSet(version, blobIndex)) return;
-
-        uint256 bitmap = CompromiseLib.setBit(compromisedBitmaps[version], blobIndex);
-        compromisedBitmaps[version] = bitmap;
-        registryEntries[version] = registryEntries[version].withCompromisedIn(bitmap.popCount());
-    }
-
     /// @dev Swap-and-pop removal of blob index `index` from the current version.
-    /// @param flaggedRemoval When true, `node` must be `COMPROMISED` and status stays terminal.
     /// @return newVersion The version published by the removal.
-    function _removeNodeAt(address node, uint256 index, bool flaggedRemoval) private returns (uint256 newVersion) {
+    function _removeNodeAt(address node, uint256 index) private returns (uint256 newVersion) {
         uint256 registryVersion = registryVersionCount;
         uint256 entry = registryEntries[registryVersion];
         uint256 nodeCount = entry.nodeCount();
-        if (flaggedRemoval) {
-            if (nodeStatus[node] != COMPROMISED) revert KeyNotCompromised();
-        } else if (nodeStatus[node] != ACTIVE) {
-            revert NodeNotEligible();
-        }
+        if (nodeStatus[node] != ACTIVE) revert NodeNotEligible();
         if (nodeCount == 0 || index >= nodeCount) revert IndexWitnessMismatch();
 
         bytes memory keysBlob = SSTORE2.read(entry.pointerOf());
@@ -368,20 +259,12 @@ contract Verifier is IVerifier, Ownable {
             last = nodeCount - 1; // `nodeCount != 0` was just checked
         }
 
-        if (!flaggedRemoval) nodeStatus[node] = RETIRED;
+        nodeStatus[node] = RETIRED;
 
         keysBlob.removePubkey(index);
         address newPointer = SSTORE2.write(keysBlob);
 
-        newVersion = _publishRegistryTransition(
-            registryVersion,
-            newPointer,
-            last,
-            entry.buffer(),
-            CompromiseLib.permuteOnRemove(_compromiseBitmapOf(registryVersion, entry), index, nodeCount),
-            keysBlob,
-            OP_REMOVE
-        );
+        newVersion = _publishRegistryTransition(registryVersion, newPointer, last, entry.buffer(), keysBlob, OP_REMOVE);
 
         emit LogNodeRemoved(node, index, newPointer);
     }
@@ -389,24 +272,17 @@ contract Verifier is IVerifier, Ownable {
     /// @dev Common transition tail (registry-v2 §5.1): stamps activation, commits the key set,
     ///      chains the root, and advances the version. Every mutation ends here.
     /// @param previousVersion Version being superseded.
-    /// @param newCompromisedBitmap Compromise bitmap for the new version, already permuted by the caller.
     function _publishRegistryTransition(
         uint256 previousVersion,
         address newPointer,
         uint256 nodeCount,
         uint256 buffer,
-        uint256 newCompromisedBitmap,
         bytes memory keysBlob,
         uint8 op
     ) private returns (uint256 newVersion) {
         unchecked {
             newVersion = previousVersion + 1;
             uint256 activatesAtTs = block.timestamp;
-
-            // New-version slots start zeroed, so a clean bitmap needs no write.
-            if (newCompromisedBitmap != 0) {
-                compromisedBitmaps[newVersion] = newCompromisedBitmap;
-            }
 
             bytes32 commitment = KeysCommitmentLib.commitment(keysBlob);
 
@@ -428,9 +304,7 @@ contract Verifier is IVerifier, Ownable {
 
             registryRoots[newVersion] = newRoot;
             registryEntries[previousVersion] = registryEntries[previousVersion].withIsLatest(false);
-            registryEntries[newVersion] = VerifierLib.packEntry(
-                newPointer, nodeCount, buffer, newCompromisedBitmap.popCount(), activatesAtTs, true
-            );
+            registryEntries[newVersion] = VerifierLib.packEntry(newPointer, nodeCount, buffer, activatesAtTs, true);
             registryVersionCount = newVersion;
 
             emit RegistryAdvanced(newVersion, newRoot, op);
@@ -442,22 +316,11 @@ contract Verifier is IVerifier, Ownable {
         SchnorrSignature calldata schnorrData,
         uint256 entry
     ) private view returns (bool success, uint8 code) {
-        // Compromised signers are discounted from the threshold count, never subtracted from the
-        // coalition key (registry-v2 §6.4). A clean version costs no bitmap SLOAD at all.
-        if (entry.compromisedIn() != 0) {
-            uint256 uncompromised = CompromiseLib.effectiveSignerCount(
-                schnorrData.signersBitmap, compromisedBitmaps[dataUpdate.registryVersion]
-            );
-            if (uncompromised < dataUpdate.signaturesRequired) {
-                return (false, VerifyCodes.R_COMPROMISED_QUORUM);
-            }
-        }
-
         if (!dataUpdate.selectionOk(entry, schnorrData.signersBitmap)) {
             return (false, VerifyCodes.R_BAD_QUORUM);
         }
 
-        // Aggregate over the FULL signersBitmap, including any discounted keys.
+        // Aggregate over the full signersBitmap.
         LibSecp256k1.Point memory aggPubKey = entry.aggregatePubKey(schnorrData.signersBitmap);
         if (aggPubKey.isZeroPoint()) return (false, VerifyCodes.R_BAD_AGGREGATE);
 
