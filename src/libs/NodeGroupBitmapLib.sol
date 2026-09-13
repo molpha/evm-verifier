@@ -3,8 +3,9 @@ pragma solidity ^0.8.31;
 
 /// @title NodeGroupBitmapLib
 /// @notice Deterministic without-replacement node selection for a fixed registry size.
-/// @dev PRF: `keccak256(seed || domain || counter)` with rejection sampling; complements
-///      the mask when `groupSize > nCount / 2`. Requires `nCount <= 256`.
+/// @dev PRF: `keccak256(seed || domain || counter)` with rejection sampling (limbs
+///      `>= floor((2^32 - 1) / nCount) * nCount` are rejected); complements the mask when
+///      `groupSize > nCount / 2`. Requires `nCount <= 256`.
 library NodeGroupBitmapLib {
     error GroupSizeExceedsNodeCount();
     error NodeCountExceedsMax();
@@ -49,7 +50,7 @@ library NodeGroupBitmapLib {
             mstore(ptr, seed)
             mstore(add(ptr, 0x20), domain)
 
-            let limit := sub(0x100000000, mod(0x100000000, nCount))
+            let limit := mul(div(0xffffffff, nCount), nCount)
             let selected := 0
             let counter := 0
 
