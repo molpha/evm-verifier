@@ -61,7 +61,7 @@ keccak256(
 )
 ```
 
-`NodeGroupBitmapLib` expands that seed with `keccak256(seed || keccak256("MOLPHA_SELECTION_DERIVE") || counter)`, reads eight big-endian `uint32` limbs from each digest, and samples indices without replacement. It rejects out-of-range limbs to avoid modulo bias. When the requested group is larger than half of the node set, it samples exclusions and returns the complement.
+`NodeGroupBitmapLib` expands that seed with `keccak256(seed || keccak256("MOLPHA_SELECTION_DERIVE") || counter)`, reads eight big-endian `uint32` limbs from each digest, and samples indices without replacement. It rejects limbs `>= floor((2^32 - 1) / nodeCount) * nodeCount` to avoid modulo bias; this exact bound is shared with the Solana verifier, the node client and the gateway. When the requested group is larger than half of the node set, it samples exclusions and returns the complement.
 
 The selected group size is:
 
