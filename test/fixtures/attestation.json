@@ -17,11 +17,11 @@
           "sourceId": "0xa6729f7c91f13795a38aa67f4bc816fae5bef9ffbeb4319c69a9242f2e68cdbc",
           "registryVersion": 12,
           "signaturesRequired": 5,
-          "canonicalTimestamp": 1700000000
+          "timestamp": 1700000000000
         },
         "signature": {
-          "signature": "0xc9dc93909c0274b7a84f6c82fd795b5a47b3c5d2e5d6a00b8c1605c456e7ff78",
-          "commitment": "0x4A4eEa2ec80f98472b13Fd4787e671e7A233bC5d",
+          "signature": "0x8d0597c6d418a8c6397ad832cda1ed2d1d55e2777943bb5ca83160ba9118a4fd",
+          "commitment": "0x2D91b53b7DAE92B3731d690efc315f2695Bb0975",
           "signersBitmap": 339
         }
       },
@@ -31,8 +31,8 @@
         "verifyCode": 0,
         "libOk": true,
         "libCode": 0,
-        "messageHash": "0x840185b8abb1635e5e5f94df05e794c4708657c6a3a2cd354c0158dc91addeab",
-        "replayKey": "0xffde348d79e780f26957e72afd9efb817d8b73c46199700a8f51520d61422cd2",
+        "messageHash": "0x1f081c05ef4dfa658a55dd6e80cd70c34710fce23b771a3422ac079aa09c8da8",
+        "replayKey": "0xfba843a175567351eede3c9f4a52d67ba3edc58dce25d4a61fdad8c80284751a",
         "asInt256": "-1234"
       }
     },
@@ -46,11 +46,11 @@
           "sourceId": "0xa6729f7c91f13795a38aa67f4bc816fae5bef9ffbeb4319c69a9242f2e68cdbc",
           "registryVersion": 12,
           "signaturesRequired": 5,
-          "canonicalTimestamp": 1700000000
+          "timestamp": 1700000000000
         },
         "signature": {
-          "signature": "0x0738bfdd9ef4a3e7438f6497c08c0e401e38944b3a41ee3fd9a7545e93a7826b",
-          "commitment": "0x616c24cF7c587aAF2f240Da3B09ad572E7dA4D8C",
+          "signature": "0xaa61b446b25fbd7a0c35f58394df91c9709ff7065612986602b895dc929d267c",
+          "commitment": "0x3b7D9F9859A5AAac41557A21C2B610DbF785207f",
           "signersBitmap": 339
         }
       },
@@ -60,8 +60,8 @@
         "verifyCode": 0,
         "libOk": true,
         "libCode": 0,
-        "messageHash": "0x0c9f7a402576e4df66820f04379b92039b9629b872d40aec0b3ec77d6b031a48",
-        "replayKey": "0xffde348d79e780f26957e72afd9efb817d8b73c46199700a8f51520d61422cd2",
+        "messageHash": "0x73e42f102997909d3a191cfbf210efba1564f263847b527fe8472784ff070965",
+        "replayKey": "0xfba843a175567351eede3c9f4a52d67ba3edc58dce25d4a61fdad8c80284751a",
         "tuple": [42, "molpha", "cross-vm"]
       }
     }

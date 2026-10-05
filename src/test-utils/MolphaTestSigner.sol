@@ -15,7 +15,7 @@ import {MolphaSigLib} from "./MolphaSigLib.sol";
 ///      MolphaTestSigner signer = new MolphaTestSigner(2);
 ///      signer.registerNodes(8);
 ///      IVerifier.Attestation memory att =
-///          signer.attest(SOURCE_ID, bytes32(uint256(1234)), 5, uint64(block.timestamp));
+///          signer.attest(SOURCE_ID, bytes32(uint256(1234)), 5, uint64(block.timestamp) * 1000);
 ///      ```
 ///
 ///      Uses no cheatcodes, so it works from any contract and needs no forge-std. It owns the
@@ -84,38 +84,35 @@ contract MolphaTestSigner {
     }
 
     /// @notice Kind A: sign `value` as the result word itself.
-    function attest(bytes32 sourceId, bytes32 value, uint8 signaturesRequired, uint64 canonicalTimestamp)
+    function attest(bytes32 sourceId, bytes32 value, uint8 signaturesRequired, uint64 timestamp)
         external
         view
         returns (IVerifier.Attestation memory)
     {
-        return attest(sourceId, value, signaturesRequired, signaturesRequired, canonicalTimestamp);
+        return attest(sourceId, value, signaturesRequired, signaturesRequired, timestamp);
     }
 
     /// @notice Kind B: sign `keccak256(encodedFields)`, leaving the consumer to carry the preimage.
-    function attestFields(
-        bytes32 sourceId,
-        bytes memory encodedFields,
-        uint8 signaturesRequired,
-        uint64 canonicalTimestamp
-    ) external view returns (IVerifier.Attestation memory) {
-        return attest(sourceId, keccak256(encodedFields), signaturesRequired, signaturesRequired, canonicalTimestamp);
+    function attestFields(bytes32 sourceId, bytes memory encodedFields, uint8 signaturesRequired, uint64 timestamp)
+        external
+        view
+        returns (IVerifier.Attestation memory)
+    {
+        return attest(sourceId, keccak256(encodedFields), signaturesRequired, signaturesRequired, timestamp);
     }
 
     /// @notice Sign with `signerCount` of the selected group, which may exceed the threshold.
-    function attest(
-        bytes32 sourceId,
-        bytes32 value,
-        uint8 signaturesRequired,
-        uint32 signerCount,
-        uint64 canonicalTimestamp
-    ) public view returns (IVerifier.Attestation memory) {
+    function attest(bytes32 sourceId, bytes32 value, uint8 signaturesRequired, uint32 signerCount, uint64 timestamp)
+        public
+        view
+        returns (IVerifier.Attestation memory)
+    {
         IVerifier.AttestationPayload memory payload = IVerifier.AttestationPayload({
             value: value,
             sourceId: sourceId,
             registryVersion: uint32(verifier.getRegistryVersion()),
             signaturesRequired: uint8(signaturesRequired),
-            canonicalTimestamp: canonicalTimestamp
+            timestamp: timestamp
         });
         return MolphaSigLib.buildAttestation(_secrets, _pubkeys, payload, verifier.redundancyBuffer(), signerCount);
     }

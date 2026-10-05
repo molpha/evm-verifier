@@ -10,8 +10,8 @@ struct AttestationPayload {
     bytes32 value;
     bytes32 sourceId;
     uint32 registryVersion;
-    uint32 signaturesRequired;
-    uint64 canonicalTimestamp;
+    uint8 signaturesRequired;
+    uint64 timestamp; // unix MILLISECONDS, assigned by the gateway
 }
 
 struct SchnorrSignature {
@@ -31,9 +31,9 @@ decimal strings or variable-length byte arrays.
 | --- | --- | --- |
 | `sourceId` | `bytes32` | Canonical identifier for the data source. |
 | `registryVersion` | `uint32` | Immutable registry snapshot used for signer selection and public-key lookup. |
-| `signaturesRequired` | `uint32` | Minimum number of selected signers required for this update. |
+| `signaturesRequired` | `uint8` | Minimum number of selected signers required for this update. |
 | `value` | `bytes32` | Application-defined value committed by the oracle nodes. |
-| `canonicalTimestamp` | `uint64` | Timestamp committed by the oracle nodes and used in deterministic signer selection. |
+| `timestamp` | `uint64` | Gateway-assigned round time in unix **milliseconds**. Signer selection reads only its 1-second window, `timestamp / 1000`; `maxAge` and registry activation compare `timestamp / 1000` with `block.timestamp`, in seconds. |
 
 `value` is intentionally opaque to the verifier. Consumers that need prices,
 round ids, decimals, status flags, or multi-word payloads should define their own
@@ -80,9 +80,12 @@ selectionSeed = keccak256(
   keccak256("MOLPHA_SELECTION_V1") ||
   sourceId ||
   registryVersion ||
-  canonicalTimestamp
+  timestamp / 1000      // uint64, the 1 s window index
 )
 ```
+
+Timestamp precision finer than one second never changes who is selected. Changing the
+1000 ms window is a consensus break and must bump this prefix.
 
 The selected group size is:
 
@@ -105,14 +108,16 @@ The aggregate Schnorr signature signs this digest:
 ```text
 message = keccak256(
   keccak256("MOLPHA_MESSAGE_V1") ||
-  sourceId ||
-  registryVersion ||
-  signaturesRequired ||
-  signersBitmap ||
-  value ||
-  canonicalTimestamp
+  value ||                        // bytes32
+  sourceId ||                     // bytes32
+  registryVersion ||              // uint32
+  signaturesRequired ||           // uint8
+  timestamp ||           // uint64, unix milliseconds
+  signersBitmap                   // uint256
 )
 ```
+
+The preimage is 141 bytes.
 
 The `signersBitmap` is part of the signed message. Changing the signer coalition
 after signing changes the digest and must invalidate the signature.
@@ -192,7 +197,7 @@ Consumers are responsible for:
 
 ## Attestation container
 
-`AttestationPayload` (formerly `DataUpdate`) and `SchnorrSignature` are carried together:
+`AttestationPayload` and `SchnorrSignature` are carried together:
 
 ```solidity
 struct Attestation {

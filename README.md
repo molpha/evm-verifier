@@ -28,7 +28,7 @@ This repository contains the on-chain verification layer only. It does not aggre
 - Node registration requires a Schnorr proof-of-possession over the node's compressed secp256k1 public key.
 - Every registry mutation creates an immutable SSTORE2-backed public-key snapshot.
 - Historical registry versions remain verifiable after later node additions or removals.
-- Signer groups are selected deterministically from `sourceId`, `registryVersion`, and `canonicalTimestamp`.
+- Signer groups are selected deterministically from `sourceId`, `registryVersion`, and the 1-second window of `timestamp` (unix milliseconds, gateway-assigned).
 - The owner can configure a redundancy buffer so each selected group can contain more nodes than the required threshold.
 - Aggregate Schnorr signatures are verified against the plain-sum public key of the submitted signer coalition.
 
@@ -57,7 +57,7 @@ keccak256(
   keccak256("MOLPHA_SELECTION_V1") ||
   sourceId ||
   registryVersion ||
-  canonicalTimestamp
+  timestamp / 1000      // 1 s window index
 )
 ```
 
@@ -135,7 +135,7 @@ struct AttestationPayload {
     bytes32 sourceId;
     uint32 registryVersion;
     uint8 signaturesRequired;
-    uint64 canonicalTimestamp;
+    uint64 timestamp; // unix milliseconds
 }
 
 struct SchnorrSignature {
@@ -154,7 +154,7 @@ keccak256(
   sourceId ||
   registryVersion ||
   signaturesRequired ||
-  canonicalTimestamp ||
+  timestamp ||
   signersBitmap
 )
 ```
@@ -196,7 +196,7 @@ Admin functions revert unless `msg.sender == owner()`.
 
 | Function | Description |
 | --- | --- |
-| `verify(Attestation attestation, uint64 maxAge)` | Returns `(true, VerifyCodes.R_OK)` when the aggregate Schnorr signature is valid. Pass `maxAge > 0` to also require `canonicalTimestamp` within that age of `block.timestamp`; `maxAge = 0` skips freshness. Other outcomes return `(false, code)` without reverting. |
+| `verify(Attestation attestation, uint64 maxAge)` | Returns `(true, VerifyCodes.R_OK)` when the aggregate Schnorr signature is valid. Pass `maxAge > 0` to also require `timestamp / 1000` (the timestamp is unix milliseconds) within that many seconds of `block.timestamp`; `maxAge = 0` skips freshness. Other outcomes return `(false, code)` without reverting. |
 
 `verify` is `view`. A successful call does not persist state and does not prevent replay by itself.
 
@@ -454,7 +454,7 @@ for the full guide. What the library does and does not decide for you:
 Integrating against the raw `IVerifier` instead? Then all of the above is yours to write, plus:
 
 - Pass the registry version used during off-chain signing, and respect version lifetimes:
-  `canonicalTimestamp` must be at or after `activatesAt`, and non-latest versions expire
+  `timestamp / 1000` must be at or after `activatesAt` (seconds), and non-latest versions expire
   `PREVIOUS_GRACE` seconds after the successor activates.
 - Treat node indices as version-specific — the registry swaps the tail node into a removed slot.
 - Build signer bitmaps with zero-based bit positions: bit `i` is registry index `i`.

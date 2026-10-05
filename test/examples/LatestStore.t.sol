@@ -34,12 +34,12 @@ contract LatestStoreTest is Test {
 
     function test_anyoneMaySubmit() public {
         vm.prank(address(0xCAFE));
-        store.submit(_att(SOURCE_A, 42, uint64(block.timestamp)));
+        store.submit(_att(SOURCE_A, 42, uint64(block.timestamp) * 1000));
         assertEq(store.value(SOURCE_A), bytes32(uint256(42)));
     }
 
     function test_unlistedSourceIsRejected() public {
-        IVerifier.Attestation memory att = _att(UNLISTED, 1, uint64(block.timestamp));
+        IVerifier.Attestation memory att = _att(UNLISTED, 1, uint64(block.timestamp) * 1000);
         vm.expectRevert(abi.encodeWithSelector(LatestStore.SourceNotAllowed.selector, UNLISTED));
         store.submit(att);
     }
@@ -47,7 +47,7 @@ contract LatestStoreTest is Test {
     /// @dev The reason `LatestStore` keys its guard by source: two feeds must advance
     ///      independently rather than blocking each other.
     function test_twoSourcesAdvanceIndependently() public {
-        uint64 t0 = uint64(block.timestamp);
+        uint64 t0 = uint64(block.timestamp) * 1000;
         store.submit(_att(SOURCE_A, 1, t0 + 500));
         store.submit(_att(SOURCE_B, 2, t0 + 100));
 
@@ -58,7 +58,7 @@ contract LatestStoreTest is Test {
     }
 
     function test_outOfOrderUpdateIsRejectedPerSourceOnly() public {
-        uint64 t0 = uint64(block.timestamp);
+        uint64 t0 = uint64(block.timestamp) * 1000;
         store.submit(_att(SOURCE_A, 1, t0 + 500));
 
         IVerifier.Attestation memory stale = _att(SOURCE_A, 2, t0 + 400);
@@ -73,7 +73,7 @@ contract LatestStoreTest is Test {
 
     function test_thresholdFloorAppliesToEverySource() public {
         IVerifier.Attestation memory weak =
-            signer.attest(SOURCE_A, bytes32(uint256(1)), MIN_SIGS - 1, uint64(block.timestamp));
+            signer.attest(SOURCE_A, bytes32(uint256(1)), MIN_SIGS - 1, uint64(block.timestamp) * 1000);
         vm.expectPartialRevert(MolphaLib.ThresholdBelowPolicy.selector);
         store.submit(weak);
     }

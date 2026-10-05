@@ -33,7 +33,7 @@ contract GenerateVerifierFixture is Script {
             sourceId: json.readBytes32(".dataUpdate.sourceId"),
             registryVersion: uint32(json.readUint(".dataUpdate.registryVersion")),
             signaturesRequired: uint8(json.readUint(".dataUpdate.signaturesRequired")),
-            canonicalTimestamp: uint64(json.readUint(".dataUpdate.canonicalTimestamp"))
+            timestamp: uint64(json.readUint(".dataUpdate.timestamp"))
         });
         IVerifier.Attestation memory attestation =
             MolphaSigLib.buildAttestation(secrets, pubkeys, payload, REDUNDANCY_BUFFER, SIGNER_COUNT);

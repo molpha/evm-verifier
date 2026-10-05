@@ -43,13 +43,15 @@ interface IVerifier {
     /// @param sourceId Canonical data source identifier
     /// @param registryVersion The registry version
     /// @param signaturesRequired The number of signatures required
-    /// @param canonicalTimestamp The canonical timestamp of the attestation
+    /// @param timestamp Gateway-assigned round time in unix MILLISECONDS. Committee selection
+    ///        reads `timestamp / 1000`; `maxAge` and registry activation are in seconds, so
+    ///        compare against `block.timestamp` using `timestamp / 1000`.
     struct AttestationPayload {
         bytes32 value;
         bytes32 sourceId;
         uint32 registryVersion;
         uint8 signaturesRequired;
-        uint64 canonicalTimestamp;
+        uint64 timestamp;
     }
 
     /// @notice A signed payload: what a consumer receives and forwards to `verify`.
@@ -105,8 +107,9 @@ interface IVerifier {
     /// @dev Total function: never reverts on the verification path. Every rejection is
     ///      `(false, code)`. Consumers that want reverting semantics should use `MolphaLib`.
     /// @param attestation The signed payload and its aggregate signature
-    /// @param maxAge Maximum age in seconds for `attestation.payload.canonicalTimestamp` relative
-    ///        to `block.timestamp`. Pass `0` to skip the freshness check.
+    /// @param maxAge Maximum age in seconds for `attestation.payload.timestamp / 1000` relative
+    ///        to `block.timestamp` (freshness is second-resolution; the timestamp itself is unix
+    ///        milliseconds). Pass `0` to skip the freshness check.
     /// @return success True when the signature is valid
     /// @return code Result code; see `VerifyCodes`
     function verify(Attestation calldata attestation, uint64 maxAge) external view returns (bool success, uint8 code);

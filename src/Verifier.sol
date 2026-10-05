@@ -87,9 +87,11 @@ contract Verifier is IVerifier, Ownable {
         // Freshness is defined against wall-clock time, so `block.timestamp` is the intended
         // reference; the caller opts in by passing a non-zero `maxAge` and chooses a window
         // wide enough to absorb the few seconds a proposer could shift it.
+        // `timestamp` is unix milliseconds; every clock comparison below is in seconds.
+        uint256 tsSec = VerifierLib.timestampSeconds(dataUpdate.timestamp);
         // forge-lint: disable-start(block-timestamp)
         if (maxAge != 0) {
-            uint256 ts = dataUpdate.canonicalTimestamp;
+            uint256 ts = tsSec;
             if (ts > block.timestamp) return (false, VerifyCodes.R_MALFORMED);
             unchecked {
                 if (block.timestamp - ts > maxAge) return (false, VerifyCodes.R_STALE);
@@ -100,13 +102,13 @@ contract Verifier is IVerifier, Ownable {
         uint256 entry = registryEntries[dataUpdate.registryVersion];
         if (entry == 0) return (false, VerifyCodes.R_BAD_REGISTRY_VERSION);
 
-        if (dataUpdate.canonicalTimestamp < entry.activatesAt()) {
+        if (tsSec < entry.activatesAt()) {
             return (false, VerifyCodes.R_NOT_YET_ACTIVE);
         }
 
         if (!entry.isLatest()) {
             uint256 successor = registryEntries[dataUpdate.registryVersion + 1];
-            if (successor != 0 && dataUpdate.canonicalTimestamp > successor.activatesAt() + PREVIOUS_GRACE) {
+            if (successor != 0 && tsSec > successor.activatesAt() + PREVIOUS_GRACE) {
                 return (false, VerifyCodes.R_VERSION_EXPIRED);
             }
         }

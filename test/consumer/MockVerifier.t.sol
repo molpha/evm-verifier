@@ -21,7 +21,7 @@ contract MockVerifierTest is Test {
                 sourceId: sourceId,
                 registryVersion: 1,
                 signaturesRequired: 5,
-                canonicalTimestamp: 1_700_000_000
+                timestamp: 1_700_000_000
             }),
             signature: IVerifier.SchnorrSignature({
                 signature: bytes32(uint256(1)), commitment: address(1), signersBitmap: 31

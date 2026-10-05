@@ -30,6 +30,9 @@ library MolphaSigLib {
     bytes32 internal constant MESSAGE_PREFIX = keccak256("MOLPHA_MESSAGE_V1");
     bytes32 internal constant SELECTION_SEED_PREFIX = keccak256("MOLPHA_SELECTION_V1");
 
+    /// @dev Selection reads `timestamp / SELECTION_WINDOW_MS`; the timestamp is unix ms.
+    uint64 internal constant SELECTION_WINDOW_MS = 1000;
+
     /// @notice Deterministic test private key for a 1-based slot.
     /// @dev The literal domain string and the `% (Q-1) + 1` reduction are load-bearing: every node
     ///      address, registry root, and selection bitmap in the existing suite derives from them.
@@ -95,7 +98,10 @@ library MolphaSigLib {
     function selectionSeed(IVerifier.AttestationPayload memory payload) internal pure returns (bytes32) {
         return keccak256(
             abi.encodePacked(
-                SELECTION_SEED_PREFIX, payload.sourceId, payload.registryVersion, payload.canonicalTimestamp
+                SELECTION_SEED_PREFIX,
+                payload.sourceId,
+                payload.registryVersion,
+                payload.timestamp / SELECTION_WINDOW_MS
             )
         );
     }
@@ -113,7 +119,7 @@ library MolphaSigLib {
                 payload.sourceId,
                 payload.registryVersion,
                 payload.signaturesRequired,
-                payload.canonicalTimestamp,
+                payload.timestamp,
                 signersBitmap
             )
         );

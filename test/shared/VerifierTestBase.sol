@@ -30,8 +30,14 @@ abstract contract VerifierTestBase is Test {
     uint8 internal constant RETIRED = 2;
 
     /// @dev Matches Foundry warps used across unit tests so `activatesAt` and signed
-    ///      `canonicalTimestamp` values share a coherent window.
+    ///      `timestamp` values share a coherent window.
     uint256 internal constant BASE_TIME = 1_700_000_000;
+
+    /// @dev `timestamp` is unix milliseconds; chain clocks and `activatesAt` are seconds.
+    ///      Tests state their unit explicitly: `_ms(secondsValue)` for an attestation timestamp.
+    function _ms(uint256 secondsValue) internal pure returns (uint64) {
+        return uint64(secondsValue * 1000);
+    }
     uint256 internal constant PREVIOUS_GRACE = 60;
 
     Verifier internal verifier;
@@ -129,14 +135,14 @@ abstract contract VerifierTestBase is Test {
         uint256 signerCount,
         bytes32 sourceId,
         bytes32 value,
-        uint64 canonicalTimestamp
+        uint64 timestamp
     ) internal view returns (IVerifier.AttestationPayload memory update, IVerifier.SchnorrSignature memory schnorr) {
         update = IVerifier.AttestationPayload({
             sourceId: sourceId,
             registryVersion: uint32(target.getRegistryVersion()),
             signaturesRequired: uint8(signaturesRequired),
             value: value,
-            canonicalTimestamp: canonicalTimestamp
+            timestamp: timestamp
         });
 
         uint256 registeredNodes = target.getTotalNodes();
@@ -163,9 +169,9 @@ abstract contract VerifierTestBase is Test {
         uint256 signaturesRequired,
         bytes32 sourceId,
         bytes32 value,
-        uint64 canonicalTimestamp
+        uint64 timestamp
     ) internal view returns (IVerifier.AttestationPayload memory update, IVerifier.SchnorrSignature memory schnorr) {
-        return _buildVerifyCall(target, signaturesRequired, signaturesRequired, sourceId, value, canonicalTimestamp);
+        return _buildVerifyCall(target, signaturesRequired, signaturesRequired, sourceId, value, timestamp);
     }
 
     function _buildVerifyCall(Verifier target, uint256 signaturesRequired, bytes32 sourceId, bytes32 value)
@@ -173,11 +179,10 @@ abstract contract VerifierTestBase is Test {
         view
         returns (IVerifier.AttestationPayload memory update, IVerifier.SchnorrSignature memory schnorr)
     {
-        return _buildVerifyCall(target, signaturesRequired, sourceId, value, uint64(block.timestamp));
+        return _buildVerifyCall(target, signaturesRequired, sourceId, value, _ms(block.timestamp));
     }
 
-    /// @dev Packs the legacy `(payload, signature)` test tuple into the wire struct. Existing
-    ///      suites keep building the two halves separately; only the call boundary changed.
+    /// @dev Packs a `(payload, signature)` test tuple into the wire struct.
     function _attestation(IVerifier.AttestationPayload memory update, IVerifier.SchnorrSignature memory schnorr)
         internal
         pure
@@ -192,10 +197,10 @@ abstract contract VerifierTestBase is Test {
         uint256 signaturesRequired,
         bytes32 sourceId,
         bytes32 value,
-        uint64 canonicalTimestamp
+        uint64 timestamp
     ) internal view returns (IVerifier.Attestation memory) {
         (IVerifier.AttestationPayload memory update, IVerifier.SchnorrSignature memory schnorr) =
-            _buildVerifyCall(target, signaturesRequired, sourceId, value, canonicalTimestamp);
+            _buildVerifyCall(target, signaturesRequired, sourceId, value, timestamp);
         return _attestation(update, schnorr);
     }
 

@@ -14,6 +14,12 @@ library VerifierLib {
     bytes32 private constant MESSAGE_PREFIX = keccak256("MOLPHA_MESSAGE_V1");
     bytes32 private constant SELECTION_SEED_PREFIX = keccak256("MOLPHA_SELECTION_V1");
 
+    /// @notice Milliseconds per selection window. `timestamp` is unix milliseconds;
+    ///         committee selection reads only `timestamp / SELECTION_WINDOW_MS`, so
+    ///         sub-second precision never changes who is selected. Changing this value is a
+    ///         consensus break and must bump `SELECTION_SEED_PREFIX` with it.
+    uint64 internal constant SELECTION_WINDOW_MS = 1000;
+
     /// @dev Packed registry entry (registry-v2):
     ///      bits   0..159   SSTORE2 pointer
     ///      bits 160..168   nodeCount (9)
@@ -30,6 +36,13 @@ library VerifierLib {
     uint256 private constant TIMESTAMP_MASK = 0xffffffffff;
     uint256 private constant IS_LATEST_MASK = uint256(1) << IS_LATEST_SHIFT;
 
+    /// @dev `timestamp` (unix milliseconds) as unix seconds, the unit of `block.timestamp`
+    ///      and of `activatesAt`. Floors, so a timestamp up to 999 ms ahead of the chain clock still
+    ///      reads as the current second.
+    function timestampSeconds(uint256 timestamp) internal pure returns (uint256) {
+        return timestamp / SELECTION_WINDOW_MS;
+    }
+
     function constructMessage(IVerifier.AttestationPayload calldata payload, uint256 signersBitmap)
         internal
         pure
@@ -42,7 +55,7 @@ library VerifierLib {
                 payload.sourceId,
                 payload.registryVersion,
                 payload.signaturesRequired,
-                payload.canonicalTimestamp,
+                payload.timestamp,
                 signersBitmap
             )
         );
@@ -55,7 +68,10 @@ library VerifierLib {
     {
         selectionSeed = keccak256(
             abi.encodePacked(
-                SELECTION_SEED_PREFIX, payload.sourceId, payload.registryVersion, payload.canonicalTimestamp
+                SELECTION_SEED_PREFIX,
+                payload.sourceId,
+                payload.registryVersion,
+                payload.timestamp / SELECTION_WINDOW_MS
             )
         );
     }

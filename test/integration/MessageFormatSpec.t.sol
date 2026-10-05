@@ -40,9 +40,9 @@ contract MessageFormatSpecTest is Test {
     uint8 internal constant SIGNATURES_REQUIRED = 3;
     uint256 internal constant SIGNERS_BITMAP = 0x83; // nodes 0, 1 and 7, per the spec's example
     bytes32 internal constant VALUE = bytes32(uint256(0xdeadbeef));
-    uint64 internal constant CANONICAL_TIMESTAMP = 1_699_965_440; // 0x65536a00
+    uint64 internal constant TIMESTAMP = 1_699_965_440_000; // unix ms; second 0x65536a00
 
-    bytes32 internal constant EXPECTED_MESSAGE = 0x7527b765799e48db80cefdd8c8cf76fd1e8feed2838eee5ba7ab862d920b5e61;
+    bytes32 internal constant EXPECTED_MESSAGE = 0xd4b03dd5a71d9afbac41567f7409f2723943191b30243332b56143320d749838;
     bytes32 internal constant EXPECTED_SELECTION_SEED =
         0x24d3c035b75a33faa60438e66159dbb2011438056b4e86b892e6a89839b2a6fa;
 
@@ -52,7 +52,7 @@ contract MessageFormatSpecTest is Test {
             registryVersion: REGISTRY_VERSION,
             signaturesRequired: SIGNATURES_REQUIRED,
             value: VALUE,
-            canonicalTimestamp: CANONICAL_TIMESTAMP
+            timestamp: TIMESTAMP
         });
     }
 
@@ -116,7 +116,7 @@ contract MessageFormatSpecTest is Test {
 
     /// @dev Field widths are the part cross-language implementations get wrong most easily:
     ///      `abi.encodePacked` writes `registryVersion` as 4 bytes, `signaturesRequired` as one,
-    ///      and `canonicalTimestamp` as 8, not as 32-byte words.
+    ///      and `timestamp` as 8, not as 32-byte words.
     function test_constructMessage_isSensitiveToFieldWidths() public view {
         bytes32 actual = harness.message(_update(), SIGNERS_BITMAP);
 
@@ -127,7 +127,7 @@ contract MessageFormatSpecTest is Test {
                 SOURCE_ID,
                 uint256(REGISTRY_VERSION),
                 SIGNATURES_REQUIRED,
-                CANONICAL_TIMESTAMP,
+                TIMESTAMP,
                 SIGNERS_BITMAP
             )
         );
@@ -140,7 +140,7 @@ contract MessageFormatSpecTest is Test {
                 SOURCE_ID,
                 REGISTRY_VERSION,
                 uint32(SIGNATURES_REQUIRED),
-                CANONICAL_TIMESTAMP,
+                TIMESTAMP,
                 SIGNERS_BITMAP
             )
         );
@@ -153,11 +153,11 @@ contract MessageFormatSpecTest is Test {
                 SOURCE_ID,
                 REGISTRY_VERSION,
                 SIGNATURES_REQUIRED,
-                uint256(CANONICAL_TIMESTAMP),
+                uint256(TIMESTAMP),
                 SIGNERS_BITMAP
             )
         );
-        assertTrue(actual != wordWidthTimestamp, "canonicalTimestamp must be encoded as uint64");
+        assertTrue(actual != wordWidthTimestamp, "timestamp must be encoded as uint64");
     }
 
     /// @dev Byte-for-byte fixture shared with `molpha-verifier/tests/fixtures/mod.rs` and the SDK.
@@ -167,9 +167,9 @@ contract MessageFormatSpecTest is Test {
             sourceId: 0x41b87cd1b00231a5caebdfbc3e352d92bb0ec116335cc3544278a4bac95071a7,
             registryVersion: 12,
             signaturesRequired: 5,
-            canonicalTimestamp: 1_705_257_421
+            timestamp: 1_705_257_421_000
         });
-        assertEq(harness.message(payload, 0x0fa8), 0x52e92f58c9c128d2f7e0be6165c4d58f843c39e828c12fcad8cdc566152f2bb1);
+        assertEq(harness.message(payload, 0x0fa8), 0xe1bedfeec7c869576b3a5048215e2be458a02f73ad3736d34d091c363b9dd54f);
     }
 
     /// @dev Every signed field has to reach the digest, or it could be swapped after signing.
@@ -193,8 +193,8 @@ contract MessageFormatSpecTest is Test {
         assertTrue(harness.message(update, SIGNERS_BITMAP) != base, "value");
 
         update = _update();
-        update.canonicalTimestamp = CANONICAL_TIMESTAMP + 1;
-        assertTrue(harness.message(update, SIGNERS_BITMAP) != base, "canonicalTimestamp");
+        update.timestamp = TIMESTAMP + 1;
+        assertTrue(harness.message(update, SIGNERS_BITMAP) != base, "timestamp");
 
         assertTrue(harness.message(_update(), SIGNERS_BITMAP | 0x100) != base, "signersBitmap");
     }
@@ -207,7 +207,7 @@ contract MessageFormatSpecTest is Test {
         assertEq(harness.selectionSeed(_update()), EXPECTED_SELECTION_SEED);
     }
 
-    /// @dev The seed deliberately covers only `(sourceId, registryVersion, canonicalTimestamp)`.
+    /// @dev The seed deliberately covers only `(sourceId, registryVersion, timestamp)`.
     ///      Signers derive the group before they know the coalition, so pulling `signersBitmap` or
     ///      `value` into the seed would make the selection unresolvable off chain.
     function test_getSelectionSeed_dependsOnRoundIdentityOnly() public view {
@@ -229,9 +229,17 @@ contract MessageFormatSpecTest is Test {
         update.registryVersion = REGISTRY_VERSION + 1;
         assertTrue(harness.selectionSeed(update) != base, "registryVersion");
 
+        // The seed reads the 1 s window index, so sub-second precision is outside it and the
+        // next whole second is inside it.
         update = _update();
-        update.canonicalTimestamp = CANONICAL_TIMESTAMP + 1;
-        assertTrue(harness.selectionSeed(update) != base, "canonicalTimestamp");
+        update.timestamp = TIMESTAMP + 1;
+        assertEq(harness.selectionSeed(update), base, "1 ms is inside the same window");
+        update.timestamp = TIMESTAMP + 999;
+        assertEq(harness.selectionSeed(update), base, "999 ms is inside the same window");
+        update.timestamp = TIMESTAMP + 1000;
+        assertTrue(harness.selectionSeed(update) != base, "the next window");
+        update.timestamp = TIMESTAMP - 1;
+        assertTrue(harness.selectionSeed(update) != base, "the previous window");
     }
 
     /// @dev The two preimages share their leading fields, so distinct domain prefixes are the only

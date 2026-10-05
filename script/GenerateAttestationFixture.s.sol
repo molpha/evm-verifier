@@ -22,14 +22,15 @@ contract GenerateAttestationFixture is Script {
     uint256 internal constant NODE_COUNT = 12;
     uint256 internal constant REDUNDANCY_BUFFER = 2;
     uint8 internal constant SIGNATURES_REQUIRED = 5;
-    uint64 internal constant CANONICAL_TIMESTAMP = 1_700_000_000;
+    /// @dev Unix milliseconds; the block clock is the same instant in seconds.
+    uint64 internal constant TIMESTAMP = 1_700_000_000_000;
     bytes32 internal constant SOURCE_ID = keccak256("MOLPHA_CONSUMER_SDK_SOURCE");
 
     uint256[] internal secrets;
     LibSecp256k1.Point[] internal pubkeys;
 
     function run() external {
-        vm.warp(CANONICAL_TIMESTAMP);
+        vm.warp(TIMESTAMP / 1000);
         string memory src = vm.readFile("test/fixtures/fixture.json");
         // A script contract's own address is ephemeral, so the registry owner is an explicit
         // pranked EOA rather than `address(this)`.
@@ -105,7 +106,7 @@ contract GenerateAttestationFixture is Script {
             sourceId: SOURCE_ID,
             registryVersion: registryVersion,
             signaturesRequired: SIGNATURES_REQUIRED,
-            canonicalTimestamp: CANONICAL_TIMESTAMP
+            timestamp: TIMESTAMP
         });
         return MolphaSigLib.buildAttestation(secrets, pubkeys, payload, REDUNDANCY_BUFFER, SIGNATURES_REQUIRED);
     }
@@ -147,8 +148,8 @@ contract GenerateAttestationFixture is Script {
             vm.toString(uint256(p.registryVersion)),
             ',\n          "signaturesRequired": ',
             vm.toString(uint256(p.signaturesRequired)),
-            ',\n          "canonicalTimestamp": ',
-            vm.toString(uint256(p.canonicalTimestamp)),
+            ',\n          "timestamp": ',
+            vm.toString(uint256(p.timestamp)),
             "\n        },\n"
         );
     }
@@ -182,7 +183,7 @@ contract GenerateAttestationFixture is Script {
             '        "messageHash": "',
             vm.toString(MolphaSigLib.message(att.payload, att.signature.signersBitmap)),
             '",\n        "replayKey": "',
-            vm.toString(keccak256(abi.encodePacked(att.payload.sourceId, att.payload.canonicalTimestamp))),
+            vm.toString(keccak256(abi.encodePacked(att.payload.sourceId, att.payload.timestamp))),
             '",\n        ',
             extra,
             "\n      }\n"

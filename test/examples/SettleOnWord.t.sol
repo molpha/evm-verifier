@@ -37,23 +37,23 @@ contract SettleOnWordTest is Test {
     }
 
     function test_settlesAboveStrikeToTheDeployer() public {
-        bet.settle(_att(STRIKE + 1, MIN_SIGS, SOURCE, uint64(block.timestamp)));
+        bet.settle(_att(STRIKE + 1, MIN_SIGS, SOURCE, uint64(block.timestamp) * 1000));
         assertEq(bet.winner(), address(this));
         assertEq(bet.owed(address(this)), 10 ether);
     }
 
     function test_settlesBelowStrikeToTheCounterparty() public {
-        bet.settle(_att(STRIKE - 1, MIN_SIGS, SOURCE, uint64(block.timestamp)));
+        bet.settle(_att(STRIKE - 1, MIN_SIGS, SOURCE, uint64(block.timestamp) * 1000));
         assertEq(bet.winner(), below);
     }
 
     function test_negativeValueDecodesAsSigned() public {
-        bet.settle(_att(-42, MIN_SIGS, SOURCE, uint64(block.timestamp)));
+        bet.settle(_att(-42, MIN_SIGS, SOURCE, uint64(block.timestamp) * 1000));
         assertEq(bet.winner(), below, "-42 is below the strike");
     }
 
     function test_winnerPullsTheBalance() public {
-        bet.settle(_att(STRIKE + 1, MIN_SIGS, SOURCE, uint64(block.timestamp)));
+        bet.settle(_att(STRIKE + 1, MIN_SIGS, SOURCE, uint64(block.timestamp) * 1000));
         uint256 before = address(this).balance;
         bet.withdraw();
         assertEq(address(this).balance - before, 10 ether);
@@ -61,33 +61,33 @@ contract SettleOnWordTest is Test {
     }
 
     function test_wrongSourceIsRejected() public {
-        IVerifier.Attestation memory att = _att(STRIKE + 1, MIN_SIGS, OTHER, uint64(block.timestamp));
+        IVerifier.Attestation memory att = _att(STRIKE + 1, MIN_SIGS, OTHER, uint64(block.timestamp) * 1000);
         vm.expectPartialRevert(MolphaLib.WrongSource.selector);
         bet.settle(att);
     }
 
     function test_thresholdBelowTheConsumerFloorIsRejected() public {
-        IVerifier.Attestation memory att = _att(STRIKE + 1, MIN_SIGS - 1, SOURCE, uint64(block.timestamp));
+        IVerifier.Attestation memory att = _att(STRIKE + 1, MIN_SIGS - 1, SOURCE, uint64(block.timestamp) * 1000);
         vm.expectPartialRevert(MolphaLib.ThresholdBelowPolicy.selector);
         bet.settle(att);
     }
 
     function test_tamperedValueIsRejectedBySignature() public {
-        IVerifier.Attestation memory att = _att(STRIKE + 1, MIN_SIGS, SOURCE, uint64(block.timestamp));
+        IVerifier.Attestation memory att = _att(STRIKE + 1, MIN_SIGS, SOURCE, uint64(block.timestamp) * 1000);
         att.payload.value = bytes32(uint256(int256(STRIKE - 1)));
         vm.expectRevert(abi.encodeWithSelector(MolphaLib.VerifyFailed.selector, VerifyCodes.R_BAD_SIGNATURE));
         bet.settle(att);
     }
 
     function test_replayingTheSameAttestationIsRejected() public {
-        IVerifier.Attestation memory att = _att(STRIKE + 1, MIN_SIGS, SOURCE, uint64(block.timestamp));
+        IVerifier.Attestation memory att = _att(STRIKE + 1, MIN_SIGS, SOURCE, uint64(block.timestamp) * 1000);
         bet.settle(att);
         vm.expectRevert(SettleOnWord.AlreadySettled.selector);
         bet.settle(att);
     }
 
     function test_newerAttestationCannotResettle() public {
-        uint64 t0 = uint64(block.timestamp);
+        uint64 t0 = uint64(block.timestamp) * 1000;
         bet.settle(_att(STRIKE + 1, MIN_SIGS, SOURCE, t0));
         assertEq(bet.winner(), address(this));
         assertEq(bet.owed(address(this)), 10 ether);
@@ -103,7 +103,7 @@ contract SettleOnWordTest is Test {
     }
 
     function test_olderAttestationIsRejectedAfterANewerOne() public {
-        uint64 t0 = uint64(block.timestamp);
+        uint64 t0 = uint64(block.timestamp) * 1000;
         vm.warp(t0 + 100);
         bet.settle(_att(STRIKE + 1, MIN_SIGS, SOURCE, t0 + 100));
         IVerifier.Attestation memory older = _att(STRIKE + 1, MIN_SIGS, SOURCE, t0);
@@ -113,7 +113,7 @@ contract SettleOnWordTest is Test {
 
     function test_staleAttestationIsRejectedUnderAMaxAgePolicy() public {
         SettleOnWord fresh = new SettleOnWord{value: 1 ether}(v, SOURCE, MIN_SIGS, 3600, STRIKE, below);
-        IVerifier.Attestation memory att = _att(STRIKE + 1, MIN_SIGS, SOURCE, uint64(block.timestamp));
+        IVerifier.Attestation memory att = _att(STRIKE + 1, MIN_SIGS, SOURCE, uint64(block.timestamp) * 1000);
         vm.warp(block.timestamp + 3601);
         vm.expectRevert(abi.encodeWithSelector(MolphaLib.VerifyFailed.selector, VerifyCodes.R_STALE));
         fresh.settle(att);
@@ -125,14 +125,14 @@ contract SettleOnWordTest is Test {
     }
 
     function test_loserIsOwedNothing() public {
-        bet.settle(_att(STRIKE + 1, MIN_SIGS, SOURCE, uint64(block.timestamp)));
+        bet.settle(_att(STRIKE + 1, MIN_SIGS, SOURCE, uint64(block.timestamp) * 1000));
         vm.prank(below);
         vm.expectRevert(SettleOnWord.NothingOwed.selector);
         bet.withdraw();
     }
 
     function test_withdrawingTwiceIsRejected() public {
-        bet.settle(_att(STRIKE + 1, MIN_SIGS, SOURCE, uint64(block.timestamp)));
+        bet.settle(_att(STRIKE + 1, MIN_SIGS, SOURCE, uint64(block.timestamp) * 1000));
         bet.withdraw();
         vm.expectRevert(SettleOnWord.NothingOwed.selector);
         bet.withdraw();
@@ -146,7 +146,7 @@ contract SettleOnWordTest is Test {
             new SettleOnWord{value: 1 ether}(v, SOURCE, MIN_SIGS, MolphaLib.NO_MAX_AGE, STRIKE, address(hostile));
 
         // Settlement succeeds even though the winner cannot receive ETH.
-        fresh.settle(_att(STRIKE - 1, MIN_SIGS, SOURCE, uint64(block.timestamp)));
+        fresh.settle(_att(STRIKE - 1, MIN_SIGS, SOURCE, uint64(block.timestamp) * 1000));
         assertEq(fresh.winner(), address(hostile));
 
         vm.prank(address(hostile));
