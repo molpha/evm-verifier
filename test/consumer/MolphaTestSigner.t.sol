@@ -39,7 +39,7 @@ contract MolphaTestSignerTest is Test {
 
     function test_attestationVerifiesAgainstTheRealVerifier() public view {
         IVerifier.Attestation memory att =
-            signer.attest(SOURCE, bytes32(uint256(1234)), THRESHOLD, uint64(block.timestamp));
+            signer.attest(SOURCE, bytes32(uint256(1234)), THRESHOLD, uint64(block.timestamp) * 1000);
         (bool ok, uint8 code) = v.verify(att, 0);
         assertTrue(ok);
         assertEq(code, VerifyCodes.R_OK);
@@ -47,7 +47,7 @@ contract MolphaTestSignerTest is Test {
 
     function test_attestationSatisfiesMolphaLib() public view {
         IVerifier.Attestation memory att =
-            signer.attest(SOURCE, bytes32(uint256(1234)), THRESHOLD, uint64(block.timestamp));
+            signer.attest(SOURCE, bytes32(uint256(1234)), THRESHOLD, uint64(block.timestamp) * 1000);
         harness.requireValid(v, att, _policy());
         (bool ok, uint8 code) = harness.isValid(v, att, _policy());
         assertTrue(ok);
@@ -56,7 +56,7 @@ contract MolphaTestSignerTest is Test {
 
     function test_overSigningStillVerifies() public view {
         IVerifier.Attestation memory att =
-            signer.attest(SOURCE, bytes32(uint256(1)), THRESHOLD, THRESHOLD + 2, uint64(block.timestamp));
+            signer.attest(SOURCE, bytes32(uint256(1)), THRESHOLD, THRESHOLD + 2, uint64(block.timestamp) * 1000);
         (bool ok,) = v.verify(att, 0);
         assertTrue(ok);
         harness.requireValid(v, att, _policy());
@@ -64,7 +64,8 @@ contract MolphaTestSignerTest is Test {
 
     function test_kindBAttestationCommitsToTheEncodedFields() public view {
         bytes memory fields = abi.encode(uint256(42), bytes32("tag"), "payload");
-        IVerifier.Attestation memory att = signer.attestFields(SOURCE, fields, THRESHOLD, uint64(block.timestamp));
+        IVerifier.Attestation memory att =
+            signer.attestFields(SOURCE, fields, THRESHOLD, uint64(block.timestamp) * 1000);
 
         assertEq(att.payload.value, keccak256(fields), "value must be the digest");
         harness.requireValidFields(v, att, _policy(), fields);
@@ -76,7 +77,8 @@ contract MolphaTestSignerTest is Test {
 
     function test_kindBRejectsTamperedFields() public {
         bytes memory fields = abi.encode(uint256(42));
-        IVerifier.Attestation memory att = signer.attestFields(SOURCE, fields, THRESHOLD, uint64(block.timestamp));
+        IVerifier.Attestation memory att =
+            signer.attestFields(SOURCE, fields, THRESHOLD, uint64(block.timestamp) * 1000);
 
         vm.expectPartialRevert(MolphaLib.PayloadMismatch.selector);
         harness.requireValidFields(v, att, _policy(), abi.encode(uint256(43)));
@@ -87,7 +89,7 @@ contract MolphaTestSignerTest is Test {
         assertEq(signer.nodeCount(), 7);
 
         IVerifier.Attestation memory att =
-            signer.attest(SOURCE, bytes32(uint256(9)), THRESHOLD, uint64(block.timestamp));
+            signer.attest(SOURCE, bytes32(uint256(9)), THRESHOLD, uint64(block.timestamp) * 1000);
         (bool ok, uint8 code) = v.verify(att, 0);
         assertTrue(ok, "mirrors must track the registry swap-and-pop");
         assertEq(code, VerifyCodes.R_OK);
@@ -95,7 +97,7 @@ contract MolphaTestSignerTest is Test {
 
     function test_tamperedSignatureIsRejectedByTheVerifier() public {
         IVerifier.Attestation memory att =
-            signer.attest(SOURCE, bytes32(uint256(1234)), THRESHOLD, uint64(block.timestamp));
+            signer.attest(SOURCE, bytes32(uint256(1234)), THRESHOLD, uint64(block.timestamp) * 1000);
         att.payload.value = bytes32(uint256(9999));
 
         (bool ok, uint8 code) = v.verify(att, 0);
@@ -108,7 +110,7 @@ contract MolphaTestSignerTest is Test {
 
     function test_staleAttestationIsRejectedUnderAMaxAgePolicy() public {
         IVerifier.Attestation memory att =
-            signer.attest(SOURCE, bytes32(uint256(1)), THRESHOLD, uint64(block.timestamp));
+            signer.attest(SOURCE, bytes32(uint256(1)), THRESHOLD, uint64(block.timestamp) * 1000);
         MolphaLib.Policy memory p = _policy();
         p.maxAge = 3600;
 
@@ -121,7 +123,7 @@ contract MolphaTestSignerTest is Test {
     function test_signerNeedsNoCheatcodes() public {
         MolphaTestSigner fresh = new MolphaTestSigner(2);
         fresh.registerNodes(4);
-        IVerifier.Attestation memory att = fresh.attest(SOURCE, bytes32(uint256(7)), 3, uint64(block.timestamp));
+        IVerifier.Attestation memory att = fresh.attest(SOURCE, bytes32(uint256(7)), 3, uint64(block.timestamp) * 1000);
         (bool ok,) = IVerifier(address(fresh.verifier())).verify(att, 0);
         assertTrue(ok);
     }

@@ -38,7 +38,7 @@ contract VerifierFixtureJsonTest is Test {
             registryVersion: uint32(json.readUint(".dataUpdate.registryVersion")),
             signaturesRequired: uint8(json.readUint(".dataUpdate.signaturesRequired")),
             value: json.readBytes32(".dataUpdate.value"),
-            canonicalTimestamp: uint64(json.readUint(".dataUpdate.canonicalTimestamp"))
+            timestamp: uint64(json.readUint(".dataUpdate.timestamp"))
         });
     }
 

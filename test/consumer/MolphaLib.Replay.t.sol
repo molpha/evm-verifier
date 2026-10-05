@@ -27,7 +27,7 @@ contract MolphaLibReplayTest is Test {
             sourceId: sourceId,
             registryVersion: registryVersion,
             signaturesRequired: 5,
-            canonicalTimestamp: ts
+            timestamp: ts
         });
     }
 

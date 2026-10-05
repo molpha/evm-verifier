@@ -28,7 +28,7 @@ contract StructuredPayloadTest is Test {
 
     function test_ingestsAndDecodesTheTuple() public {
         bytes memory fields = _fields(1234, bytes32("gold"), "spot close");
-        sink.ingest(signer.attestFields(SOURCE, fields, MIN_SIGS, uint64(block.timestamp)), fields);
+        sink.ingest(signer.attestFields(SOURCE, fields, MIN_SIGS, uint64(block.timestamp) * 1000), fields);
 
         (uint256 amount, bytes32 label, string memory note) = sink.readings(0);
         assertEq(amount, 1234);
@@ -40,7 +40,7 @@ contract StructuredPayloadTest is Test {
     function test_mismatchedFieldsAreRejected() public {
         bytes memory signed = _fields(1234, bytes32("gold"), "spot close");
         bytes memory swapped = _fields(9999, bytes32("gold"), "spot close");
-        IVerifier.Attestation memory att = signer.attestFields(SOURCE, signed, MIN_SIGS, uint64(block.timestamp));
+        IVerifier.Attestation memory att = signer.attestFields(SOURCE, signed, MIN_SIGS, uint64(block.timestamp) * 1000);
 
         vm.expectPartialRevert(MolphaLib.PayloadMismatch.selector);
         sink.ingest(att, swapped);
@@ -48,7 +48,7 @@ contract StructuredPayloadTest is Test {
 
     function test_consumingTheSameAttestationTwiceIsRejected() public {
         bytes memory fields = _fields(1, bytes32("x"), "n");
-        IVerifier.Attestation memory att = signer.attestFields(SOURCE, fields, MIN_SIGS, uint64(block.timestamp));
+        IVerifier.Attestation memory att = signer.attestFields(SOURCE, fields, MIN_SIGS, uint64(block.timestamp) * 1000);
         sink.ingest(att, fields);
 
         vm.expectPartialRevert(MolphaLib.AlreadyConsumed.selector);
@@ -56,7 +56,7 @@ contract StructuredPayloadTest is Test {
     }
 
     function test_outOfOrderIngestIsAllowed() public {
-        uint64 t0 = uint64(block.timestamp);
+        uint64 t0 = uint64(block.timestamp) * 1000;
         bytes memory a = _fields(1, bytes32("a"), "first");
         bytes memory b = _fields(2, bytes32("b"), "second");
 
@@ -68,7 +68,7 @@ contract StructuredPayloadTest is Test {
     /// @dev The grace-window property, end to end: the same observation re-attested under a NEWER
     ///      registry version is one logical update, and the guard must reject the second.
     function test_sameObservationUnderANewRegistryVersionIsAlreadyConsumed() public {
-        uint64 ts = uint64(block.timestamp);
+        uint64 ts = uint64(block.timestamp) * 1000;
         bytes memory fields = _fields(7, bytes32("v"), "grace");
 
         IVerifier.Attestation memory first = signer.attestFields(SOURCE, fields, MIN_SIGS, ts);

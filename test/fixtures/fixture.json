@@ -3,7 +3,7 @@
   "payloadKind": "cross-language-golden-vector",
   "registeredNodeCount": 12,
   "registryVersion": 12,
-  "messageHash": "0xa3e58f5c157c98cad4fd8478fd39b18da85f4ad2d581db06b724f53b55afc5b3",
+  "messageHash": "0x58489d3ded5f129c6fca09a174ff0dcf35c58f70c560e2d5ce538ef10c3bbb3e",
   "nodeIndexesOneBased": [
     5,
     6,
@@ -46,11 +46,11 @@
     "registryVersion": 12,
     "signaturesRequired": 5,
     "value": "0xc6d8f1c0fdb8997313cbc4bc43b46af78589ba4bb9036707097db8b33879d6c6",
-    "canonicalTimestamp": 1700034927
+    "timestamp": 1700034927000
   },
   "schnorrSignature": {
-    "signature": "0x9f52f4fd6b2f82086803269007cbda35cf024c40af57160b7472817e2691ef73",
-    "commitment": "0xAFF31ae9E8f7624c9F8c149f1f12BB00f1606C10",
+    "signature": "0x956e684ea6710c54bb7d5b0b3256e1c2d1e77cc84607ad575b5f95fdd210aac6",
+    "commitment": "0xec61E25B5a06F0a3F9048356b23E98cF775974b9",
     "signersBitmap": 2032
   }
 }

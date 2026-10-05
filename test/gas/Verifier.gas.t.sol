@@ -39,10 +39,18 @@ contract VerifierGasTest is VerifierTestBase {
         benchmark.target = new Verifier(address(this), 2);
         _addNodes(benchmark.target, scenario.nodeCount);
         (benchmark.firstUpdate, benchmark.firstSignature) = _buildVerifyCall(
-            benchmark.target, scenario.threshold, keccak256("MOLPHA_VERIFY_GAS_JOB"), bytes32(uint256(1)), 1_700_000_001
+            benchmark.target,
+            scenario.threshold,
+            keccak256("MOLPHA_VERIFY_GAS_JOB"),
+            bytes32(uint256(1)),
+            _ms(1_700_000_001)
         );
         (benchmark.secondUpdate, benchmark.secondSignature) = _buildVerifyCall(
-            benchmark.target, scenario.threshold, keccak256("MOLPHA_VERIFY_GAS_JOB"), bytes32(uint256(2)), 1_700_000_002
+            benchmark.target,
+            scenario.threshold,
+            keccak256("MOLPHA_VERIFY_GAS_JOB"),
+            bytes32(uint256(2)),
+            _ms(1_700_000_002)
         );
         benchmark.firstCalldataCost = _calldataCost(
             abi.encodeCall(IVerifier.verify, (_attestation(benchmark.firstUpdate, benchmark.firstSignature), 0))

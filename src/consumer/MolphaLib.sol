@@ -137,12 +137,12 @@ library MolphaLib {
 
     /// @notice Accept only strictly newer attestations for one logical feed.
     /// @dev Call before any external interaction (checks-effects-interactions). As a side effect
-    ///      this narrows the timestamp-grinding window: a grinded `canonicalTimestamp` must still
+    ///      this narrows the timestamp-grinding window: a grinded `timestamp` must still
     ///      exceed the last one accepted.
     function acceptNewer(Latest storage l, IVerifier.AttestationPayload calldata p) internal {
         uint64 last = l.lastTimestamp;
-        if (p.canonicalTimestamp <= last) revert NotNewer(last, p.canonicalTimestamp);
-        l.lastTimestamp = p.canonicalTimestamp;
+        if (p.timestamp <= last) revert NotNewer(last, p.timestamp);
+        l.lastTimestamp = p.timestamp;
     }
 
     /// @notice Accept each attestation at most once, in any order.
@@ -153,14 +153,14 @@ library MolphaLib {
         c.seen[key] = true;
     }
 
-    /// @notice Identity of one logical update: `keccak256(sourceId || canonicalTimestamp)`.
+    /// @notice Identity of one logical update: `keccak256(sourceId || timestamp)`.
     /// @dev `registryVersion` is DELIBERATELY EXCLUDED. During the registry grace window the same
-    ///      `(sourceId, canonicalTimestamp)` can be attested under two consecutive registry
+    ///      `(sourceId, timestamp)` can be attested under two consecutive registry
     ///      versions with different selection groups. Both describe the same observation, and a
     ///      consumer must treat them as one update — including it would let the second version
     ///      replay the first. Both operands are fixed-size, so the packed encoding is unambiguous.
     function replayKey(IVerifier.AttestationPayload calldata p) internal pure returns (bytes32) {
-        return keccak256(abi.encodePacked(p.sourceId, p.canonicalTimestamp));
+        return keccak256(abi.encodePacked(p.sourceId, p.timestamp));
     }
 
     // ---------------------------------------------------------------------

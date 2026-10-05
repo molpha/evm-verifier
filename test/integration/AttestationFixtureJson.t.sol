@@ -34,7 +34,8 @@ contract AttestationFixtureJsonTest is Test {
 
         uint256 nodeCount = json.readUint(".registeredNodeCount");
         uint256 buffer = json.readUint(".redundancyBuffer");
-        vm.warp(json.readUint(".cases[0].attestation.payload.canonicalTimestamp"));
+        // The payload carries unix milliseconds; the chain clock is in seconds.
+        vm.warp(json.readUint(".cases[0].attestation.payload.timestamp") / 1000);
 
         verifier = new Verifier(address(this), buffer);
         string memory keys = vm.readFile(json.readString(".keysFrom"));
@@ -105,7 +106,7 @@ contract AttestationFixtureJsonTest is Test {
                 sourceId: json.readBytes32(string.concat(p, "payload.sourceId")),
                 registryVersion: uint32(json.readUint(string.concat(p, "payload.registryVersion"))),
                 signaturesRequired: uint8(json.readUint(string.concat(p, "payload.signaturesRequired"))),
-                canonicalTimestamp: uint64(json.readUint(string.concat(p, "payload.canonicalTimestamp")))
+                timestamp: uint64(json.readUint(string.concat(p, "payload.timestamp")))
             }),
             signature: IVerifier.SchnorrSignature({
                 signature: json.readBytes32(string.concat(p, "signature.signature")),

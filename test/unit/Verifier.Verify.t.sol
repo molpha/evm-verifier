@@ -13,7 +13,7 @@ contract VerifierVerifyTest is VerifierTestBase {
     function test_verify_acceptsThresholdSignature() public {
         _addNodes(verifier, 5);
         (IVerifier.AttestationPayload memory update, IVerifier.SchnorrSignature memory schnorr) =
-            _buildVerifyCall(verifier, 3, bytes32("job"), bytes32("value"), 1_700_000_000);
+            _buildVerifyCall(verifier, 3, bytes32("job"), bytes32("value"), _ms(1_700_000_000));
 
         _assertVerifyOk(verifier, update, schnorr);
     }
@@ -21,7 +21,7 @@ contract VerifierVerifyTest is VerifierTestBase {
     function test_verify_acceptsMoreSignersThanThreshold() public {
         _addNodes(verifier, 5);
         (IVerifier.AttestationPayload memory update, IVerifier.SchnorrSignature memory schnorr) =
-            _buildVerifyCall(verifier, 3, 5, bytes32("job"), bytes32("value"), 1_700_000_001);
+            _buildVerifyCall(verifier, 3, 5, bytes32("job"), bytes32("value"), _ms(1_700_000_001));
 
         _assertVerifyOk(verifier, update, schnorr);
     }
@@ -30,7 +30,7 @@ contract VerifierVerifyTest is VerifierTestBase {
         _addNodes(verifier, 4);
         // Sign inside the grace window relative to the upcoming retirement timestamp.
         (IVerifier.AttestationPayload memory historicalUpdate, IVerifier.SchnorrSignature memory schnorr) =
-            _buildVerifyCall(verifier, 2, bytes32("historical"), bytes32("value"), uint64(block.timestamp + 30));
+            _buildVerifyCall(verifier, 2, bytes32("historical"), bytes32("value"), _ms(block.timestamp + 30));
         uint256 historicalVersion = verifier.getRegistryVersion();
 
         _appendNode(verifier, 5);
@@ -45,7 +45,7 @@ contract VerifierVerifyTest is VerifierTestBase {
         _addNodes(verifier, 5);
         verifier.setRedundancyBuffer(0);
         (IVerifier.AttestationPayload memory update, IVerifier.SchnorrSignature memory schnorr) =
-            _buildVerifyCall(verifier, 3, bytes32("no buffer"), bytes32("value"), 1_700_000_003);
+            _buildVerifyCall(verifier, 3, bytes32("no buffer"), bytes32("value"), _ms(1_700_000_003));
 
         _assertVerifyOk(verifier, update, schnorr);
     }
@@ -53,7 +53,7 @@ contract VerifierVerifyTest is VerifierTestBase {
     function test_verify_capsSelectionGroupAtNodeCount() public {
         _addNodes(verifier, 2);
         (IVerifier.AttestationPayload memory update, IVerifier.SchnorrSignature memory schnorr) =
-            _buildVerifyCall(verifier, 2, bytes32("capped"), bytes32("value"), 1_700_000_004);
+            _buildVerifyCall(verifier, 2, bytes32("capped"), bytes32("value"), _ms(1_700_000_004));
 
         assertEq(schnorr.signersBitmap, 3);
         _assertVerifyOk(verifier, update, schnorr);
@@ -62,7 +62,7 @@ contract VerifierVerifyTest is VerifierTestBase {
     function test_verify_returnsFalseForTamperedSignature() public {
         _addNodes(verifier, 5);
         (IVerifier.AttestationPayload memory update, IVerifier.SchnorrSignature memory schnorr) =
-            _buildVerifyCall(verifier, 3, bytes32("job"), bytes32("value"), 1_700_000_005);
+            _buildVerifyCall(verifier, 3, bytes32("job"), bytes32("value"), _ms(1_700_000_005));
         schnorr.signature = bytes32(uint256(schnorr.signature) ^ 1);
 
         _assertVerifyFails(verifier, update, schnorr);
@@ -71,7 +71,7 @@ contract VerifierVerifyTest is VerifierTestBase {
     function test_verify_returnsFalseForOutOfRangeSignatureScalar() public {
         _addNodes(verifier, 5);
         (IVerifier.AttestationPayload memory update, IVerifier.SchnorrSignature memory schnorr) =
-            _buildVerifyCall(verifier, 3, bytes32("job"), bytes32("value"), 1_700_000_006);
+            _buildVerifyCall(verifier, 3, bytes32("job"), bytes32("value"), _ms(1_700_000_006));
         schnorr.signature = bytes32(LibSecp256k1.Q());
 
         _assertVerifyFails(verifier, update, schnorr);
@@ -80,7 +80,7 @@ contract VerifierVerifyTest is VerifierTestBase {
     function test_verify_returnsFalseForNonCanonicalSignatureScalarSPlusQ() public {
         _addNodes(verifier, 5);
         (IVerifier.AttestationPayload memory update, IVerifier.SchnorrSignature memory schnorr) =
-            _buildVerifyCall(verifier, 3, bytes32("job"), bytes32("value"), 1_700_000_006);
+            _buildVerifyCall(verifier, 3, bytes32("job"), bytes32("value"), _ms(1_700_000_006));
         schnorr.signature = bytes32(uint256(1) + LibSecp256k1.Q());
 
         _assertVerifyFails(verifier, update, schnorr);
@@ -90,7 +90,7 @@ contract VerifierVerifyTest is VerifierTestBase {
         _addNodes(verifier, 5);
         verifier.setRedundancyBuffer(5);
         (IVerifier.AttestationPayload memory update, IVerifier.SchnorrSignature memory schnorr) =
-            _buildVerifyCall(verifier, 3, bytes32("job"), bytes32("value"), 1_700_000_007);
+            _buildVerifyCall(verifier, 3, bytes32("job"), bytes32("value"), _ms(1_700_000_007));
 
         bytes32 originalSourceId = update.sourceId;
 
@@ -105,7 +105,7 @@ contract VerifierVerifyTest is VerifierTestBase {
 
         IVerifier.AttestationPayload memory tamperedTimestamp = update;
         tamperedTimestamp.sourceId = originalSourceId;
-        tamperedTimestamp.canonicalTimestamp += 1;
+        tamperedTimestamp.timestamp += 1;
         _assertVerifyFails(verifier, tamperedTimestamp, schnorr, VerifyCodes.R_BAD_SIGNATURE);
 
         IVerifier.AttestationPayload memory tamperedThreshold = update;
@@ -118,7 +118,7 @@ contract VerifierVerifyTest is VerifierTestBase {
         _addNodes(verifier, 5);
         verifier.setRedundancyBuffer(5);
         (IVerifier.AttestationPayload memory update, IVerifier.SchnorrSignature memory schnorr) =
-            _buildVerifyCall(verifier, 3, bytes32("job"), bytes32("value"), 1_700_000_008);
+            _buildVerifyCall(verifier, 3, bytes32("job"), bytes32("value"), _ms(1_700_000_008));
 
         uint256 removedBit = schnorr.signersBitmap & (~schnorr.signersBitmap + 1);
         uint256 addedBit;
@@ -137,11 +137,7 @@ contract VerifierVerifyTest is VerifierTestBase {
     function test_verify_returnsFalseForInvalidRegistryVersion() public {
         bytes32 sourceId = bytes32("job");
         IVerifier.AttestationPayload memory update = IVerifier.AttestationPayload({
-            sourceId: sourceId,
-            registryVersion: 1,
-            signaturesRequired: 1,
-            value: bytes32("value"),
-            canonicalTimestamp: 1
+            sourceId: sourceId, registryVersion: 1, signaturesRequired: 1, value: bytes32("value"), timestamp: 1
         });
         IVerifier.SchnorrSignature memory schnorr;
 
@@ -151,11 +147,7 @@ contract VerifierVerifyTest is VerifierTestBase {
     function test_verify_returnsFalseWhenRegistryHasNoNodes() public {
         bytes32 sourceId = bytes32("job");
         IVerifier.AttestationPayload memory update = IVerifier.AttestationPayload({
-            sourceId: sourceId,
-            registryVersion: 0,
-            signaturesRequired: 1,
-            value: bytes32("value"),
-            canonicalTimestamp: 1
+            sourceId: sourceId, registryVersion: 0, signaturesRequired: 1, value: bytes32("value"), timestamp: 1
         });
         IVerifier.SchnorrSignature memory schnorr =
             IVerifier.SchnorrSignature({signature: bytes32(uint256(1)), commitment: address(1), signersBitmap: 1});
@@ -171,7 +163,7 @@ contract VerifierVerifyTest is VerifierTestBase {
             registryVersion: uint32(verifier.getRegistryVersion()),
             signaturesRequired: 0,
             value: bytes32("value"),
-            canonicalTimestamp: 1
+            timestamp: 1
         });
         IVerifier.SchnorrSignature memory schnorr;
 
@@ -181,7 +173,7 @@ contract VerifierVerifyTest is VerifierTestBase {
     function test_verify_returnsFalseForZeroSignersBitmap() public {
         _addNodes(verifier, 3);
         (IVerifier.AttestationPayload memory update, IVerifier.SchnorrSignature memory schnorr) =
-            _buildVerifyCall(verifier, 2, bytes32("job"), bytes32("value"), uint64(block.timestamp));
+            _buildVerifyCall(verifier, 2, bytes32("job"), bytes32("value"), _ms(block.timestamp));
         schnorr.signersBitmap = 0;
 
         _assertVerifyFails(verifier, update, schnorr);
@@ -190,7 +182,7 @@ contract VerifierVerifyTest is VerifierTestBase {
     function test_verify_returnsFalseForZeroSignature() public {
         _addNodes(verifier, 3);
         (IVerifier.AttestationPayload memory update, IVerifier.SchnorrSignature memory schnorr) =
-            _buildVerifyCall(verifier, 2, bytes32("job"), bytes32("value"), uint64(block.timestamp));
+            _buildVerifyCall(verifier, 2, bytes32("job"), bytes32("value"), _ms(block.timestamp));
         schnorr.signature = 0;
 
         _assertVerifyFails(verifier, update, schnorr);
@@ -199,7 +191,7 @@ contract VerifierVerifyTest is VerifierTestBase {
     function test_verify_returnsFalseForZeroCommitment() public {
         _addNodes(verifier, 3);
         (IVerifier.AttestationPayload memory update, IVerifier.SchnorrSignature memory schnorr) =
-            _buildVerifyCall(verifier, 2, bytes32("job"), bytes32("value"), uint64(block.timestamp));
+            _buildVerifyCall(verifier, 2, bytes32("job"), bytes32("value"), _ms(block.timestamp));
         schnorr.commitment = address(0);
 
         _assertVerifyFails(verifier, update, schnorr);
@@ -208,7 +200,7 @@ contract VerifierVerifyTest is VerifierTestBase {
     function test_verify_returnsFalseWhenSignerCountIsBelowThreshold() public {
         _addNodes(verifier, 5);
         (IVerifier.AttestationPayload memory update, IVerifier.SchnorrSignature memory schnorr) =
-            _buildVerifyCall(verifier, 3, bytes32("job"), bytes32("value"), uint64(block.timestamp));
+            _buildVerifyCall(verifier, 3, bytes32("job"), bytes32("value"), _ms(block.timestamp));
         schnorr.signersBitmap &= schnorr.signersBitmap - 1;
 
         _assertVerifyFails(verifier, update, schnorr);
@@ -217,7 +209,7 @@ contract VerifierVerifyTest is VerifierTestBase {
     function test_verify_returnsFalseWhenThresholdExceedsNodeCount() public {
         _addNodes(verifier, 2);
         (IVerifier.AttestationPayload memory update, IVerifier.SchnorrSignature memory schnorr) =
-            _buildVerifyCall(verifier, 2, bytes32("job"), bytes32("value"), uint64(block.timestamp));
+            _buildVerifyCall(verifier, 2, bytes32("job"), bytes32("value"), _ms(block.timestamp));
         update.signaturesRequired = 3;
 
         _assertVerifyFails(verifier, update, schnorr);
@@ -226,7 +218,7 @@ contract VerifierVerifyTest is VerifierTestBase {
     function test_verify_returnsFalseForSignerOutsideSelectedGroup() public {
         _addNodes(verifier, 6);
         (IVerifier.AttestationPayload memory update, IVerifier.SchnorrSignature memory schnorr) =
-            _buildVerifyCall(verifier, 3, bytes32("job"), bytes32("value"), uint64(block.timestamp));
+            _buildVerifyCall(verifier, 3, bytes32("job"), bytes32("value"), _ms(block.timestamp));
         schnorr.signersBitmap |= uint256(1) << 255;
 
         _assertVerifyFails(verifier, update, schnorr);
@@ -250,7 +242,7 @@ contract VerifierVerifyTest is VerifierTestBase {
             registryVersion: uint32(verifier.getRegistryVersion()),
             signaturesRequired: 2,
             value: bytes32("value"),
-            canonicalTimestamp: 1_700_000_009
+            timestamp: _ms(1_700_000_009)
         });
         IVerifier.SchnorrSignature memory schnorr =
             IVerifier.SchnorrSignature({signature: bytes32(uint256(1)), commitment: address(1), signersBitmap: 3});
@@ -268,7 +260,7 @@ contract VerifierVerifyTest is VerifierTestBase {
             registryVersion: uint32(verifier.getRegistryVersion()),
             signaturesRequired: 1,
             value: bytes32("edge value"),
-            canonicalTimestamp: 1_700_000_010
+            timestamp: _ms(1_700_000_010)
         });
 
         uint256 edgeBitmap = uint256(1) | (uint256(1) << 255);
@@ -293,7 +285,7 @@ contract VerifierVerifyTest is VerifierTestBase {
             registryVersion: uint32(verifier.getRegistryVersion()),
             signaturesRequired: 255,
             value: bytes32("full value"),
-            canonicalTimestamp: 1_700_000_011
+            timestamp: _ms(1_700_000_011)
         });
 
         uint256 fullSecret;
@@ -318,7 +310,7 @@ contract VerifierVerifyTest is VerifierTestBase {
         _addNodes(verifier, 5);
         uint64 ts = 1_700_000_030;
         (IVerifier.AttestationPayload memory update, IVerifier.SchnorrSignature memory schnorr) =
-            _buildVerifyCall(verifier, 3, bytes32("freshness-skip"), bytes32("value"), ts);
+            _buildVerifyCall(verifier, 3, bytes32("freshness-skip"), bytes32("value"), _ms(ts));
 
         vm.warp(ts + 1_000_000);
         _assertVerifyOk(verifier, update, schnorr, 0);
@@ -328,7 +320,7 @@ contract VerifierVerifyTest is VerifierTestBase {
         _addNodes(verifier, 5);
         uint64 ts = 1_700_000_031;
         (IVerifier.AttestationPayload memory update, IVerifier.SchnorrSignature memory schnorr) =
-            _buildVerifyCall(verifier, 3, bytes32("freshness-ok"), bytes32("value"), ts);
+            _buildVerifyCall(verifier, 3, bytes32("freshness-ok"), bytes32("value"), _ms(ts));
 
         vm.warp(ts + 100);
         _assertVerifyOk(verifier, update, schnorr, 3600);
@@ -339,7 +331,7 @@ contract VerifierVerifyTest is VerifierTestBase {
         uint64 ts = 1_700_000_032;
         uint64 maxAge = 3600;
         (IVerifier.AttestationPayload memory update, IVerifier.SchnorrSignature memory schnorr) =
-            _buildVerifyCall(verifier, 3, bytes32("freshness-stale"), bytes32("value"), ts);
+            _buildVerifyCall(verifier, 3, bytes32("freshness-stale"), bytes32("value"), _ms(ts));
 
         vm.warp(ts + maxAge + 1);
         _assertVerifyFails(verifier, update, schnorr, maxAge, VerifyCodes.R_STALE);
@@ -349,7 +341,7 @@ contract VerifierVerifyTest is VerifierTestBase {
         _addNodes(verifier, 5);
         uint64 ts = 1_700_000_033;
         (IVerifier.AttestationPayload memory update, IVerifier.SchnorrSignature memory schnorr) =
-            _buildVerifyCall(verifier, 3, bytes32("freshness-future"), bytes32("value"), ts);
+            _buildVerifyCall(verifier, 3, bytes32("freshness-future"), bytes32("value"), _ms(ts));
 
         vm.warp(ts - 1);
         _assertVerifyFails(verifier, update, schnorr, 3600, VerifyCodes.R_MALFORMED);
@@ -358,7 +350,7 @@ contract VerifierVerifyTest is VerifierTestBase {
     function testFuzz_verifyAcceptsValidSelectedCoalition(
         bytes32 sourceId,
         bytes32 value,
-        uint64 canonicalTimestamp,
+        uint64 timestamp,
         uint8 thresholdSeed,
         uint8 bufferSeed,
         uint8 signerCountSeed
@@ -372,7 +364,7 @@ contract VerifierVerifyTest is VerifierTestBase {
         uint256 signerCount = bound(signerCountSeed, threshold, groupSize);
 
         // Current version has no upper bound; only require ts >= activatesAt.
-        uint64 ts = uint64(bound(canonicalTimestamp, block.timestamp, type(uint64).max));
+        uint64 ts = uint64(bound(timestamp, block.timestamp * 1000, type(uint64).max));
 
         (IVerifier.AttestationPayload memory update, IVerifier.SchnorrSignature memory schnorr) =
             _buildVerifyCall(verifier, threshold, signerCount, sourceId, value, ts);
@@ -387,7 +379,7 @@ contract VerifierVerifyTest is VerifierTestBase {
         assertTrue(activatesAtTs > 0);
 
         (IVerifier.AttestationPayload memory update, IVerifier.SchnorrSignature memory schnorr) =
-            _buildVerifyCall(verifier, 2, bytes32("not-yet"), bytes32("value"), activatesAtTs - 1);
+            _buildVerifyCall(verifier, 2, bytes32("not-yet"), bytes32("value"), _ms(activatesAtTs - 1));
 
         _assertVerifyFails(verifier, update, schnorr, VerifyCodes.R_NOT_YET_ACTIVE);
     }
@@ -396,7 +388,7 @@ contract VerifierVerifyTest is VerifierTestBase {
         _addNodes(verifier, 4);
         uint64 ts = uint64(block.timestamp + 30);
         (IVerifier.AttestationPayload memory historicalUpdate, IVerifier.SchnorrSignature memory schnorr) =
-            _buildVerifyCall(verifier, 2, bytes32("grace-ok"), bytes32("value"), ts);
+            _buildVerifyCall(verifier, 2, bytes32("grace-ok"), bytes32("value"), _ms(ts));
         uint256 historicalVersion = verifier.getRegistryVersion();
 
         // Same-block retirement: window is [activatesAt, activatesAt + PREVIOUS_GRACE].
@@ -412,7 +404,7 @@ contract VerifierVerifyTest is VerifierTestBase {
         // Far enough past activation that same-block retirement leaves it outside grace.
         uint64 ts = uint64(block.timestamp + PREVIOUS_GRACE + 1);
         (IVerifier.AttestationPayload memory historicalUpdate, IVerifier.SchnorrSignature memory schnorr) =
-            _buildVerifyCall(verifier, 2, bytes32("expired"), bytes32("value"), ts);
+            _buildVerifyCall(verifier, 2, bytes32("expired"), bytes32("value"), _ms(ts));
         uint256 historicalVersion = verifier.getRegistryVersion();
 
         verifier.setRedundancyBuffer(1);
@@ -425,8 +417,63 @@ contract VerifierVerifyTest is VerifierTestBase {
         _addNodes(verifier, 3);
         uint64 farFuture = uint64(block.timestamp + 365 days);
         (IVerifier.AttestationPayload memory update, IVerifier.SchnorrSignature memory schnorr) =
-            _buildVerifyCall(verifier, 2, bytes32("current-unbounded"), bytes32("value"), farFuture);
+            _buildVerifyCall(verifier, 2, bytes32("current-unbounded"), bytes32("value"), _ms(farFuture));
 
         _assertVerifyOk(verifier, update, schnorr);
+    }
+
+    // ---- timestamp is unix milliseconds; clock checks run on ts / 1000 ----
+
+    function test_verify_subSecondPrecisionDoesNotChangeFreshnessOrSelection() public {
+        _addNodes(verifier, 5);
+        uint64 sec = 1_700_000_040;
+        vm.warp(sec + 10);
+        for (uint64 offset = 0; offset < 1000; offset += 333) {
+            (IVerifier.AttestationPayload memory update, IVerifier.SchnorrSignature memory schnorr) =
+                _buildVerifyCall(verifier, 3, bytes32("same-window"), bytes32("value"), _ms(sec) + offset);
+            _assertVerifyOk(verifier, update, schnorr, 3600);
+        }
+    }
+
+    function test_verify_timestampWithinTheCurrentSecondIsNotFuture() public {
+        _addNodes(verifier, 5);
+        vm.warp(1_700_000_050);
+        (IVerifier.AttestationPayload memory update, IVerifier.SchnorrSignature memory schnorr) =
+            _buildVerifyCall(verifier, 3, bytes32("edge-ok"), bytes32("value"), _ms(block.timestamp) + 999);
+        _assertVerifyOk(verifier, update, schnorr, 60);
+    }
+
+    function test_verify_timestampInTheNextSecondIsFuture() public {
+        _addNodes(verifier, 5);
+        vm.warp(1_700_000_051);
+        (IVerifier.AttestationPayload memory update, IVerifier.SchnorrSignature memory schnorr) =
+            _buildVerifyCall(verifier, 3, bytes32("edge-future"), bytes32("value"), _ms(block.timestamp + 1));
+        _assertVerifyFails(verifier, update, schnorr, 60, VerifyCodes.R_MALFORMED);
+    }
+
+    function test_verify_maxAgeBoundaryIsInclusiveInWholeSeconds() public {
+        _addNodes(verifier, 5);
+        uint64 sec = 1_700_000_060;
+        uint64 maxAge = 100;
+        (IVerifier.AttestationPayload memory update, IVerifier.SchnorrSignature memory schnorr) =
+            _buildVerifyCall(verifier, 3, bytes32("edge-age"), bytes32("value"), _ms(sec) + 999);
+
+        vm.warp(sec + maxAge);
+        _assertVerifyOk(verifier, update, schnorr, maxAge);
+        vm.warp(sec + maxAge + 1);
+        _assertVerifyFails(verifier, update, schnorr, maxAge, VerifyCodes.R_STALE);
+    }
+
+    function test_verify_notYetActiveBoundaryIsTheActivationSecond() public {
+        _addNodes(verifier, 3);
+        uint64 activatesAtTs = uint64(verifier.activatesAt(verifier.getRegistryVersion()));
+
+        (IVerifier.AttestationPayload memory early, IVerifier.SchnorrSignature memory earlySig) =
+            _buildVerifyCall(verifier, 2, bytes32("edge-before"), bytes32("value"), _ms(activatesAtTs) - 1);
+        _assertVerifyFails(verifier, early, earlySig, VerifyCodes.R_NOT_YET_ACTIVE);
+
+        (IVerifier.AttestationPayload memory on, IVerifier.SchnorrSignature memory onSig) =
+            _buildVerifyCall(verifier, 2, bytes32("edge-on"), bytes32("value"), _ms(activatesAtTs));
+        _assertVerifyOk(verifier, on, onSig);
     }
 }
