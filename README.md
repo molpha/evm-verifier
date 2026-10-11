@@ -289,7 +289,7 @@ CI runs formatting, build, normal tests, fuzz tests, and Forge lint.
 The predicted address depends on:
 
 - CREATE2 factory: `0x4e59b44847b379578588920cA78FbF26c0B4956C`
-- Salt: `keccak256("MOLPHA_VERIFIER_BREBENESKUL")`
+- Salt: `keccak256("MOLPHA_VERIFIER_CHIVCHYN")`
 - Constructor args: `initialProtocolAdmin = deployer`, `initialRedundancyBuffer = 2`
 - Compiler, optimizer, EVM version, and init code
 
@@ -481,9 +481,8 @@ Everything on the consumer surface — `interfaces/IVerifier.sol`, `consumer/Mol
 solc 0.8.4. `test-utils/MolphaTestSigner.sol` is the exception: it deploys the real `Verifier`, so it
 is pinned to `^0.8.31` and depends on solady. It is intended for Foundry.
 
-> `MolphaAddresses.VERIFIER` is `address(0)` until the audited build is deployed. Read
-> `deployments.json` for the current state; the package is published as `1.0.0-rc.N` while the
-> placeholder stands.
+> Pin `MolphaAddresses.VERIFIER` or read `deployments.json` for per-chain overrides (e.g. chains
+> without Arachnid's CREATE2 proxy).
 
 ## Security
 
