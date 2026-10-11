@@ -6,12 +6,12 @@ checked by `Verifier.verify(...)` on chain.
 The verifier accepts one data update and one aggregate Schnorr signature:
 
 ```solidity
-struct DataUpdate {
-    bytes32 feedId;
-    uint32 registryVersion;
-    uint32 signaturesRequired;
+struct AttestationPayload {
     bytes32 value;
-    uint64 canonicalTimestamp;
+    bytes32 sourceId;
+    uint32 registryVersion;
+    uint8 signaturesRequired;
+    uint64 timestamp; // unix MILLISECONDS, assigned by the gateway
 }
 
 struct SchnorrSignature {
@@ -29,11 +29,11 @@ decimal strings or variable-length byte arrays.
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `feedId` | `bytes32` | Application-defined identifier for the feed or data stream. |
+| `sourceId` | `bytes32` | Canonical identifier for the data source. |
 | `registryVersion` | `uint32` | Immutable registry snapshot used for signer selection and public-key lookup. |
-| `signaturesRequired` | `uint32` | Minimum number of selected signers required for this update. |
+| `signaturesRequired` | `uint8` | Minimum number of selected signers required for this update. |
 | `value` | `bytes32` | Application-defined value committed by the oracle nodes. |
-| `canonicalTimestamp` | `uint64` | Timestamp committed by the oracle nodes and used in deterministic signer selection. |
+| `timestamp` | `uint64` | Gateway-assigned round time in unix **milliseconds**. Signer selection reads only its 1-second window, `timestamp / 1000`; `maxAge` and registry activation compare `timestamp / 1000` with `block.timestamp`, in seconds. |
 
 `value` is intentionally opaque to the verifier. Consumers that need prices,
 round ids, decimals, status flags, or multi-word payloads should define their own
@@ -44,9 +44,9 @@ canonical encoding and hash it into this `bytes32` value.
 `signersBitmap` identifies the nodes whose keys were included in the aggregate
 signature.
 
-- Registry node indices are one-based.
+- Registry node indices are zero-based.
 - Bitmap positions are zero-based.
-- Node index `i` maps to bit `i - 1`.
+- Node index `i` maps to bit `i`.
 - At most 256 active nodes can exist in a registry snapshot, so the bitmap fits
   in one `uint256`.
 - Bits outside the selected signer group are invalid, even if the aggregate
@@ -55,12 +55,12 @@ signature.
 Example:
 
 ```text
-node index 1 -> bit 0 -> 0x...0001
-node index 2 -> bit 1 -> 0x...0002
-node index 8 -> bit 7 -> 0x...0080
+node index 0 -> bit 0 -> 0x...0001
+node index 1 -> bit 1 -> 0x...0002
+node index 7 -> bit 7 -> 0x...0080
 ```
 
-For nodes `1`, `2`, and `8`, the bitmap is:
+For nodes `0`, `1`, and `7`, the bitmap is:
 
 ```text
 0b10000011
@@ -78,11 +78,14 @@ For each update, the verifier derives a deterministic signer-selection seed:
 ```text
 selectionSeed = keccak256(
   keccak256("MOLPHA_SELECTION_V1") ||
-  feedId ||
+  sourceId ||
   registryVersion ||
-  canonicalTimestamp
+  timestamp / 1000      // uint64, the 1 s window index
 )
 ```
+
+Timestamp precision finer than one second never changes who is selected. Changing the
+1000 ms window is a consensus break and must bump this prefix.
 
 The selected group size is:
 
@@ -105,14 +108,16 @@ The aggregate Schnorr signature signs this digest:
 ```text
 message = keccak256(
   keccak256("MOLPHA_MESSAGE_V1") ||
-  feedId ||
-  registryVersion ||
-  signaturesRequired ||
-  signersBitmap ||
-  value ||
-  canonicalTimestamp
+  value ||                        // bytes32
+  sourceId ||                     // bytes32
+  registryVersion ||              // uint32
+  signaturesRequired ||           // uint8
+  timestamp ||           // uint64, unix milliseconds
+  signersBitmap                   // uint256
 )
 ```
+
+The preimage is 141 bytes.
 
 The `signersBitmap` is part of the signed message. Changing the signer coalition
 after signing changes the digest and must invalidate the signature.
@@ -162,7 +167,7 @@ of possession from one verifier deployment into another.
 `verify(...)` returns `true` only when the aggregate Schnorr signature is valid
 for the selected signer coalition and the exact signed message.
 
-The verifier reverts for malformed or unauthorized inputs, including:
+All other outcomes return `false`, including:
 
 - Unknown `registryVersion`
 - Empty registry snapshot
@@ -173,8 +178,7 @@ The verifier reverts for malformed or unauthorized inputs, including:
 - Zero signature or zero commitment
 - Signature scalar outside the secp256k1 scalar field
 - Aggregate public key at infinity
-
-A syntactically valid call with an incorrect Schnorr signature returns `false`.
+- Incorrect Schnorr signature for the signed message
 
 ## Consumer responsibilities
 
@@ -183,10 +187,30 @@ specified fields. It does not define application semantics for those fields.
 
 Consumers are responsible for:
 
-- Interpreting `feedId` and `value`
+- Interpreting `sourceId` and `value`
 - Enforcing timestamp freshness and monotonicity
 - Rejecting stale, replayed, or out-of-order updates
 - Choosing acceptable `registryVersion` and `signaturesRequired` values
 - Enforcing feed authorization for the consuming application
 - Handling decimals, scale, status, and invalid-value sentinels in their own
   payload format
+
+## Attestation container
+
+`AttestationPayload` and `SchnorrSignature` are carried together:
+
+```solidity
+struct Attestation {
+    AttestationPayload payload;
+    SchnorrSignature   signature;
+}
+
+function verify(Attestation calldata attestation, uint64 maxAge)
+    external view returns (bool success, uint8 code);
+```
+
+The rename and the wrapper are container-level only. Field order, the message preimage, the
+selection seed, and the proof-of-possession digest are all unchanged, so signatures produced by the
+Cairo, Rust, and node signers keep verifying without modification. Both members are static structs,
+so `Attestation` encodes inline in the calldata head — byte-identical to passing the two members as
+separate parameters.

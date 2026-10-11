@@ -1,29 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
-pragma solidity ^0.8.31;
+pragma solidity >=0.8.4 <0.9.0;
 
 /// @title IVerifier
 /// @notice Interface for the Verifier
 interface IVerifier {
-    error BadIndex();
     error InvalidPoP();
-    error InvalidAggregatePublicKey();
     error InvalidPublicKey();
     error InvalidRegistryVersion();
-    error InvalidSignatureScalar();
     error MaxNodesReached();
-    error NoNodes();
-    error NodeAlreadyAdded();
-    error NotEnoughSignatures();
-    error NotNode();
-    error NotProtocolAdmin();
+    error NodeNotEligible();
+    error IndexWitnessMismatch();
     error RedundancyBufferExceedsMax();
-    error SignerNotSelected();
     error ZeroAddress();
     error ZeroAdmin();
-    error ZeroCommitment();
-    error ZeroSignature();
-    error ZeroSignaturesRequired();
-    error ZeroSignersBitmap();
 
     /// @notice Generic Schnorr proof data used for PoP and aggregate verification inputs.
     /// @param signature Schnorr scalar `s`
@@ -34,45 +23,66 @@ interface IVerifier {
     }
 
     /// @notice Schnorr signature data struct containing aggregated signature information
-    /// @dev `signersBitmap` uses 0-based bit positions: bit (i-1) set iff 1-based signer index i signed.
+    /// @dev `signersBitmap` uses 0-based bit positions: bit i set iff blob index i signed.
     ///      At most 256 nodes; bits outside the active node count must be zero.
     /// @param signature The aggregated Schnorr signature
     /// @param commitment The commitment point used in the signature
-    /// @param signersBitmap Bitmap of participating signer indices (1-based index i → bit i-1)
+    /// @param signersBitmap Bitmap of participating signer indices (bit i ↔ 0-based blob index i)
     struct SchnorrSignature {
         bytes32 signature;
         address commitment;
         uint256 signersBitmap;
     }
 
-    struct DataUpdate {
-        bytes32 feedId;
-        uint32 registryVersion;
-        uint32 signaturesRequired;
+    /// @notice The signed half of an attestation: everything covered by the aggregate signature.
+    /// @dev Field order is load-bearing. It defines the signed preimage built by
+    ///      `VerifierLib.constructMessage` and mirrored by the Cairo, Rust, and node signers.
+    ///      Never reorder, insert, or widen a field without a coordinated cross-VM release.
+    /// @param value Opaque 32-byte result. Either one ABI-encoded word (kind A) or
+    ///        `keccak256(abi.encode(fields...))` (kind B). The verifier never learns which.
+    /// @param sourceId Canonical data source identifier
+    /// @param registryVersion The registry version
+    /// @param signaturesRequired The number of signatures required
+    /// @param timestamp Gateway-assigned round time in unix MILLISECONDS. Committee selection
+    ///        reads `timestamp / 1000`; `maxAge` and registry activation are in seconds, so
+    ///        compare against `block.timestamp` using `timestamp / 1000`.
+    struct AttestationPayload {
         bytes32 value;
-        uint64 canonicalTimestamp;
+        bytes32 sourceId;
+        uint32 registryVersion;
+        uint8 signaturesRequired;
+        uint64 timestamp;
+    }
+
+    /// @notice A signed payload: what a consumer receives and forwards to `verify`.
+    /// @dev Both members are static structs, so `Attestation` is itself static and encodes
+    ///      inline in the calldata head — the wrapper costs nothing over passing the two
+    ///      members separately.
+    /// @param payload The signed fields
+    /// @param signature The aggregate Schnorr signature over `payload`
+    struct Attestation {
+        AttestationPayload payload;
+        SchnorrSignature signature;
     }
 
     /// @notice Emitted when a new node is added to the set
     /// @param node The address of the new node
-    /// @param index The index assigned to the new node
+    /// @param index The 0-based blob index assigned to the new node
     /// @param rawKeysPointer The storage pointer to the updated raw keys array
     event LogNodeAdded(address indexed node, uint256 index, address rawKeysPointer);
 
     /// @notice Emitted when a node is removed from the set
     /// @param node The address of the removed node
-    /// @param oldIndex The previous index of the removed node
+    /// @param oldIndex The previous 0-based blob index of the removed node
     /// @param rawKeysPointer The storage pointer to the updated raw keys array
     event LogNodeRemoved(address indexed node, uint256 oldIndex, address rawKeysPointer);
-
-    /// @notice Emitted when the protocol admin role is transferred
-    /// @param previousAdmin The previous protocol admin
-    /// @param newAdmin The new protocol admin
-    event LogProtocolAdminTransferred(address indexed previousAdmin, address indexed newAdmin);
 
     /// @notice Emitted when the redundancy buffer is updated
     /// @param newRedundancyBuffer The new redundancy buffer value
     event LogRedundancyBufferUpdated(uint256 newRedundancyBuffer);
+
+    /// @notice Emitted after every registry mutation from the common transition tail
+    event RegistryAdvanced(uint256 indexed newVersion, bytes32 newRoot, uint8 op);
 
     /// @notice Add a new node to the verifier
     /// @param compressedPubKey Compressed public key of the node
@@ -80,22 +90,29 @@ interface IVerifier {
     function addNode(bytes memory compressedPubKey, SchnorrProof calldata pop) external;
 
     /// @notice Remove a node from the verifier
-    /// @param node Address of the node to remove
-    function removeNode(address node) external;
-
-    /// @notice Transfer the protocol admin role to a new address
-    /// @param newProtocolAdmin The address of the new protocol admin
-    function transferProtocolAdmin(address newProtocolAdmin) external;
+    /// @param node The address of the node to remove
+    /// @param index 0-based blob index of the node to remove
+    function removeNode(address node, uint256 index) external;
 
     /// @notice Set the redundancy buffer used when deriving the signer group size
+    /// @dev Publishes a new registry version rather than editing the current one, so a signature
+    ///      that verified under the old buffer keeps verifying against its own version.
     /// @param newRedundancyBuffer The new redundancy buffer (`groupSize = signaturesRequired + redundancyBuffer`)
     function setRedundancyBuffer(uint256 newRedundancyBuffer) external;
 
-    /// @notice Verify a Schnorr signature
-    /// @param dataUpdate The data update
-    /// @param schnorrData The Schnorr signature data
-    /// @notice returns true if the signature is valid, false otherwise
-    function verify(DataUpdate calldata dataUpdate, SchnorrSignature calldata schnorrData) external view returns (bool);
+    /// @notice The redundancy buffer in force for the current registry version
+    function redundancyBuffer() external view returns (uint256);
+
+    /// @notice Verify an attestation's aggregate Schnorr signature
+    /// @dev Total function: never reverts on the verification path. Every rejection is
+    ///      `(false, code)`. Consumers that want reverting semantics should use `MolphaLib`.
+    /// @param attestation The signed payload and its aggregate signature
+    /// @param maxAge Maximum age in seconds for `attestation.payload.timestamp / 1000` relative
+    ///        to `block.timestamp` (freshness is second-resolution; the timestamp itself is unix
+    ///        milliseconds). Pass `0` to skip the freshness check.
+    /// @return success True when the signature is valid
+    /// @return code Result code; see `VerifyCodes`
+    function verify(Attestation calldata attestation, uint64 maxAge) external view returns (bool success, uint8 code);
 
     /// @notice Get the current registry version
     /// @return registryVersion The current registry version
@@ -110,24 +127,37 @@ interface IVerifier {
     /// @return registryPointer The registry pointer for the specific registry version
     function getRegistryPointer(uint256 registryVersion) external view returns (address registryPointer);
 
-    /// @notice Check if a node is currently registered
-    /// @param node Address of the node
-    /// @return isActive Whether the node is active
-    function isNode(address node) external view returns (bool isActive);
-
     /// @notice Get the total number of nodes in the verifier
     /// @return totalNodes The total number of nodes
     function getTotalNodes() external view returns (uint256 totalNodes);
 
-    /// @notice Get the hash of the nodes set
-    /// @return hash The hash of the nodes set
-    function getNodesSetHash() external view returns (bytes32 hash);
+    /// @notice Membership status of `node`: `0` never, `1` active, `2` retired
+    function nodeStatus(address node) external view returns (uint8);
 
-    /// @notice Plain-sum aggregate pubkey over the full registered signer set (uncompressed x, y)
-    function getAggregateKey() external view returns (uint256 x, uint256 y);
+    /// @notice Whether `node` is currently registered in the live registry version
+    function isNode(address node) external view returns (bool);
 
-    /// @notice Get the index of a node (alternative name for compatibility)
-    /// @param node Address of the node
-    /// @return index The index of the node
-    function getNodeIndex(address node) external view returns (uint256 index);
+    /// @notice Get the chained registry root for the current version
+    /// @return root The registry root
+    function getRegistryRoot() external view returns (bytes32 root);
+
+    /// @notice Get the chained registry root for a specific registry version
+    /// @param registryVersion The registry version
+    /// @return root The registry root
+    function getRegistryRoot(uint256 registryVersion) external view returns (bytes32 root);
+
+    /// @notice Activation timestamp for a registry version (`block.timestamp` at publish)
+    /// @param registryVersion The registry version
+    /// @return ts Unix seconds when the version became live
+    function activatesAt(uint256 registryVersion) external view returns (uint256 ts);
+
+    /// @notice Retirement timestamp for a registry version (`activatesAt` of the successor)
+    /// @param registryVersion The registry version
+    /// @return ts Unix seconds when the version was superseded
+    function retiredAt(uint256 registryVersion) external view returns (uint256 ts);
+
+    /// @notice Whether `registryVersion` is the current head of the version chain
+    /// @param registryVersion The registry version
+    /// @return latest True when this version is the live registry head
+    function isLatestVersion(uint256 registryVersion) external view returns (bool latest);
 }

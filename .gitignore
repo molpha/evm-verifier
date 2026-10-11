@@ -17,3 +17,6 @@
 /rpc-urls.txt
 /trace.json
 deployments
+
+# npm staging output
+/npm-dist/

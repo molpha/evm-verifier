@@ -1,0 +1,22 @@
+{
+  "$comment": "Canonical Molpha deployment record. Mirrors src/consumer/MolphaAddresses.sol for off-chain tooling and for chains lacking Arachnid's CREATE2 proxy. test/deploy/MolphaAddresses.t.sol asserts the two never drift.",
+  "verifier": {
+    "salt": "0x65f8c5b96cad31c95bf82d305265f370b90a3fb13b903b2bb53f923cd800d835",
+    "create2Factory": "0x4e59b44847b379578588920cA78FbF26c0B4956C",
+    "initialProtocolAdmin": "0x6c6bCc50dDAA6884125e1060DCd6363F8866380A",
+    "initialRedundancyBuffer": 2,
+    "initCodeHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+    "address": "0x0000000000000000000000000000000000000000",
+    "status": "provisional",
+    "statusNote": "No deployment exists for the verify(Attestation,uint64) interface yet. Set address and initCodeHash from the audited build, then tag v1.0.0.",
+    "chains": {}
+  },
+  "deprecated": [
+    {
+      "address": "0xE1fd792b7E54e0C8F0Cd1c8055E446ff36d233eB",
+      "reason": "Pre-Attestation interface: verify(DataUpdate,SchnorrSignature,uint256). Also deployed with salt keccak256(\"MOLPHA_VERIFIER_BREBELESKUL\") (0x2d6820e0df5e0039969f938c0939fa766da034312fecc9e082ac5089c9c7deaf), a spelling no longer present in the repo, and with the deployer as protocol admin rather than the pinned PROTOCOL_ADMIN.",
+      "chains": ["11155111", "43113"],
+      "migrate": "Repoint to the address published under .verifier once v1.0.0 is tagged."
+    }
+  ]
+}
