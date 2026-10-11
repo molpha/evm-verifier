@@ -1,0 +1,26 @@
+{
+  "$comment": "Canonical Molpha deployment record. Mirrors src/consumer/MolphaAddresses.sol for off-chain tooling and for chains lacking Arachnid's CREATE2 proxy. test/deploy/MolphaAddresses.t.sol asserts the two never drift.",
+  "verifier": {
+    "salt": "0x1a13ffd79d1e3978d58b0c0917160c77790755e53333227fc04e68f2963e93cc",
+    "create2Factory": "0x4e59b44847b379578588920cA78FbF26c0B4956C",
+    "initialProtocolAdmin": "0x6c6bCc50dDAA6884125e1060DCd6363F8866380A",
+    "initialRedundancyBuffer": 2,
+    "initCodeHash": "0x78582ede425b4fc6bc4708b800a08a2cb94a86a75778f2a5302ca4c7a83a31a6",
+    "address": "0xA6e49A3A1caf3E110cC04765B934C8FF118C2568",
+    "status": "deployed",
+    "chains": {
+      "97": "0xA6e49A3A1caf3E110cC04765B934C8FF118C2568",
+      "43113": "0xA6e49A3A1caf3E110cC04765B934C8FF118C2568",
+      "11155111": "0xA6e49A3A1caf3E110cC04765B934C8FF118C2568",
+      "421614": "0xA6e49A3A1caf3E110cC04765B934C8FF118C2568"
+    }
+  },
+  "deprecated": [
+    {
+      "address": "0xE1fd792b7E54e0C8F0Cd1c8055E446ff36d233eB",
+      "reason": "Pre-Attestation interface: verify(DataUpdate,SchnorrSignature,uint256). Also deployed with salt keccak256(\"MOLPHA_VERIFIER_BREBELESKUL\") (0x2d6820e0df5e0039969f938c0939fa766da034312fecc9e082ac5089c9c7deaf), a spelling no longer present in the repo, and with the deployer as protocol admin rather than the pinned PROTOCOL_ADMIN.",
+      "chains": ["11155111", "43113"],
+      "migrate": "Repoint to the address published under .verifier once v1.0.0 is tagged."
+    }
+  ]
+}

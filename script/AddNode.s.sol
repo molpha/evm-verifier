@@ -6,7 +6,7 @@ import {stdJson} from "forge-std/StdJson.sol";
 import {Verifier} from "../src/Verifier.sol";
 import {IVerifier} from "../src/interfaces/IVerifier.sol";
 import {LibSecp256k1} from "../src/libs/LibSecp256k1.sol";
-import {PopSignLib} from "./libs/PopSignLib.sol";
+import {MolphaSigLib} from "../src/test-utils/MolphaSigLib.sol";
 
 bytes32 constant POP_DOMAIN = keccak256("MOLPHA_VERIFIER_V1");
 
@@ -40,7 +40,7 @@ contract AddNode is Script {
 
         uint256 adminKey = vm.envUint("PRIVATE_KEY");
         address admin = vm.addr(adminKey);
-        if (verifier.protocolAdmin() != admin) revert PrivateKeyNotProtocolAdmin();
+        if (verifier.owner() != admin) revert PrivateKeyNotProtocolAdmin();
         vm.startBroadcast(adminKey);
 
         for (uint256 i = 0; i < nodes.length; ++i) {
@@ -49,7 +49,6 @@ contract AddNode is Script {
             console2.log("--- node", i);
             console2.log("  address:", node);
             verifier.addNode(nodes[i].compressedPubKey, nodes[i].pop);
-            console2.log("  index:", verifier.getNodeIndex(node));
         }
 
         vm.stopBroadcast();
@@ -94,6 +93,13 @@ contract AddNode is Script {
             string memory base = string.concat(".nodes[", vm.toString(i), "]");
             if (json.keyExists(string.concat(base, ".privateKey"))) {
                 nodes[i] = _fromPrivateKey(verifierAddr, json.readUint(string.concat(base, ".privateKey")));
+            } else if (json.keyExists(string.concat(base, ".evm.privateKey"))) {
+                // Accept the manifest emitted by the Solana node-registration script so one
+                // ordered key set can initialize both verifier registries in cross-VM tests.
+                nodes[i] = _fromPrivateKey(
+                    verifierAddr,
+                    vm.parseUint(string.concat("0x", json.readString(string.concat(base, ".evm.privateKey"))))
+                );
             } else {
                 nodes[i].compressedPubKey = json.readBytes(string.concat(base, ".compressedPubKey"));
                 nodes[i].pop = IVerifier.SchnorrProof({
@@ -115,12 +121,12 @@ contract AddNode is Script {
         });
     }
 
-    function _fromPrivateKey(address verifierAddr, uint256 nodeSk) private pure returns (NodeCred memory node) {
+    function _fromPrivateKey(address verifierAddr, uint256 nodeSk) private view returns (NodeCred memory node) {
         LibSecp256k1.Point memory pubkey = LibSecp256k1.mulAffine(LibSecp256k1.G(), nodeSk);
         node.compressedPubKey = LibSecp256k1.compress(pubkey);
 
         bytes32 digest = keccak256(abi.encodePacked(POP_DOMAIN, verifierAddr, node.compressedPubKey));
-        (bytes32 sig, address cmt) = PopSignLib.sign(pubkey, nodeSk, digest, 0);
+        (bytes32 sig, address cmt) = MolphaSigLib.sign(pubkey, nodeSk, digest, 0);
         node.pop = IVerifier.SchnorrProof({signature: sig, commitment: cmt});
     }
 }
