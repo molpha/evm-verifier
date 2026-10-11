@@ -14,23 +14,18 @@ pragma solidity >=0.8.4 <0.9.0;
 ///      natspec, or file paths. `test/deploy/MolphaAddresses.t.sol` re-derives everything here and
 ///      fails if any ingredient drifts.
 library MolphaAddresses {
-    /// @notice The Molpha verifier.
-    /// @dev PROVISIONAL: `address(0)` until the audited build is frozen and deployed. Nothing is
-    ///      deployed for the current `verify(Attestation,uint64)` interface yet, so a real-looking
-    ///      constant here would be worse than one that fails loudly. Consumers must not ship
-    ///      against this value while it is zero — read `deployments.json`, or wait for the tag
-    ///      that sets it (v1.0.0; pre-release tags may still carry the placeholder).
-    address internal constant VERIFIER = address(0);
+    /// @notice The Molpha verifier (`verify(Attestation,uint64)`).
+    address internal constant VERIFIER = 0xA6e49A3A1caf3E110cC04765B934C8FF118C2568;
 
     /// @notice `keccak256` of the verifier's CREATE2 init code (creation code ++ constructor args).
-    /// @dev PROVISIONAL alongside `VERIFIER`; both are set by the same release.
-    bytes32 internal constant VERIFIER_INIT_CODE_HASH = bytes32(0);
+    bytes32 internal constant VERIFIER_INIT_CODE_HASH =
+        0x78582ede425b4fc6bc4708b800a08a2cb94a86a75778f2a5302ca4c7a83a31a6;
 
     /// @notice Arachnid's deterministic deployment proxy, identical on every supported chain.
     address internal constant CREATE2_FACTORY = 0x4e59b44847b379578588920cA78FbF26c0B4956C;
 
-    /// @notice CREATE2 salt: `keccak256("MOLPHA_VERIFIER_BREBENESKUL")`.
-    bytes32 internal constant VERIFIER_SALT = 0x65f8c5b96cad31c95bf82d305265f370b90a3fb13b903b2bb53f923cd800d835;
+    /// @notice CREATE2 salt: `keccak256("MOLPHA_VERIFIER_CHIVCHYN")`.
+    bytes32 internal constant VERIFIER_SALT = 0x1a13ffd79d1e3978d58b0c0917160c77790755e53333227fc04e68f2963e93cc;
 
     /// @notice The verifier's `owner()` at deployment, and a CREATE2 constructor argument.
     address internal constant INITIAL_PROTOCOL_ADMIN = 0x6c6bCc50dDAA6884125e1060DCd6363F8866380A;
