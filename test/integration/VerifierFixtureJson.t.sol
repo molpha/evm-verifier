@@ -65,7 +65,7 @@ contract VerifierFixtureJsonTest is Test {
         assertEq(pubkeys.length, registeredNodeCount, "nodePubkeys length");
         assertEq(secretKeyStrings.length, registeredNodeCount, "secretKeys length");
 
-        Verifier validator = new Verifier(address(this), 2);
+        Verifier validator = new Verifier(address(this));
 
         for (uint256 i; i < pubkeys.length; ++i) {
             uint256 sk = vm.parseUint(secretKeyStrings[i]);

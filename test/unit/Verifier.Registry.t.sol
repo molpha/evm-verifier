@@ -14,8 +14,6 @@ contract VerifierRegistryTest is VerifierTestBase {
     using LibSecp256k1 for LibSecp256k1.Point;
     using PubkeyBlobLib for bytes;
 
-    uint256[] internal activePubkeyIndexes;
-    address[] internal activeNodes;
     address[] internal expectedRegistryPointers;
     bytes32[] internal expectedRegistryHashes;
 
@@ -59,7 +57,7 @@ contract VerifierRegistryTest is VerifierTestBase {
     }
 
     function test_addNode_rejectsProofBoundToDifferentVerifier() public {
-        Verifier other = new Verifier(address(this), 2);
+        Verifier other = new Verifier(address(this));
         uint256 secret = _secret(1);
         LibSecp256k1.Point memory pubkey = LibSecp256k1.mulAffine(LibSecp256k1.G(), secret);
         bytes memory compressed = LibSecp256k1.compress(pubkey);
@@ -109,25 +107,28 @@ contract VerifierRegistryTest is VerifierTestBase {
         assertEq(verifier.getTotalNodes(), 0);
     }
 
-    function test_removeNode_swapsLastNodeIntoRemovedMiddleIndex() public {
+    function test_removeNode_leavesAHoleAndMovesNoOtherNode() public {
         _addNodes(verifier, 3);
         address removed = pubkeys[1].toAddress();
-        address swapped = pubkeys[2].toAddress();
+        address last = pubkeys[2].toAddress();
 
         _removeNode(verifier, 1);
 
-        assertEq(verifier.getTotalNodes(), 2);
+        assertEq(verifier.getTotalNodes(), 3, "slot count: the hole is kept");
         assertEq(verifier.nodeStatus(removed), RETIRED, "removed node must be retired");
-        assertTrue(verifier.isNode(swapped), "swapped-in node must stay active");
+        assertTrue(verifier.isNode(last), "the last node stays active in its own slot");
 
-        // The blob must now be exactly [pubkeys[0], pubkeys[2]] in that order.
-        LibSecp256k1.Point[] memory expected = new LibSecp256k1.Point[](2);
+        // The blob is [pubkeys[0], hole, pubkeys[2]]: nobody moved.
+        LibSecp256k1.Point[] memory expected = new LibSecp256k1.Point[](3);
         expected[0] = pubkeys[0];
-        expected[1] = pubkeys[2];
-        assertEq(_keysCommitmentAt(verifier), _keysCommitmentOf(expected), "key order after swap-and-pop");
+        expected[2] = pubkeys[2];
+        assertEq(_keysCommitmentAt(verifier), _keysCommitmentOf(expected), "slot 2 keeps its key");
+        bytes memory blob = SSTORE2.read(verifier.getRegistryPointer());
+        assertEq(blob.getNode(1).x, 0);
+        assertEq(blob.getNode(1).y, 0);
     }
 
-    function test_removeNode_removesLastWithoutReordering() public {
+    function test_removeNode_removingTheLastTrimsTheSlotCount() public {
         _addNodes(verifier, 3);
         address first = pubkeys[0].toAddress();
         address second = pubkeys[1].toAddress();
@@ -135,7 +136,7 @@ contract VerifierRegistryTest is VerifierTestBase {
 
         _removeNode(verifier, 2);
 
-        assertEq(verifier.getTotalNodes(), 2);
+        assertEq(verifier.getTotalNodes(), 2, "the trailing slot is trimmed");
         assertEq(verifier.nodeStatus(last), RETIRED, "removed tail node must be retired");
         assertTrue(verifier.isNode(first), "surviving nodes must stay active");
         assertTrue(verifier.isNode(second), "surviving nodes must stay active");
@@ -143,7 +144,66 @@ contract VerifierRegistryTest is VerifierTestBase {
         LibSecp256k1.Point[] memory expected = new LibSecp256k1.Point[](2);
         expected[0] = pubkeys[0];
         expected[1] = pubkeys[1];
-        assertEq(_keysCommitmentAt(verifier), _keysCommitmentOf(expected), "key order after tail removal");
+        assertEq(_keysCommitmentAt(verifier), _keysCommitmentOf(expected), "keys after tail removal");
+    }
+
+    function test_removeNode_trimsEveryTrailingHole() public {
+        _addNodes(verifier, 4);
+        _removeNode(verifier, 2);
+        _removeNode(verifier, 1);
+        assertEq(verifier.getTotalNodes(), 4, "holes in the middle are kept");
+
+        _removeNode(verifier, 3);
+        assertEq(verifier.getTotalNodes(), 1, "slots 1..3 are all holes behind slot 0");
+        LibSecp256k1.Point[] memory expected = new LibSecp256k1.Point[](1);
+        expected[0] = pubkeys[0];
+        assertEq(_keysCommitmentAt(verifier), _keysCommitmentOf(expected));
+    }
+
+    function test_addNode_takesTheLowestHoleAndEmitsItsSlot() public {
+        _addNodes(verifier, 5);
+        _removeNode(verifier, 3);
+        _removeNode(verifier, 1);
+
+        uint256 secret = _secret(500);
+        LibSecp256k1.Point memory pubkey = LibSecp256k1.mulAffine(LibSecp256k1.G(), secret);
+        bytes memory compressed = LibSecp256k1.compress(pubkey);
+
+        vm.expectEmit(true, false, false, false, address(verifier));
+        emit IVerifier.LogNodeAdded(pubkey.toAddress(), 1, address(0));
+        verifier.addNode(compressed, _proofOfPossession(address(verifier), compressed, secret));
+
+        assertEq(verifier.getTotalNodes(), 5, "a hole was filled, no slot added");
+        bytes memory blob = SSTORE2.read(verifier.getRegistryPointer());
+        assertEq(blob.getNode(1).x, pubkey.x);
+        assertEq(blob.getNode(0).x, pubkeys[0].x);
+        assertEq(blob.getNode(2).x, pubkeys[2].x);
+        assertEq(blob.getNode(3).x, 0, "the higher hole is still a hole");
+        assertEq(blob.getNode(4).x, pubkeys[4].x);
+
+        // The next one takes slot 3, then the one after appends.
+        _appendNode(verifier, 501);
+        assertEq(verifier.getTotalNodes(), 5);
+        assertEq(SSTORE2.read(verifier.getRegistryPointer()).getNode(3).x, pubkeys[pubkeys.length - 1].x);
+        _appendNode(verifier, 502);
+        assertEq(verifier.getTotalNodes(), 6, "no hole left: append");
+    }
+
+    function test_addNode_intoAHoleKeepsEveryOtherNodeVerifying() public {
+        _addNodes(verifier, 6);
+        _removeNode(verifier, 2);
+        _appendNode(verifier, 600); // takes slot 2
+
+        // A mirrored slot-2 key was replaced; rebuild the mirrors to match the blob.
+        secrets[2] = secrets[secrets.length - 1];
+        pubkeys[2] = pubkeys[pubkeys.length - 1];
+        secrets.pop();
+        pubkeys.pop();
+
+        (IVerifier.AttestationPayload memory update, IVerifier.SchnorrSignature memory schnorr) =
+            _buildVerifyCall(verifier, 6, bytes32("hole"), bytes32("value"));
+        assertEq(schnorr.signersBitmap, 0x3f, "slots 0..5 all sign, including the new node in slot 2");
+        _assertVerifyOk(verifier, update, schnorr);
     }
 
     function test_removeNode_rejectsReAddOfRetiredAddress() public {
@@ -165,8 +225,8 @@ contract VerifierRegistryTest is VerifierTestBase {
         verifier.removeNode(pubkeys[0].toAddress(), 1);
     }
 
-    /// @dev Signer bitmaps are one 256-bit word, so a 257th node would occupy a slot no signature
-    ///      could ever address. The cap counts live nodes, so a removal frees the slot again.
+    /// @dev Signer bitmaps are one 256-bit word, so a 257th slot could never be addressed by a
+    ///      signature. The cap is on slots: a hole is a free slot, a full table of live nodes is not.
     function test_addNode_revertsWhenRegistryIsFull() public {
         _addNodes(verifier, 256);
         assertEq(verifier.getTotalNodes(), 256);
@@ -179,8 +239,18 @@ contract VerifierRegistryTest is VerifierTestBase {
         verifier.addNode(compressed, proof);
 
         _removeNode(verifier, 0);
+        assertEq(verifier.getTotalNodes(), 256, "a hole in the middle keeps the slot count");
         verifier.addNode(compressed, proof);
-        assertEq(verifier.getTotalNodes(), 256, "the freed slot is reusable");
+        assertEq(verifier.getTotalNodes(), 256, "the hole is reusable");
+
+        _expectFullRegistryRevert(_secret(1001));
+    }
+
+    function _expectFullRegistryRevert(uint256 secret) internal {
+        bytes memory compressed = LibSecp256k1.compress(LibSecp256k1.mulAffine(LibSecp256k1.G(), secret));
+        IVerifier.SchnorrProof memory proof = _proofOfPossession(address(verifier), compressed, secret);
+        vm.expectRevert(IVerifier.MaxNodesReached.selector);
+        verifier.addNode(compressed, proof);
     }
 
     /// @dev Retirement is terminal for the admin path: a second removal must not publish another
@@ -255,7 +325,7 @@ contract VerifierRegistryTest is VerifierTestBase {
         assertFalse(verifier.isLatestVersion(2));
         assertTrue(verifier.isLatestVersion(3));
 
-        verifier.setRedundancyBuffer(5);
+        _appendNode(verifier, 9);
         assertFalse(verifier.isLatestVersion(3));
         assertTrue(verifier.isLatestVersion(4));
     }
@@ -270,28 +340,28 @@ contract VerifierRegistryTest is VerifierTestBase {
     function testFuzz_registryLifecycleInvariants_randomAddRemoveSequences(uint256 seed) public {
         delete secrets;
         delete pubkeys;
-        delete activePubkeyIndexes;
-        delete activeNodes;
+        delete slotKey;
         delete expectedRegistryPointers;
         delete expectedRegistryHashes;
 
-        Verifier target = new Verifier(address(this), 2);
+        Verifier target = new Verifier(address(this));
         _recordRegistryPointer(target);
         _assertRegistryLifecycleInvariants(target);
 
         uint256 nextSlot = 1;
         for (uint256 step; step < 64; ++step) {
-            bool shouldAdd = activeNodes.length == 0
-                || (activeNodes.length < 16 && uint256(keccak256(abi.encodePacked(seed, step, "op"))) & 1 == 0);
+            uint256 live = _liveCount();
+            bool shouldAdd = live == 0 || (live < 16 && uint256(keccak256(abi.encodePacked(seed, step, "op"))) & 1 == 0);
 
             if (shouldAdd) {
-                address node = _appendNode(target, nextSlot++);
-                activeNodes.push(node);
-                activePubkeyIndexes.push(pubkeys.length - 1);
+                _appendNode(target, nextSlot++);
+                _mirrorAdd(pubkeys.length);
             } else {
-                uint256 removeIndex = uint256(keccak256(abi.encodePacked(seed, step, "remove"))) % activeNodes.length;
-                _removeNode(target, removeIndex);
-                _removeExpectedNode(removeIndex);
+                // Remove the n-th live node, wherever it sits.
+                uint256 pick = uint256(keccak256(abi.encodePacked(seed, step, "remove"))) % live;
+                uint256 slot = _nthLiveSlot(pick);
+                _removeNode(target, slot);
+                _mirrorRemove(slot);
             }
 
             _recordRegistryPointer(target);
@@ -299,31 +369,65 @@ contract VerifierRegistryTest is VerifierTestBase {
         }
     }
 
-    function test_removeNode_swapsNodeFromIndex256IntoRemovedBoundarySlot() public {
+    /// @dev `slotKey[i]` is 1 + the `pubkeys` index of the node in slot `i`, or 0 for a hole.
+    uint256[] internal slotKey;
+
+    /// @dev Mirrors the verifier: the lowest hole, else a new slot.
+    function _mirrorAdd(uint256 pubkeyCount) internal {
+        for (uint256 i; i < slotKey.length; ++i) {
+            if (slotKey[i] == 0) {
+                slotKey[i] = pubkeyCount;
+                return;
+            }
+        }
+        slotKey.push(pubkeyCount);
+    }
+
+    /// @dev Mirrors the verifier: the slot becomes a hole, then trailing holes are dropped.
+    function _mirrorRemove(uint256 slot) internal {
+        slotKey[slot] = 0;
+        while (slotKey.length != 0 && slotKey[slotKey.length - 1] == 0) {
+            slotKey.pop();
+        }
+    }
+
+    function _liveCount() internal view returns (uint256 n) {
+        for (uint256 i; i < slotKey.length; ++i) {
+            if (slotKey[i] != 0) ++n;
+        }
+    }
+
+    function _nthLiveSlot(uint256 n) internal view returns (uint256) {
+        for (uint256 i; i < slotKey.length; ++i) {
+            if (slotKey[i] == 0) continue;
+            if (n == 0) return i;
+            --n;
+        }
+        revert("no such live slot");
+    }
+
+    /// @dev Removing the node in slot 255 of a full table trims it; a middle removal leaves a hole
+    ///      and nobody moves, whatever the table size.
+    function test_removeNode_atFullSizeLeavesAHoleInTheMiddleAndTrimsTheLast() public {
         _addNodes(verifier, 256);
         address removed = pubkeys[0].toAddress();
-        address swappedFromIndex256 = pubkeys[255].toAddress();
+        address last = pubkeys[255].toAddress();
 
         _removeNode(verifier, 0);
 
         assertEq(verifier.nodeStatus(removed), RETIRED);
-        assertTrue(verifier.isNode(swappedFromIndex256));
+        assertTrue(verifier.isNode(last), "the node in slot 255 stays in slot 255");
+        assertEq(verifier.getTotalNodes(), 256);
+        assertEq(SSTORE2.read(verifier.getRegistryPointer()).getNode(255).x, pubkeys[255].x);
+
+        _removeNode(verifier, 255);
+        assertEq(verifier.getTotalNodes(), 255, "slot 255 is trimmed; the hole at 0 stays");
     }
 
     function _recordRegistryPointer(Verifier target) internal {
         address pointer = target.getRegistryPointer();
         expectedRegistryPointers.push(pointer);
         expectedRegistryHashes.push(keccak256(SSTORE2.read(pointer)));
-    }
-
-    function _removeExpectedNode(uint256 index) internal {
-        uint256 last = activeNodes.length - 1;
-        if (index != last) {
-            activeNodes[index] = activeNodes[last];
-            activePubkeyIndexes[index] = activePubkeyIndexes[last];
-        }
-        activeNodes.pop();
-        activePubkeyIndexes.pop();
     }
 
     function _assertRegistryLifecycleInvariants(Verifier target) internal view {
@@ -338,23 +442,24 @@ contract VerifierRegistryTest is VerifierTestBase {
         }
 
         bytes memory blob = SSTORE2.read(target.getRegistryPointer());
-        uint256 totalNodes = activeNodes.length;
-        assertEq(target.getTotalNodes(), totalNodes, "total nodes");
-        assertEq(blob.getNodesLength(), totalNodes, "blob length");
+        assertEq(target.getTotalNodes(), slotKey.length, "slot count");
+        assertEq(blob.getNodesLength(), slotKey.length, "blob length");
 
-        for (uint256 i; i < totalNodes; ++i) {
-            LibSecp256k1.Point memory expected = pubkeys[activePubkeyIndexes[i]];
+        // Every live node sits in its slot with its own key; every hole is the zero point; the last
+        // slot is live. The commitment equals an independent hash of the mirrored points.
+        LibSecp256k1.Point[] memory expectedPoints = new LibSecp256k1.Point[](slotKey.length);
+        for (uint256 i; i < slotKey.length; ++i) {
             LibSecp256k1.Point memory stored = blob.getNode(i);
-            address node = stored.toAddress();
-
+            if (slotKey[i] == 0) {
+                assertEq(stored.x | stored.y, 0, "hole is the zero point");
+                continue;
+            }
+            LibSecp256k1.Point memory expected = pubkeys[slotKey[i] - 1];
+            expectedPoints[i] = expected;
             assertEq(stored.x, expected.x, "blob node x");
             assertEq(stored.y, expected.y, "blob node y");
-            assertEq(node, activeNodes[i], "blob node address");
-            assertEq(target.nodeStatus(node), ACTIVE, "active node status");
-
-            for (uint256 j = i + 1; j < totalNodes; ++j) {
-                assertTrue(node != activeNodes[j], "duplicate active node");
-            }
+            assertEq(target.nodeStatus(stored.toAddress()), ACTIVE, "active node status");
         }
+        assertEq(_keysCommitmentAt(target), _keysCommitmentOf(expectedPoints), "commitment over mirrored slots");
     }
 }

@@ -41,22 +41,45 @@ contract VerifierVerifyTest is VerifierTestBase {
         _assertVerifyOk(verifier, historicalUpdate, schnorr);
     }
 
-    function test_verify_respectsZeroRedundancyBuffer() public {
-        _addNodes(verifier, 5);
-        verifier.setRedundancyBuffer(0);
-        (IVerifier.AttestationPayload memory update, IVerifier.SchnorrSignature memory schnorr) =
-            _buildVerifyCall(verifier, 3, bytes32("no buffer"), bytes32("value"), _ms(1_700_000_003));
+    /// @dev Committee selection is not part of verification: any quorum of live nodes verifies,
+    ///      including one that sits entirely in the top slots.
+    function test_verify_acceptsAnyQuorumOfLiveNodes() public {
+        _addNodes(verifier, 8);
+        IVerifier.AttestationPayload memory update = _payload(3, bytes32("any quorum"), _ms(1_700_000_003));
 
-        _assertVerifyOk(verifier, update, schnorr);
+        uint256[3][4] memory quorums = [[uint256(5), 6, 7], [uint256(0), 3, 7], [uint256(2), 4, 6], [uint256(0), 1, 2]];
+        for (uint256 i; i < quorums.length; ++i) {
+            uint256 bitmap =
+                (uint256(1) << quorums[i][0]) | (uint256(1) << quorums[i][1]) | (uint256(1) << quorums[i][2]);
+            IVerifier.Attestation memory att = MolphaSigLib.buildAttestationWithBitmap(secrets, pubkeys, update, bitmap);
+            (bool ok, uint8 code) = verifier.verify(att, 0);
+            assertTrue(ok, "quorum must verify");
+            assertEq(code, VerifyCodes.R_OK);
+        }
     }
 
-    function test_verify_capsSelectionGroupAtNodeCount() public {
-        _addNodes(verifier, 2);
-        (IVerifier.AttestationPayload memory update, IVerifier.SchnorrSignature memory schnorr) =
-            _buildVerifyCall(verifier, 2, bytes32("capped"), bytes32("value"), _ms(1_700_000_004));
+    function test_verify_acceptsAQuorumLargerThanAnyOldSelectionGroup() public {
+        _addNodes(verifier, 8);
+        IVerifier.AttestationPayload memory update = _payload(2, bytes32("wide"), _ms(1_700_000_004));
+        // 2 required, all 8 sign: more than the 2 + buffer the old selection would have allowed.
+        IVerifier.Attestation memory att = MolphaSigLib.buildAttestationWithBitmap(secrets, pubkeys, update, 0xff);
+        (bool ok, uint8 code) = verifier.verify(att, 0);
+        assertTrue(ok);
+        assertEq(code, VerifyCodes.R_OK);
+    }
 
-        assertEq(schnorr.signersBitmap, 3);
-        _assertVerifyOk(verifier, update, schnorr);
+    function _payload(uint8 required, bytes32 sourceId, uint64 timestamp)
+        internal
+        view
+        returns (IVerifier.AttestationPayload memory)
+    {
+        return IVerifier.AttestationPayload({
+            sourceId: sourceId,
+            registryVersion: uint32(verifier.getRegistryVersion()),
+            signaturesRequired: required,
+            value: bytes32("value"),
+            timestamp: timestamp
+        });
     }
 
     function test_verify_returnsFalseForTamperedSignature() public {
@@ -88,7 +111,6 @@ contract VerifierVerifyTest is VerifierTestBase {
 
     function test_verify_returnsFalseWhenSignedMessageFieldsAreTampered() public {
         _addNodes(verifier, 5);
-        verifier.setRedundancyBuffer(5);
         (IVerifier.AttestationPayload memory update, IVerifier.SchnorrSignature memory schnorr) =
             _buildVerifyCall(verifier, 3, bytes32("job"), bytes32("value"), _ms(1_700_000_007));
 
@@ -114,9 +136,8 @@ contract VerifierVerifyTest is VerifierTestBase {
         _assertVerifyFails(verifier, tamperedThreshold, schnorr, VerifyCodes.R_BAD_SIGNATURE);
     }
 
-    function test_verify_returnsFalseForTamperedSignerBitmapWithinSelection() public {
+    function test_verify_returnsFalseForTamperedSignerBitmapWithinTheRegistry() public {
         _addNodes(verifier, 5);
-        verifier.setRedundancyBuffer(5);
         (IVerifier.AttestationPayload memory update, IVerifier.SchnorrSignature memory schnorr) =
             _buildVerifyCall(verifier, 3, bytes32("job"), bytes32("value"), _ms(1_700_000_008));
 
@@ -131,7 +152,8 @@ contract VerifierVerifyTest is VerifierTestBase {
         }
         schnorr.signersBitmap = (schnorr.signersBitmap ^ removedBit) | addedBit;
 
-        _assertVerifyFails(verifier, update, schnorr);
+        // Still a quorum of live nodes, but not the set that signed.
+        _assertVerifyFails(verifier, update, schnorr, VerifyCodes.R_BAD_SIGNATURE);
     }
 
     function test_verify_returnsFalseForInvalidRegistryVersion() public {
@@ -215,16 +237,53 @@ contract VerifierVerifyTest is VerifierTestBase {
         _assertVerifyFails(verifier, update, schnorr);
     }
 
-    function test_verify_returnsFalseForSignerOutsideSelectedGroup() public {
+    /// @dev A set bit past the last slot names no node: it reads as the zero point and is the
+    ///      bitmap's only bound check.
+    function test_verify_returnsBadQuorumForABitPastTheLastSlot() public {
         _addNodes(verifier, 6);
         (IVerifier.AttestationPayload memory update, IVerifier.SchnorrSignature memory schnorr) =
             _buildVerifyCall(verifier, 3, bytes32("job"), bytes32("value"), _ms(block.timestamp));
-        schnorr.signersBitmap |= uint256(1) << 255;
 
-        _assertVerifyFails(verifier, update, schnorr);
+        schnorr.signersBitmap |= uint256(1) << 255;
+        _assertVerifyFails(verifier, update, schnorr, VerifyCodes.R_BAD_QUORUM);
+
+        schnorr.signersBitmap = (schnorr.signersBitmap ^ (uint256(1) << 255)) | (uint256(1) << 6);
+        _assertVerifyFails(verifier, update, schnorr, VerifyCodes.R_BAD_QUORUM);
     }
 
-    function test_verify_returnsFalseWhenSelectedCoalitionAggregatesToInfinity() public {
+    /// @dev A removed node's slot is a hole. A signature that included it before the removal
+    ///      cannot be replayed against a version where the slot is empty.
+    function test_verify_returnsBadQuorumForABitOnAHole() public {
+        _addNodes(verifier, 6);
+        _removeNodeMirrored(verifier, 2);
+
+        IVerifier.AttestationPayload memory update = _payload(3, bytes32("hole"), _ms(1_700_000_020));
+        // The bitmap names slots 0, 2 and 4, but slot 2 is empty. The signature is not even looked at.
+        IVerifier.SchnorrSignature memory schnorr =
+            IVerifier.SchnorrSignature({signature: bytes32(uint256(1)), commitment: address(1), signersBitmap: 0x15});
+        _assertVerifyFails(verifier, update, schnorr, VerifyCodes.R_BAD_QUORUM);
+
+        // The live nodes around the hole keep their slots and still verify.
+        IVerifier.Attestation memory att = MolphaSigLib.buildAttestationWithBitmap(secrets, pubkeys, update, 0x1b);
+        (bool ok, uint8 code) = verifier.verify(att, 0);
+        assertTrue(ok);
+        assertEq(code, VerifyCodes.R_OK);
+    }
+
+    function test_verify_holeInTheMiddleOfTheSignerSetStaysRejectedAfterRefill() public {
+        _addNodes(verifier, 4);
+        _removeNode(verifier, 1);
+        IVerifier.AttestationPayload memory before_ = _payload(3, bytes32("refill"), _ms(1_700_000_021));
+        IVerifier.SchnorrSignature memory withHole =
+            IVerifier.SchnorrSignature({signature: bytes32(uint256(1)), commitment: address(1), signersBitmap: 0xb});
+        _assertVerifyFails(verifier, before_, withHole, VerifyCodes.R_BAD_QUORUM);
+
+        // A new node takes slot 1. The old version still has the hole.
+        _appendNode(verifier, 77);
+        _assertVerifyFails(verifier, before_, withHole, VerifyCodes.R_BAD_QUORUM);
+    }
+
+    function test_verify_returnsFalseWhenCoalitionAggregatesToInfinity() public {
         uint256 secret = _secret(1);
         LibSecp256k1.Point memory pubkey = LibSecp256k1.mulAffine(LibSecp256k1.G(), secret);
         bytes memory compressed = LibSecp256k1.compress(pubkey);
@@ -235,7 +294,6 @@ contract VerifierVerifyTest is VerifierTestBase {
         bytes memory negatedCompressed = LibSecp256k1.compress(negatedPubkey);
         verifier.addNode(negatedCompressed, _proofOfPossession(address(verifier), negatedCompressed, negatedSecret));
 
-        verifier.setRedundancyBuffer(0);
         bytes32 sourceId = bytes32("infinity");
         IVerifier.AttestationPayload memory update = IVerifier.AttestationPayload({
             sourceId: sourceId,
@@ -253,7 +311,6 @@ contract VerifierVerifyTest is VerifierTestBase {
     function test_verify_bitmapBoundaries_nodesOneAnd256AndFullUint256Bitmap() public {
         _addNodes(verifier, 256);
 
-        verifier.setRedundancyBuffer(255);
         bytes32 edgeSourceId = bytes32("bitmap edge");
         IVerifier.AttestationPayload memory edgeUpdate = IVerifier.AttestationPayload({
             sourceId: edgeSourceId,
@@ -276,9 +333,8 @@ contract VerifierVerifyTest is VerifierTestBase {
 
         _assertVerifyOk(verifier, edgeUpdate, edgeSchnorr);
 
-        // A u8 threshold tops out at 255. A one-node redundancy buffer expands the selected
-        // group to all 256 nodes, so the verifier still exercises a full uint256 bitmap.
-        verifier.setRedundancyBuffer(1);
+        // A u8 threshold tops out at 255; all 256 nodes sign, so the verifier still exercises a
+        // full uint256 bitmap.
         bytes32 fullSourceId = bytes32("bitmap full");
         IVerifier.AttestationPayload memory fullUpdate = IVerifier.AttestationPayload({
             sourceId: fullSourceId,
@@ -347,21 +403,16 @@ contract VerifierVerifyTest is VerifierTestBase {
         _assertVerifyFails(verifier, update, schnorr, 3600, VerifyCodes.R_MALFORMED);
     }
 
-    function testFuzz_verifyAcceptsValidSelectedCoalition(
+    function testFuzz_verifyAcceptsAnyValidQuorum(
         bytes32 sourceId,
         bytes32 value,
         uint64 timestamp,
         uint8 thresholdSeed,
-        uint8 bufferSeed,
         uint8 signerCountSeed
     ) public {
         _addNodes(verifier, 8);
         uint256 threshold = bound(thresholdSeed, 1, 8);
-        uint256 buffer = bound(bufferSeed, 0, 8);
-        verifier.setRedundancyBuffer(buffer);
-        uint256 groupSize = threshold + buffer;
-        if (groupSize > 8) groupSize = 8;
-        uint256 signerCount = bound(signerCountSeed, threshold, groupSize);
+        uint256 signerCount = bound(signerCountSeed, threshold, 8);
 
         // Current version has no upper bound; only require ts >= activatesAt.
         uint64 ts = uint64(bound(timestamp, block.timestamp * 1000, type(uint64).max));
@@ -392,7 +443,7 @@ contract VerifierVerifyTest is VerifierTestBase {
         uint256 historicalVersion = verifier.getRegistryVersion();
 
         // Same-block retirement: window is [activatesAt, activatesAt + PREVIOUS_GRACE].
-        verifier.setRedundancyBuffer(1);
+        _appendNode(verifier, 99);
         assertEq(verifier.retiredAt(historicalVersion), block.timestamp);
         assertTrue(ts <= block.timestamp + PREVIOUS_GRACE);
 
@@ -407,7 +458,7 @@ contract VerifierVerifyTest is VerifierTestBase {
             _buildVerifyCall(verifier, 2, bytes32("expired"), bytes32("value"), _ms(ts));
         uint256 historicalVersion = verifier.getRegistryVersion();
 
-        verifier.setRedundancyBuffer(1);
+        _appendNode(verifier, 99);
         assertTrue(ts > verifier.retiredAt(historicalVersion) + PREVIOUS_GRACE);
 
         _assertVerifyFails(verifier, historicalUpdate, schnorr, VerifyCodes.R_VERSION_EXPIRED);
@@ -424,7 +475,7 @@ contract VerifierVerifyTest is VerifierTestBase {
 
     // ---- timestamp is unix milliseconds; clock checks run on ts / 1000 ----
 
-    function test_verify_subSecondPrecisionDoesNotChangeFreshnessOrSelection() public {
+    function test_verify_subSecondPrecisionDoesNotChangeFreshness() public {
         _addNodes(verifier, 5);
         uint64 sec = 1_700_000_040;
         vm.warp(sec + 10);

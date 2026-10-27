@@ -28,7 +28,7 @@ match_path = "test/gas/*.t.sol"
 no_match_path = "test/never/*.t.sol"
 
 [profile.coverage]
-no_match_test = "(test_verify_bitmapBoundaries_nodesOneAnd256AndFullUint256Bitmap|test_removeNode_swapsNodeFromIndex256IntoRemovedBoundarySlot)"
+no_match_test = "(test_verify_bitmapBoundaries_nodesOneAnd256AndFullUint256Bitmap|test_removeNode_atFullSizeLeavesAHoleInTheMiddleAndTrimsTheLast)"
 
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options
 

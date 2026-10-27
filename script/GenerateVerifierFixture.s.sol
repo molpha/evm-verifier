@@ -14,8 +14,6 @@ contract GenerateVerifierFixture is Script {
     using stdJson for string;
 
     string internal constant FIXTURE = "test/fixtures/fixture.json";
-    uint256 internal constant REDUNDANCY_BUFFER = 2;
-    uint256 internal constant SIGNER_COUNT = 7;
 
     function run() external {
         string memory json = vm.readFile(FIXTURE);
@@ -35,12 +33,10 @@ contract GenerateVerifierFixture is Script {
             signaturesRequired: uint8(json.readUint(".dataUpdate.signaturesRequired")),
             timestamp: uint64(json.readUint(".dataUpdate.timestamp"))
         });
-        IVerifier.Attestation memory attestation =
-            MolphaSigLib.buildAttestation(secrets, pubkeys, payload, REDUNDANCY_BUFFER, SIGNER_COUNT);
-
-        require(
-            attestation.signature.signersBitmap == json.readUint(".schnorrSignature.signersBitmap"),
-            "selection changed; review the human-readable node indexes"
+        // The signer set is pinned by the fixture: any quorum of registered nodes verifies, and
+        // the other VMs' vectors name this one.
+        IVerifier.Attestation memory attestation = MolphaSigLib.buildAttestationWithBitmap(
+            secrets, pubkeys, payload, json.readUint(".schnorrSignature.signersBitmap")
         );
 
         vm.writeJson(

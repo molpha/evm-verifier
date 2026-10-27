@@ -19,7 +19,7 @@ contract LatestStoreTest is Test {
 
     function setUp() public {
         vm.warp(1_700_000_000);
-        signer = new MolphaTestSigner(2);
+        signer = new MolphaTestSigner();
         signer.registerNodes(8);
 
         bytes32[] memory sources = new bytes32[](2);

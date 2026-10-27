@@ -33,11 +33,10 @@ contract AttestationFixtureJsonTest is Test {
         harness = new MolphaLibHarness();
 
         uint256 nodeCount = json.readUint(".registeredNodeCount");
-        uint256 buffer = json.readUint(".redundancyBuffer");
         // The payload carries unix milliseconds; the chain clock is in seconds.
         vm.warp(json.readUint(".cases[0].attestation.payload.timestamp") / 1000);
 
-        verifier = new Verifier(address(this), buffer);
+        verifier = new Verifier(address(this));
         string memory keys = vm.readFile(json.readString(".keysFrom"));
         for (uint256 i; i < nodeCount; ++i) {
             uint256 sk = keys.readUint(string.concat(".secretKeys[", vm.toString(i), "]"));

@@ -26,6 +26,8 @@ contract VerifierRegistryGasTest is VerifierTestBase {
         uint256 nodeCount;
         uint256 removeIndex;
         uint256 secondRemoveIndex;
+        /// @dev Slot count after the removals: a hole in the middle keeps its slot, a trailing one is trimmed.
+        uint256 expectedSlots;
         bool warm;
     }
 
@@ -71,7 +73,7 @@ contract VerifierRegistryGasTest is VerifierTestBase {
     function _setupAdd(AddScenario memory scenario) internal returns (AddBenchmarkSetup memory benchmark) {
         vm.pauseGasMetering();
 
-        benchmark.target = new Verifier(address(this), 2);
+        benchmark.target = new Verifier(address(this));
         if (scenario.nodeCountBefore > 0) {
             _addNodes(benchmark.target, scenario.nodeCountBefore);
         }
@@ -127,13 +129,13 @@ contract VerifierRegistryGasTest is VerifierTestBase {
     function _setupRemove(RemoveScenario memory scenario) internal returns (RemoveBenchmarkSetup memory benchmark) {
         vm.pauseGasMetering();
 
-        benchmark.target = new Verifier(address(this), 2);
+        benchmark.target = new Verifier(address(this));
         _addNodes(benchmark.target, scenario.nodeCount);
         benchmark.firstRemoveIndex = scenario.removeIndex;
         benchmark.secondRemoveIndex = scenario.secondRemoveIndex;
         benchmark.firstRemoveNode = pubkeys[scenario.removeIndex].toAddress();
         benchmark.secondRemoveNode = pubkeys[scenario.secondRemoveIndex].toAddress();
-        benchmark.expectedNodeCount = scenario.warm ? scenario.nodeCount - 2 : scenario.nodeCount - 1;
+        benchmark.expectedNodeCount = scenario.expectedSlots;
         benchmark.firstCalldataCost = _calldataCost(
             abi.encodeCall(IVerifier.removeNode, (benchmark.firstRemoveNode, benchmark.firstRemoveIndex))
         );
@@ -215,20 +217,55 @@ contract VerifierRegistryGasTest is VerifierTestBase {
         }
     }
 
+    /// @dev Removal leaves holes now, so the second removal names a slot that is still live
+    ///      (the old swap-and-pop moved a node into the first hole, so it reused the index).
     function testGas_removeNodeScenarios() public {
-        RemoveScenario[8] memory scenarios = [
-            RemoveScenario({nodeCount: 1, removeIndex: 0, secondRemoveIndex: 0, warm: false}),
-            RemoveScenario({nodeCount: 2, removeIndex: 1, secondRemoveIndex: 0, warm: true}),
-            RemoveScenario({nodeCount: 8, removeIndex: 7, secondRemoveIndex: 6, warm: true}),
-            RemoveScenario({nodeCount: 8, removeIndex: 0, secondRemoveIndex: 0, warm: true}),
-            RemoveScenario({nodeCount: 8, removeIndex: 4, secondRemoveIndex: 4, warm: true}),
-            RemoveScenario({nodeCount: 128, removeIndex: 4, secondRemoveIndex: 4, warm: true}),
-            RemoveScenario({nodeCount: 256, removeIndex: 255, secondRemoveIndex: 254, warm: true}),
-            RemoveScenario({nodeCount: 256, removeIndex: 0, secondRemoveIndex: 0, warm: true})
+        RemoveScenario[9] memory scenarios = [
+            RemoveScenario({nodeCount: 1, removeIndex: 0, secondRemoveIndex: 0, expectedSlots: 0, warm: false}),
+            RemoveScenario({nodeCount: 2, removeIndex: 1, secondRemoveIndex: 0, expectedSlots: 0, warm: true}),
+            RemoveScenario({nodeCount: 8, removeIndex: 7, secondRemoveIndex: 6, expectedSlots: 6, warm: true}),
+            RemoveScenario({nodeCount: 8, removeIndex: 0, secondRemoveIndex: 1, expectedSlots: 8, warm: true}),
+            RemoveScenario({nodeCount: 8, removeIndex: 4, secondRemoveIndex: 5, expectedSlots: 8, warm: true}),
+            RemoveScenario({nodeCount: 128, removeIndex: 4, secondRemoveIndex: 5, expectedSlots: 128, warm: true}),
+            RemoveScenario({nodeCount: 256, removeIndex: 255, secondRemoveIndex: 254, expectedSlots: 254, warm: true}),
+            RemoveScenario({nodeCount: 256, removeIndex: 0, secondRemoveIndex: 1, expectedSlots: 256, warm: true}),
+            RemoveScenario({nodeCount: 256, removeIndex: 128, secondRemoveIndex: 129, expectedSlots: 256, warm: true})
         ];
 
         for (uint256 i; i < scenarios.length; ++i) {
             _runRemove(scenarios[i]);
         }
+    }
+
+    /// @dev Fills a hole in a table that is already full (256 slots), which is only possible
+    ///      because a removal left one. Measured cold, once.
+    function testGas_addIntoHoleScenarios() public {
+        _runAddIntoHole(8, 3);
+        _runAddIntoHole(256, 0);
+        _runAddIntoHole(256, 128);
+        _runAddIntoHole(256, 254);
+    }
+
+    function _runAddIntoHole(uint256 slots, uint256 hole) internal {
+        vm.pauseGasMetering();
+        Verifier target = new Verifier(address(this));
+        _addNodes(target, slots);
+        _removeNode(target, hole);
+        NodeCred memory cred = _nodeCred(target, slots + 1);
+        uint256 calldataCost = _calldataCost(abi.encodeCall(IVerifier.addNode, (cred.compressedPubKey, cred.pop)));
+        vm.resumeGasMetering();
+
+        vm.cool(address(target));
+        uint256 gasBefore = gasleft();
+        target.addNode(cred.compressedPubKey, cred.pop);
+        uint256 cold = gasBefore - gasleft();
+
+        vm.pauseGasMetering();
+        assertEq(target.getTotalNodes(), slots, "the hole was filled, no slot added");
+        console2.log(
+            string.concat("addNode into hole slots=", vm.toString(slots), " hole=", vm.toString(hole), " (cold only)")
+        );
+        _logMeasurement("  cold execution=", cold, calldataCost);
+        vm.resumeGasMetering();
     }
 }

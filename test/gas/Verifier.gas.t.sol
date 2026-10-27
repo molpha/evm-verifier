@@ -36,7 +36,7 @@ contract VerifierGasTest is VerifierTestBase {
     function _setup(Scenario memory scenario) internal returns (BenchmarkSetup memory benchmark) {
         vm.pauseGasMetering();
 
-        benchmark.target = new Verifier(address(this), 2);
+        benchmark.target = new Verifier(address(this));
         _addNodes(benchmark.target, scenario.nodeCount);
         (benchmark.firstUpdate, benchmark.firstSignature) = _buildVerifyCall(
             benchmark.target,

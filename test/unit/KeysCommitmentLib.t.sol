@@ -57,11 +57,11 @@ contract KeysCommitmentLibTest is VerifierTestBase {
         assertEq(KeysCommitmentLib.commitment(padded), expected, "trailing bytes are outside the digest");
     }
 
-    /// @dev Order is part of the commitment: the signer bitmap addresses nodes by blob index, so
+    /// @dev Order is part of the commitment: the signer bitmap addresses nodes by key slot, so
     ///      two registries holding the same keys in different slots are genuinely different sets.
     function test_commitment_isOrderSensitiveForIdenticalMembership() public {
-        Verifier ascending = new Verifier(address(this), 2);
-        Verifier descending = new Verifier(address(this), 2);
+        Verifier ascending = new Verifier(address(this));
+        Verifier descending = new Verifier(address(this));
 
         uint256 secretA = _secret(101);
         uint256 secretB = _secret(102);
@@ -82,20 +82,31 @@ contract KeysCommitmentLibTest is VerifierTestBase {
         );
     }
 
-    /// @dev Swap-and-pop reorders the blob, so removing a middle node must move the commitment even
-    ///      though the removal itself is what changed the membership.
-    function test_commitment_tracksSwapAndPopReordering() public {
+    /// @dev Removing a middle node leaves a hole: the commitment covers the zeroed slot, so it moves,
+    ///      and no other key changes position.
+    function test_commitment_tracksTheHoleLeftByARemoval() public {
         _addNodes(verifier, 3);
         bytes32 beforeRemoval = _keysCommitmentAt(verifier);
 
         _removeNode(verifier, 1);
 
-        LibSecp256k1.Point[] memory expected = new LibSecp256k1.Point[](2);
+        LibSecp256k1.Point[] memory expected = new LibSecp256k1.Point[](3);
         expected[0] = pubkeys[0];
-        expected[1] = pubkeys[2];
+        expected[2] = pubkeys[2];
 
         assertTrue(_keysCommitmentAt(verifier) != beforeRemoval, "removal must move the commitment");
-        assertEq(_keysCommitmentAt(verifier), _keysCommitmentOf(expected), "post-swap blob order");
+        assertEq(_keysCommitmentAt(verifier), _keysCommitmentOf(expected), "hole at slot 1, slot 2 unmoved");
+    }
+
+    /// @dev Removing the last node trims it: the commitment is over the shorter table.
+    function test_commitment_tracksTrimmingOfTrailingHoles() public {
+        _addNodes(verifier, 3);
+        _removeNode(verifier, 1);
+        _removeNode(verifier, 2);
+
+        LibSecp256k1.Point[] memory expected = new LibSecp256k1.Point[](1);
+        expected[0] = pubkeys[0];
+        assertEq(_keysCommitmentAt(verifier), _keysCommitmentOf(expected), "slots 1 and 2 are trimmed away");
     }
 
     /// @dev Historical versions are immutable, so their commitments must keep resolving to the
@@ -110,19 +121,6 @@ contract KeysCommitmentLibTest is VerifierTestBase {
 
         assertEq(_keysCommitmentAt(verifier, historicalVersion), historicalCommitment, "history is frozen");
         assertTrue(_keysCommitmentAt(verifier) != historicalCommitment, "the live version has moved on");
-    }
-
-    /// @dev A buffer change publishes a new version without touching the key set, so the
-    ///      commitment must repeat while the chained root still advances.
-    function test_commitment_isUnchangedByANonKeyMutation() public {
-        _addNodes(verifier, 2);
-        bytes32 commitmentBefore = _keysCommitmentAt(verifier);
-        bytes32 rootBefore = verifier.getRegistryRoot();
-
-        verifier.setRedundancyBuffer(4);
-
-        assertEq(_keysCommitmentAt(verifier), commitmentBefore, "key set did not change");
-        assertTrue(verifier.getRegistryRoot() != rootBefore, "the version still advances");
     }
 
     function testFuzz_commitment_equalsIndependentHashForAnyNodeCount(uint8 countSeed) public {

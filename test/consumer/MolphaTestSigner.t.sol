@@ -21,7 +21,7 @@ contract MolphaTestSignerTest is Test {
 
     function setUp() public {
         vm.warp(1_700_000_000);
-        signer = new MolphaTestSigner(2);
+        signer = new MolphaTestSigner();
         signer.registerNodes(8);
         harness = new MolphaLibHarness();
         v = IVerifier(address(signer.verifier()));
@@ -86,12 +86,27 @@ contract MolphaTestSignerTest is Test {
 
     function test_attestationStillVerifiesAfterANodeIsRemoved() public {
         signer.removeNode(3);
-        assertEq(signer.nodeCount(), 7);
+        // Slot 3 is a hole; nothing moved into it.
+        assertEq(signer.nodeCount(), 8);
 
         IVerifier.Attestation memory att =
             signer.attest(SOURCE, bytes32(uint256(9)), THRESHOLD, uint64(block.timestamp) * 1000);
         (bool ok, uint8 code) = v.verify(att, 0);
-        assertTrue(ok, "mirrors must track the registry swap-and-pop");
+        assertTrue(ok, "mirrors must track the registry's stable slots");
+        assertEq(code, VerifyCodes.R_OK);
+        assertEq(att.signature.signersBitmap & (uint256(1) << 3), 0, "the hole never signs");
+    }
+
+    function test_aNewNodeTakesTheHoleAndStillVerifies() public {
+        signer.removeNode(3);
+        signer.registerNodes(1);
+        assertEq(signer.nodeCount(), 8, "the new node took slot 3");
+
+        IVerifier.Attestation memory att =
+            signer.attest(SOURCE, bytes32(uint256(9)), 6, 6, uint64(block.timestamp) * 1000);
+        assertTrue(att.signature.signersBitmap & (uint256(1) << 3) != 0, "slot 3 signs again");
+        (bool ok, uint8 code) = v.verify(att, 0);
+        assertTrue(ok);
         assertEq(code, VerifyCodes.R_OK);
     }
 
@@ -121,7 +136,7 @@ contract MolphaTestSignerTest is Test {
 
     /// @dev `MolphaSigLib` uses no cheatcodes, so the signer works from a plain contract frame.
     function test_signerNeedsNoCheatcodes() public {
-        MolphaTestSigner fresh = new MolphaTestSigner(2);
+        MolphaTestSigner fresh = new MolphaTestSigner();
         fresh.registerNodes(4);
         IVerifier.Attestation memory att = fresh.attest(SOURCE, bytes32(uint256(7)), 3, uint64(block.timestamp) * 1000);
         (bool ok,) = IVerifier(address(fresh.verifier())).verify(att, 0);

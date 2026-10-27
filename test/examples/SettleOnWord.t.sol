@@ -22,7 +22,7 @@ contract SettleOnWordTest is Test {
 
     function setUp() public {
         vm.warp(1_700_000_000);
-        signer = new MolphaTestSigner(2);
+        signer = new MolphaTestSigner();
         signer.registerNodes(8);
         v = IVerifier(address(signer.verifier()));
         bet = new SettleOnWord{value: 10 ether}(v, SOURCE, MIN_SIGS, MolphaLib.NO_MAX_AGE, STRIKE, below);

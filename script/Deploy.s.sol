@@ -49,7 +49,7 @@ contract Deploy is Script {
         pure
         returns (address predicted, bytes32 initCodeHash)
     {
-        bytes memory constructorArgs = abi.encode(protocolAdmin, DeployConstants.REDUNDANCY_BUFFER);
+        bytes memory constructorArgs = abi.encode(protocolAdmin);
         initCodeHash = hashInitCode(type(Verifier).creationCode, constructorArgs);
         // Foundry routes `new Contract{salt:}` through Arachnid's deterministic deployment proxy.
         predicted = vm.computeCreate2Address(salt, initCodeHash, CREATE2_FACTORY);
@@ -73,7 +73,7 @@ contract Deploy is Script {
         address deployed = predicted;
         if (predicted.code.length == 0) {
             vm.startBroadcast(deployerPrivateKey);
-            verifier = new Verifier{salt: salt}(DeployConstants.PROTOCOL_ADMIN, DeployConstants.REDUNDANCY_BUFFER);
+            verifier = new Verifier{salt: salt}(DeployConstants.PROTOCOL_ADMIN);
             vm.stopBroadcast();
             deployed = address(verifier);
             if (deployed != predicted) revert Create2AddressMismatch();

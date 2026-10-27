@@ -12,7 +12,7 @@ import {MolphaSigLib} from "./MolphaSigLib.sol";
 /// @dev Deploy it, register nodes, ask for an attestation:
 ///
 ///      ```solidity
-///      MolphaTestSigner signer = new MolphaTestSigner(2);
+///      MolphaTestSigner signer = new MolphaTestSigner();
 ///      signer.registerNodes(8);
 ///      IVerifier.Attestation memory att =
 ///          signer.attest(SOURCE_ID, bytes32(uint256(1234)), 5, uint64(block.timestamp) * 1000);
@@ -31,46 +31,58 @@ contract MolphaTestSigner {
     uint256[] internal _secrets;
     LibSecp256k1.Point[] internal _pubkeys;
 
-    constructor(uint256 redundancyBuffer) {
-        verifier = new Verifier(address(this), redundancyBuffer);
+    /// @dev Keys are derived from a running counter, so a node added after a removal never reuses
+    ///      a removed node's key (the verifier would refuse it: a retired address stays retired).
+    uint256 internal _nextKey = 1;
+
+    constructor() {
+        verifier = new Verifier(address(this));
     }
 
     /// @notice Register `count` deterministic nodes, each with a valid proof of possession.
-    /// @dev Appends to any already registered. Publishes one registry version per node.
+    /// @dev Each takes the lowest free slot, as the verifier assigns it: a hole left by a removal,
+    ///      else the slot after the last. Publishes one registry version per node.
     function registerNodes(uint256 count) external {
-        uint256 base = _pubkeys.length;
         for (uint256 i; i < count; ++i) {
-            uint256 secret = MolphaSigLib.testSecret(base + i + 1);
+            uint256 secret = MolphaSigLib.testSecret(_nextKey++);
             LibSecp256k1.Point memory pubkey = LibSecp256k1.mulAffine(LibSecp256k1.G(), secret);
             bytes memory compressed = LibSecp256k1.compress(pubkey);
 
-            _secrets.push(secret);
-            _pubkeys.push(pubkey);
+            uint256 slot = _firstFreeSlot();
+            if (slot == _pubkeys.length) {
+                _secrets.push(secret);
+                _pubkeys.push(pubkey);
+            } else {
+                _secrets[slot] = secret;
+                _pubkeys[slot] = pubkey;
+            }
             verifier.addNode(compressed, MolphaSigLib.proofOfPossession(address(verifier), compressed, secret));
         }
     }
 
-    /// @notice Remove the node at `blobIndex`, mirroring the registry's swap-and-pop locally.
+    /// @notice Remove the node in `slot`, mirroring the registry locally: the slot becomes a hole,
+    ///         no other node moves, and trailing holes are dropped.
     /// @dev The local key mirrors must track the on-chain blob or later attestations sign with the
     ///      wrong keys.
-    function removeNode(uint256 blobIndex) external {
-        LibSecp256k1.Point memory removed = _pubkeys[blobIndex];
-        verifier.removeNode(removed.toAddress(), blobIndex);
+    function removeNode(uint256 slot) external {
+        LibSecp256k1.Point memory removed = _pubkeys[slot];
+        verifier.removeNode(removed.toAddress(), slot);
 
-        uint256 last = _pubkeys.length - 1;
-        if (blobIndex != last) {
-            _pubkeys[blobIndex] = _pubkeys[last];
-            _secrets[blobIndex] = _secrets[last];
+        delete _pubkeys[slot];
+        delete _secrets[slot];
+        while (_pubkeys.length != 0 && _pubkeys[_pubkeys.length - 1].x | _pubkeys[_pubkeys.length - 1].y == 0) {
+            _pubkeys.pop();
+            _secrets.pop();
         }
-        _pubkeys.pop();
-        _secrets.pop();
     }
 
-    /// @notice Change the redundancy buffer, publishing a new registry version.
-    function setRedundancyBuffer(uint256 newBuffer) external {
-        verifier.setRedundancyBuffer(newBuffer);
+    function _firstFreeSlot() internal view returns (uint256 slot) {
+        for (; slot < _pubkeys.length; ++slot) {
+            if (_pubkeys[slot].x | _pubkeys[slot].y == 0) break;
+        }
     }
 
+    /// @notice Key slots, holes included (the verifier's `getTotalNodes()`).
     function nodeCount() external view returns (uint256) {
         return _pubkeys.length;
     }
@@ -101,7 +113,7 @@ contract MolphaTestSigner {
         return attest(sourceId, keccak256(encodedFields), signaturesRequired, signaturesRequired, timestamp);
     }
 
-    /// @notice Sign with `signerCount` of the selected group, which may exceed the threshold.
+    /// @notice Sign with the lowest `signerCount` live nodes, which may exceed the threshold.
     function attest(bytes32 sourceId, bytes32 value, uint8 signaturesRequired, uint32 signerCount, uint64 timestamp)
         public
         view
@@ -114,6 +126,6 @@ contract MolphaTestSigner {
             signaturesRequired: uint8(signaturesRequired),
             timestamp: timestamp
         });
-        return MolphaSigLib.buildAttestation(_secrets, _pubkeys, payload, verifier.redundancyBuffer(), signerCount);
+        return MolphaSigLib.buildAttestation(_secrets, _pubkeys, payload, signerCount);
     }
 }

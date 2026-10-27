@@ -3,7 +3,6 @@ pragma solidity ^0.8.31;
 
 import {IVerifier} from "../interfaces/IVerifier.sol";
 import {LibSecp256k1} from "./LibSecp256k1.sol";
-import {NodeGroupBitmapLib} from "./NodeGroupBitmapLib.sol";
 
 /// @title VerifierLib
 /// @notice Registry-entry packing and the pure/view math behind `Verifier.verify`.
@@ -12,24 +11,19 @@ library VerifierLib {
     uint256 private constant KEYS_CODE_OFFSET = 65;
 
     bytes32 private constant MESSAGE_PREFIX = keccak256("MOLPHA_MESSAGE_V1");
-    bytes32 private constant SELECTION_SEED_PREFIX = keccak256("MOLPHA_SELECTION_V1");
 
-    /// @notice Milliseconds per selection window. `timestamp` is unix milliseconds;
-    ///         committee selection reads only `timestamp / SELECTION_WINDOW_MS`, so
-    ///         sub-second precision never changes who is selected. Changing this value is a
-    ///         consensus break and must bump `SELECTION_SEED_PREFIX` with it.
-    uint64 internal constant SELECTION_WINDOW_MS = 1000;
+    /// @notice Milliseconds per second. `timestamp` is unix milliseconds; `maxAge` and registry
+    ///         activation are in seconds.
+    uint64 internal constant MILLIS_PER_SECOND = 1000;
 
     /// @dev Packed registry entry (registry-v2):
     ///      bits   0..159   SSTORE2 pointer
-    ///      bits 160..168   nodeCount (9)
-    ///      bits 169..177   redundancyBuffer (9)
-    ///      bits 178..195   reserved (18)
+    ///      bits 160..168   nodeCount (9): key slots in the blob, holes included
+    ///      bits 169..195   reserved (27)
     ///      bits 196..235   activatesAt unix seconds (40)
     ///      bit  236         isLatest (1)
     ///      bits 237..255   reserved (19)
     uint256 private constant NODE_COUNT_SHIFT = 160;
-    uint256 private constant BUFFER_SHIFT = 169;
     uint256 private constant ACTIVATES_AT_SHIFT = 196;
     uint256 private constant IS_LATEST_SHIFT = 236;
     uint256 private constant COUNT_MASK = 0x1ff;
@@ -40,7 +34,7 @@ library VerifierLib {
     ///      and of `activatesAt`. Floors, so a timestamp up to 999 ms ahead of the chain clock still
     ///      reads as the current second.
     function timestampSeconds(uint256 timestamp) internal pure returns (uint256) {
-        return timestamp / SELECTION_WINDOW_MS;
+        return timestamp / MILLIS_PER_SECOND;
     }
 
     function constructMessage(IVerifier.AttestationPayload calldata payload, uint256 signersBitmap)
@@ -61,41 +55,10 @@ library VerifierLib {
         );
     }
 
-    function getSelectionSeed(IVerifier.AttestationPayload calldata payload)
-        internal
-        pure
-        returns (bytes32 selectionSeed)
-    {
-        selectionSeed = keccak256(
-            abi.encodePacked(
-                SELECTION_SEED_PREFIX,
-                payload.sourceId,
-                payload.registryVersion,
-                payload.timestamp / SELECTION_WINDOW_MS
-            )
-        );
-    }
-
-    /// @dev Every signer must sit inside the round's deterministically derived selection group.
-    function selectionOk(IVerifier.AttestationPayload calldata payload, uint256 entry, uint256 signersBitmap)
-        internal
-        pure
-        returns (bool valid)
-    {
-        uint256 n = nodeCount(entry);
-        if (n == 0) return false;
-
-        uint256 groupSize = payload.signaturesRequired + buffer(entry);
-        if (groupSize > n) groupSize = n;
-
-        uint256 selectionBitmap = NodeGroupBitmapLib.derive(getSelectionSeed(payload), n, groupSize);
-        valid = signersBitmap & ~selectionBitmap == 0;
-    }
-
     /// @dev Reads a single key straight out of the SSTORE2 blob, without materialising the
     ///      whole array in memory. `entry` is the packed slot; `extcodecopy` truncates its
     ///      address operand to 160 bits, so the upper fields are discarded for free.
-    ///      Out-of-range indices read as zeros — callers must bounds-check against `nodeCount`.
+    ///      Out-of-range indices and holes (removed nodes) read as the zero point.
     function nodeAt(uint256 entry, uint256 blobIndex) internal view returns (LibSecp256k1.Point memory node) {
         assembly ("memory-safe") {
             extcodecopy(entry, node, add(KEYS_CODE_OFFSET, shl(6, blobIndex)), 64)
@@ -106,15 +69,21 @@ library VerifierLib {
     ///      `entry` is the packed registry slot; its low 160 bits are the SSTORE2 pointer
     ///      (extcodecopy truncates the upper fields automatically).
     ///      One assembly loop fuses: lowest-bit scan, key load, and Jacobian EC addition.
+    /// @return aggPubKey The coalition key, or the zero point when the sum is the point at infinity.
+    /// @return valid False when a set bit names no live node: it is past the last slot or on a hole,
+    ///         and either reads as the zero point, which is no key. This is the bitmap's only bound
+    ///         check, so it must run for every set bit.
     function aggregatePubKey(uint256 entry, uint256 signersBitmap)
         internal
         view
-        returns (LibSecp256k1.Point memory aggPubKey)
+        returns (LibSecp256k1.Point memory aggPubKey, bool valid)
     {
         // Jacobian accumulator (ax, ay, az); az == 1 after the first signer.
         uint256 ax;
         uint256 ay;
         uint256 az;
+        // Non-zero once a set bit named the zero point.
+        uint256 vacant;
 
         assembly ("memory-safe") {
             // Return (x, y) for the lowest set bit in `mask`.
@@ -207,28 +176,31 @@ library VerifierLib {
 
             // Seed accumulator with the first signer (affine: z = 1).
             ax, ay := readLowestKey(entry, rem)
+            vacant := iszero(or(ax, ay))
             az := 1
             rem := and(rem, sub(rem, 1)) // clear lowest bit
 
             for {} rem {} {
                 let px, py := readLowestKey(entry, rem)
+                vacant := or(vacant, iszero(or(px, py)))
                 rem := and(rem, sub(rem, 1))
                 ax, ay, az := addMixed(ax, ay, az, px, py, P)
             }
         }
 
+        if (vacant != 0) return (LibSecp256k1.ZERO_POINT(), false);
+        valid = true;
         // az == 0 means the running sum hit the point at infinity.
-        if (az == 0) return (LibSecp256k1.ZERO_POINT());
+        if (az == 0) return (LibSecp256k1.ZERO_POINT(), true);
         aggPubKey = LibSecp256k1.toAffineModexpXYZ(ax, ay, az);
     }
 
-    function packEntry(address pointer, uint256 nodeCount_, uint256 buffer_, uint256 activatesAtTs, bool isLatest_)
+    function packEntry(address pointer, uint256 nodeCount_, uint256 activatesAtTs, bool isLatest_)
         internal
         pure
         returns (uint256 entry)
     {
-        entry = uint256(uint160(pointer)) | (nodeCount_ << NODE_COUNT_SHIFT) | (buffer_ << BUFFER_SHIFT)
-            | (activatesAtTs << ACTIVATES_AT_SHIFT);
+        entry = uint256(uint160(pointer)) | (nodeCount_ << NODE_COUNT_SHIFT) | (activatesAtTs << ACTIVATES_AT_SHIFT);
         if (isLatest_) entry |= IS_LATEST_MASK;
     }
 
@@ -238,12 +210,10 @@ library VerifierLib {
         return entry & ~IS_LATEST_MASK;
     }
 
+    /// @dev Key slots in the blob, holes included. A removed node leaves a hole (the zero point),
+    ///      so this is not the number of live nodes. Trailing holes are trimmed.
     function nodeCount(uint256 entry) internal pure returns (uint256) {
         return (entry >> NODE_COUNT_SHIFT) & COUNT_MASK;
-    }
-
-    function buffer(uint256 entry) internal pure returns (uint256) {
-        return (entry >> BUFFER_SHIFT) & COUNT_MASK;
     }
 
     function activatesAt(uint256 entry) internal pure returns (uint256) {

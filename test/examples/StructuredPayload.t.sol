@@ -17,7 +17,7 @@ contract StructuredPayloadTest is Test {
 
     function setUp() public {
         vm.warp(1_700_000_000);
-        signer = new MolphaTestSigner(2);
+        signer = new MolphaTestSigner();
         signer.registerNodes(8);
         sink = new StructuredPayload(IVerifier(address(signer.verifier())), SOURCE, MIN_SIGS, MolphaLib.NO_MAX_AGE);
     }
