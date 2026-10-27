@@ -10,7 +10,6 @@ interface IVerifier {
     error MaxNodesReached();
     error NodeNotEligible();
     error IndexWitnessMismatch();
-    error RedundancyBufferExceedsMax();
     error ZeroAddress();
     error ZeroAdmin();
 
@@ -23,11 +22,12 @@ interface IVerifier {
     }
 
     /// @notice Schnorr signature data struct containing aggregated signature information
-    /// @dev `signersBitmap` uses 0-based bit positions: bit i set iff blob index i signed.
-    ///      At most 256 nodes; bits outside the active node count must be zero.
+    /// @dev `signersBitmap` uses 0-based bit positions: bit i set iff the node in key slot i signed.
+    ///      A removed node leaves a hole, and every other node keeps its slot; a set bit on a hole
+    ///      or past the last slot is rejected (`R_BAD_QUORUM`). At most 256 slots.
     /// @param signature The aggregated Schnorr signature
     /// @param commitment The commitment point used in the signature
-    /// @param signersBitmap Bitmap of participating signer indices (bit i ↔ 0-based blob index i)
+    /// @param signersBitmap Bitmap of participating signer slots (bit i ↔ 0-based key slot i)
     struct SchnorrSignature {
         bytes32 signature;
         address commitment;
@@ -43,9 +43,9 @@ interface IVerifier {
     /// @param sourceId Canonical data source identifier
     /// @param registryVersion The registry version
     /// @param signaturesRequired The number of signatures required
-    /// @param timestamp Gateway-assigned round time in unix MILLISECONDS. Committee selection
-    ///        reads `timestamp / 1000`; `maxAge` and registry activation are in seconds, so
-    ///        compare against `block.timestamp` using `timestamp / 1000`.
+    /// @param timestamp Gateway-assigned round time in unix MILLISECONDS. `maxAge` and registry
+    ///        activation are in seconds, so compare against `block.timestamp` using
+    ///        `timestamp / 1000`.
     struct AttestationPayload {
         bytes32 value;
         bytes32 sourceId;
@@ -67,19 +67,15 @@ interface IVerifier {
 
     /// @notice Emitted when a new node is added to the set
     /// @param node The address of the new node
-    /// @param index The 0-based blob index assigned to the new node
+    /// @param index The 0-based key slot assigned to the new node: the lowest hole, else the next slot
     /// @param rawKeysPointer The storage pointer to the updated raw keys array
     event LogNodeAdded(address indexed node, uint256 index, address rawKeysPointer);
 
     /// @notice Emitted when a node is removed from the set
     /// @param node The address of the removed node
-    /// @param oldIndex The previous 0-based blob index of the removed node
+    /// @param oldIndex The key slot of the removed node, now a hole (or trimmed if it was last)
     /// @param rawKeysPointer The storage pointer to the updated raw keys array
     event LogNodeRemoved(address indexed node, uint256 oldIndex, address rawKeysPointer);
-
-    /// @notice Emitted when the redundancy buffer is updated
-    /// @param newRedundancyBuffer The new redundancy buffer value
-    event LogRedundancyBufferUpdated(uint256 newRedundancyBuffer);
 
     /// @notice Emitted after every registry mutation from the common transition tail
     event RegistryAdvanced(uint256 indexed newVersion, bytes32 newRoot, uint8 op);
@@ -90,22 +86,16 @@ interface IVerifier {
     function addNode(bytes memory compressedPubKey, SchnorrProof calldata pop) external;
 
     /// @notice Remove a node from the verifier
+    /// @dev The node's slot becomes a hole; no other node moves. Trailing holes are trimmed.
     /// @param node The address of the node to remove
-    /// @param index 0-based blob index of the node to remove
+    /// @param index 0-based key slot of the node to remove
     function removeNode(address node, uint256 index) external;
-
-    /// @notice Set the redundancy buffer used when deriving the signer group size
-    /// @dev Publishes a new registry version rather than editing the current one, so a signature
-    ///      that verified under the old buffer keeps verifying against its own version.
-    /// @param newRedundancyBuffer The new redundancy buffer (`groupSize = signaturesRequired + redundancyBuffer`)
-    function setRedundancyBuffer(uint256 newRedundancyBuffer) external;
-
-    /// @notice The redundancy buffer in force for the current registry version
-    function redundancyBuffer() external view returns (uint256);
 
     /// @notice Verify an attestation's aggregate Schnorr signature
     /// @dev Total function: never reverts on the verification path. Every rejection is
     ///      `(false, code)`. Consumers that want reverting semantics should use `MolphaLib`.
+    ///      Any `signaturesRequired` live nodes may sign: the verifier does not check which nodes
+    ///      the round was assigned to.
     /// @param attestation The signed payload and its aggregate signature
     /// @param maxAge Maximum age in seconds for `attestation.payload.timestamp / 1000` relative
     ///        to `block.timestamp` (freshness is second-resolution; the timestamp itself is unix
@@ -127,8 +117,9 @@ interface IVerifier {
     /// @return registryPointer The registry pointer for the specific registry version
     function getRegistryPointer(uint256 registryVersion) external view returns (address registryPointer);
 
-    /// @notice Get the total number of nodes in the verifier
-    /// @return totalNodes The total number of nodes
+    /// @notice Get the number of key slots in the current registry version
+    /// @dev Holes left by removed nodes count, so this can exceed the number of live nodes.
+    /// @return totalNodes The slot count
     function getTotalNodes() external view returns (uint256 totalNodes);
 
     /// @notice Membership status of `node`: `0` never, `1` active, `2` retired

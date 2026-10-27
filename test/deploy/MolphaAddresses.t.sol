@@ -29,7 +29,6 @@ contract MolphaAddressesPinTest is Test {
 
     function test_constructorArgsMatchDeployConstants() public pure {
         assertEq(MolphaAddresses.INITIAL_PROTOCOL_ADMIN, DeployConstants.PROTOCOL_ADMIN, "admin");
-        assertEq(MolphaAddresses.INITIAL_REDUNDANCY_BUFFER, DeployConstants.REDUNDANCY_BUFFER, "buffer");
     }
 
     function test_deploymentsJsonMatchesLibrary() public view {
@@ -37,9 +36,6 @@ contract MolphaAddressesPinTest is Test {
         assertEq(json.readAddress(".verifier.create2Factory"), MolphaAddresses.CREATE2_FACTORY, "json factory");
         assertEq(
             json.readAddress(".verifier.initialProtocolAdmin"), MolphaAddresses.INITIAL_PROTOCOL_ADMIN, "json admin"
-        );
-        assertEq(
-            json.readUint(".verifier.initialRedundancyBuffer"), MolphaAddresses.INITIAL_REDUNDANCY_BUFFER, "json buffer"
         );
         assertEq(json.readAddress(".verifier.address"), MolphaAddresses.VERIFIER, "json address");
         assertEq(json.readBytes32(".verifier.initCodeHash"), MolphaAddresses.VERIFIER_INIT_CODE_HASH, "json initCode");
@@ -77,9 +73,7 @@ contract MolphaAddressesPinTest is Test {
     }
 
     function _predict() private pure returns (address predicted, bytes32 initCodeHash) {
-        initCodeHash = hashInitCode(
-            type(Verifier).creationCode, abi.encode(DeployConstants.PROTOCOL_ADMIN, DeployConstants.REDUNDANCY_BUFFER)
-        );
+        initCodeHash = hashInitCode(type(Verifier).creationCode, abi.encode(DeployConstants.PROTOCOL_ADMIN));
         predicted = vm.computeCreate2Address(MolphaAddresses.VERIFIER_SALT, initCodeHash, CREATE2_FACTORY);
     }
 }

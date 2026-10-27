@@ -4,7 +4,6 @@ pragma solidity ^0.8.31;
 import {IVerifier} from "../interfaces/IVerifier.sol";
 import {LibSchnorr} from "../libs/LibSchnorr.sol";
 import {LibSecp256k1} from "../libs/LibSecp256k1.sol";
-import {NodeGroupBitmapLib} from "../libs/NodeGroupBitmapLib.sol";
 
 /// @title MolphaSigLib
 /// @notice Stateless Schnorr signing helpers for tests: deterministic keys, proof of possession,
@@ -15,7 +14,7 @@ import {NodeGroupBitmapLib} from "../libs/NodeGroupBitmapLib.sol";
 ///      Pinned to `^0.8.31` because it reaches into `LibSecp256k1`; consumers on older compilers
 ///      should use `MockVerifier` instead.
 ///
-///      The message and selection-seed encodings below intentionally RE-IMPLEMENT the wire format
+///      The message encoding below intentionally RE-IMPLEMENTS the wire format
 ///      rather than delegating to `VerifierLib`. That independence is what makes
 ///      `test/integration/MessageFormatSpec.t.sol` an actual check instead of a tautology.
 ///      Keep them in sync with `docs/message-format.md`, not with `VerifierLib`.
@@ -28,14 +27,10 @@ library MolphaSigLib {
 
     bytes32 internal constant POP_DOMAIN = keccak256("MOLPHA_VERIFIER_V1");
     bytes32 internal constant MESSAGE_PREFIX = keccak256("MOLPHA_MESSAGE_V1");
-    bytes32 internal constant SELECTION_SEED_PREFIX = keccak256("MOLPHA_SELECTION_V1");
-
-    /// @dev Selection reads `timestamp / SELECTION_WINDOW_MS`; the timestamp is unix ms.
-    uint64 internal constant SELECTION_WINDOW_MS = 1000;
 
     /// @notice Deterministic test private key for a 1-based slot.
     /// @dev The literal domain string and the `% (Q-1) + 1` reduction are load-bearing: every node
-    ///      address, registry root, and selection bitmap in the existing suite derives from them.
+    ///      address and registry root in the existing suite derives from them.
     function testSecret(uint256 slot) internal pure returns (uint256) {
         return (uint256(keccak256(abi.encodePacked("MOLPHA_VERIFIER_TEST_KEY", slot))) % (LibSecp256k1.Q() - 1)) + 1;
     }
@@ -94,18 +89,6 @@ library MolphaSigLib {
         proof = IVerifier.SchnorrProof({signature: signature, commitment: commitment});
     }
 
-    /// @notice Seed for the round's deterministic signer-group derivation.
-    function selectionSeed(IVerifier.AttestationPayload memory payload) internal pure returns (bytes32) {
-        return keccak256(
-            abi.encodePacked(
-                SELECTION_SEED_PREFIX,
-                payload.sourceId,
-                payload.registryVersion,
-                payload.timestamp / SELECTION_WINDOW_MS
-            )
-        );
-    }
-
     /// @notice The digest the aggregate signature is produced over.
     function message(IVerifier.AttestationPayload memory payload, uint256 signersBitmap)
         internal
@@ -125,7 +108,7 @@ library MolphaSigLib {
         );
     }
 
-    /// @notice Take the lowest `count` set bits of `bitmap` as 0-based blob indices.
+    /// @notice Take the lowest `count` set bits of `bitmap` as 0-based key slots.
     function pickSignerIndices(uint256 bitmap, uint256 registeredNodes, uint256 count)
         internal
         pure
@@ -171,28 +154,42 @@ library MolphaSigLib {
         }
     }
 
-    /// @notice Derive the round's signer group, sign with `signerCount` of them, and package it.
-    /// @param redundancyBuffer The buffer in force for `payload.registryVersion`.
-    /// @param signerCount How many of the selected group actually sign. May exceed
-    ///        `payload.signaturesRequired` to exercise over-signing.
+    /// @notice Bitmap of the live key slots: those whose mirrored public key is not the zero point.
+    /// @dev A removed node leaves a hole, so slot `i` of `pubkeys` is live iff `pubkeys[i]` is non-zero.
+    function liveBitmap(LibSecp256k1.Point[] memory pubkeys) internal pure returns (uint256 bitmap) {
+        for (uint256 slot; slot < pubkeys.length; ++slot) {
+            if (pubkeys[slot].x | pubkeys[slot].y != 0) bitmap |= uint256(1) << slot;
+        }
+    }
+
+    /// @notice Sign with the lowest `signerCount` live slots and package the attestation.
+    /// @dev Any quorum of live nodes verifies; there is no committee to derive.
+    /// @param signerCount How many nodes sign. May exceed `payload.signaturesRequired` to exercise
+    ///        over-signing.
     function buildAttestation(
         uint256[] memory secrets,
         LibSecp256k1.Point[] memory pubkeys,
         IVerifier.AttestationPayload memory payload,
-        uint256 redundancyBuffer,
         uint256 signerCount
     ) internal view returns (IVerifier.Attestation memory) {
-        uint256 registeredNodes = pubkeys.length;
-        uint256 groupSize = payload.signaturesRequired + redundancyBuffer;
-        if (groupSize > registeredNodes) groupSize = registeredNodes;
-
-        uint256 selectionBitmap = NodeGroupBitmapLib.derive(selectionSeed(payload), registeredNodes, groupSize);
-        uint256[] memory indices = pickSignerIndices(selectionBitmap, registeredNodes, signerCount);
+        uint256[] memory indices = pickSignerIndices(liveBitmap(pubkeys), pubkeys.length, signerCount);
 
         uint256 signersBitmap;
         for (uint256 i; i < indices.length; ++i) {
             signersBitmap |= uint256(1) << indices[i];
         }
+        return buildAttestationWithBitmap(secrets, pubkeys, payload, signersBitmap);
+    }
+
+    /// @notice Sign with exactly the slots in `signersBitmap` and package the attestation.
+    /// @dev For pinned vectors and for tests that choose the signer set themselves.
+    function buildAttestationWithBitmap(
+        uint256[] memory secrets,
+        LibSecp256k1.Point[] memory pubkeys,
+        IVerifier.AttestationPayload memory payload,
+        uint256 signersBitmap
+    ) internal view returns (IVerifier.Attestation memory) {
+        uint256[] memory indices = pickSignerIndices(signersBitmap, pubkeys.length, _popCount(signersBitmap));
 
         (bytes32 signature, address commitment) =
             sign(sumPubkeys(pubkeys, indices), sumSecrets(secrets, indices), message(payload, signersBitmap), 0);
@@ -203,5 +200,11 @@ library MolphaSigLib {
                 signature: signature, commitment: commitment, signersBitmap: signersBitmap
             })
         });
+    }
+
+    function _popCount(uint256 x) private pure returns (uint256 n) {
+        for (; x != 0; x &= x - 1) {
+            ++n;
+        }
     }
 }

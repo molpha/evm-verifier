@@ -9,7 +9,6 @@ import {PubkeyBlobLib} from "../../src/libs/PubkeyBlobLib.sol";
 import {IVerifier} from "../../src/interfaces/IVerifier.sol";
 import {VerifyCodes} from "../../src/libs/VerifyCodes.sol";
 import {LibSecp256k1} from "../../src/libs/LibSecp256k1.sol";
-import {NodeGroupBitmapLib} from "../../src/libs/NodeGroupBitmapLib.sol";
 import {KeysCommitmentLib} from "../../src/libs/KeysCommitmentLib.sol";
 import {MolphaSigLib} from "../../src/test-utils/MolphaSigLib.sol";
 
@@ -22,8 +21,7 @@ abstract contract VerifierTestBase is Test {
 
     bytes32 internal constant POP_DOMAIN = keccak256("MOLPHA_VERIFIER_V1");
     bytes32 internal constant MESSAGE_PREFIX = keccak256("MOLPHA_MESSAGE_V1");
-    bytes32 internal constant SELECTION_SEED_PREFIX = keccak256("MOLPHA_SELECTION_V1");
-    bytes32 internal constant TRANSITION_DOMAIN = keccak256("MOLPHA_REGISTRY_TRANSITION_V1");
+    bytes32 internal constant TRANSITION_DOMAIN = keccak256("MOLPHA_REGISTRY_TRANSITION_V2");
     bytes32 internal constant GENESIS_ROOT = keccak256("MOLPHA_REGISTRY_GENESIS_V1");
     uint8 internal constant NEVER = 0;
     uint8 internal constant ACTIVE = 1;
@@ -46,7 +44,7 @@ abstract contract VerifierTestBase is Test {
 
     function setUp() public virtual {
         vm.warp(BASE_TIME);
-        verifier = new Verifier(address(this), 2);
+        verifier = new Verifier(address(this));
     }
 
     function _secret(uint256 slot) internal pure returns (uint256) {
@@ -86,23 +84,19 @@ abstract contract VerifierTestBase is Test {
         target.removeNode(node, index);
     }
 
-    /// @dev `_removeNode` plus the same swap-and-pop applied to the local `secrets`/`pubkeys`
-    ///      mirrors. `_buildVerifyCall` addresses keys by live blob index, so a test that signs
+    /// @dev `_removeNode` plus the same removal applied to the local `secrets`/`pubkeys` mirrors:
+    ///      the slot becomes a hole (the zero point) and trailing holes are dropped, exactly as the
+    ///      verifier's blob does. `_buildVerifyCall` addresses keys by slot, so a test that signs
     ///      after a removal must keep the mirrors aligned or it will sign with the wrong keys.
     function _removeNodeMirrored(Verifier target, uint256 index) internal {
         _removeNode(target, index);
 
-        uint256 last = pubkeys.length - 1;
-        if (index != last) {
-            pubkeys[index] = pubkeys[last];
-            secrets[index] = secrets[last];
+        delete pubkeys[index];
+        delete secrets[index];
+        while (pubkeys.length != 0 && pubkeys[pubkeys.length - 1].x | pubkeys[pubkeys.length - 1].y == 0) {
+            pubkeys.pop();
+            secrets.pop();
         }
-        pubkeys.pop();
-        secrets.pop();
-    }
-
-    function _selectionSeed(IVerifier.AttestationPayload memory update) internal pure returns (bytes32) {
-        return MolphaSigLib.selectionSeed(update);
     }
 
     function _message(IVerifier.AttestationPayload memory update, uint256 signersBitmap)
@@ -145,12 +139,9 @@ abstract contract VerifierTestBase is Test {
             timestamp: timestamp
         });
 
+        // Any quorum of live nodes verifies: take the lowest `signerCount` live slots.
         uint256 registeredNodes = target.getTotalNodes();
-        uint256 groupSize = signaturesRequired + target.redundancyBuffer();
-        if (groupSize > registeredNodes) groupSize = registeredNodes;
-
-        uint256 selectionBitmap = NodeGroupBitmapLib.derive(_selectionSeed(update), registeredNodes, groupSize);
-        uint256[] memory indices = _pickSignerIndices(selectionBitmap, registeredNodes, signerCount);
+        uint256[] memory indices = _pickSignerIndices(MolphaSigLib.liveBitmap(pubkeys), registeredNodes, signerCount);
 
         uint256 signersBitmap;
         for (uint256 i; i < indices.length; ++i) {
@@ -279,18 +270,11 @@ abstract contract VerifierTestBase is Test {
         uint256 newVersion,
         bytes32 commitment,
         uint256 nodeCount,
-        uint256 buffer,
         uint256 activatesAtTs
     ) internal pure returns (bytes32 root) {
         root = keccak256(
             abi.encodePacked(
-                TRANSITION_DOMAIN,
-                prevRoot,
-                uint32(newVersion),
-                commitment,
-                uint16(nodeCount),
-                uint16(buffer),
-                uint40(activatesAtTs)
+                TRANSITION_DOMAIN, prevRoot, uint32(newVersion), commitment, uint16(nodeCount), uint40(activatesAtTs)
             )
         );
     }

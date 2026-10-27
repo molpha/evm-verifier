@@ -14,6 +14,7 @@ library VerifyCodes {
     uint8 internal constant R_VERSION_EXPIRED = 5;
     /// @dev Reserved. Never returned by this implementation; kept so codes are never renumbered.
     uint8 internal constant R_COMPROMISED_QUORUM = 6;
+    /// @dev A set signer bit names no live node (past the last slot, or on a hole).
     uint8 internal constant R_BAD_QUORUM = 7;
     uint8 internal constant R_BAD_AGGREGATE = 8;
     uint8 internal constant R_BAD_SIGNATURE = 9;

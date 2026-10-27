@@ -20,7 +20,9 @@ contract GenerateAttestationFixture is Script {
     using LibSecp256k1 for LibSecp256k1.Point;
 
     uint256 internal constant NODE_COUNT = 12;
-    uint256 internal constant REDUNDANCY_BUFFER = 2;
+    /// @dev Slots 0, 1, 4, 6 and 8: the quorum the other VMs' vectors name. Any five registered
+    ///      nodes would verify, so this is pinned rather than derived.
+    uint256 internal constant SIGNERS_BITMAP = 339;
     uint8 internal constant SIGNATURES_REQUIRED = 5;
     /// @dev Unix milliseconds; the block clock is the same instant in seconds.
     uint64 internal constant TIMESTAMP = 1_700_000_000_000;
@@ -35,7 +37,7 @@ contract GenerateAttestationFixture is Script {
         // A script contract's own address is ephemeral, so the registry owner is an explicit
         // pranked EOA rather than `address(this)`.
         address admin = address(uint160(uint256(keccak256("MOLPHA_FIXTURE_ADMIN"))));
-        Verifier verifier = new Verifier(admin, REDUNDANCY_BUFFER);
+        Verifier verifier = new Verifier(admin);
         vm.startPrank(admin);
 
         for (uint256 i; i < NODE_COUNT; ++i) {
@@ -89,9 +91,6 @@ contract GenerateAttestationFixture is Script {
             '  "registeredNodeCount": ',
             vm.toString(NODE_COUNT),
             ",\n",
-            '  "redundancyBuffer": ',
-            vm.toString(REDUNDANCY_BUFFER),
-            ",\n",
             '  "registryVersion": ',
             vm.toString(uint256(registryVersion)),
             ",\n",
@@ -108,7 +107,7 @@ contract GenerateAttestationFixture is Script {
             signaturesRequired: SIGNATURES_REQUIRED,
             timestamp: TIMESTAMP
         });
-        return MolphaSigLib.buildAttestation(secrets, pubkeys, payload, REDUNDANCY_BUFFER, SIGNATURES_REQUIRED);
+        return MolphaSigLib.buildAttestationWithBitmap(secrets, pubkeys, payload, SIGNERS_BITMAP);
     }
 
     function _case(

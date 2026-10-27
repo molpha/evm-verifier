@@ -8,6 +8,7 @@ import {LibSecp256k1} from "./LibSecp256k1.sol";
 /// @dev Blob layout, measured from the `bytes` length word:
 ///      `0x00` byte length | `0x20` ABI offset | `0x40` array length | `0x60..` packed `(x, y)` points.
 ///      Callers are responsible for bounds: every function assumes `index` is within the array.
+///      A removed node leaves a hole, the zero point `(0, 0)`, which is no valid key.
 library PubkeyBlobLib {
     uint256 private constant ARRAY_LENGTH_OFFSET = 0x40;
     uint256 private constant POINTS_HEAD_OFFSET = 0x60;
@@ -32,26 +33,49 @@ library PubkeyBlobLib {
         }
     }
 
-    /// @dev Removes `index` in place by swapping the tail entry into the hole (swap-and-pop).
-    ///      Reverts nothing: an empty blob would underflow, so callers must reject that first.
-    /// @return orderChanged True when a tail entry moved, i.e. `index` was not the last one.
-    function removePubkey(bytes memory pubKeys, uint256 index) internal pure returns (bool orderChanged) {
+    /// @dev Index of the lowest hole (a zero point), or the array length when there is none.
+    function firstFreeSlot(bytes memory pubKeys) internal pure returns (uint256 slot) {
+        uint256 length = getNodesLength(pubKeys);
+        assembly ("memory-safe") {
+            let head := add(pubKeys, POINTS_HEAD_OFFSET)
+            for { slot := 0 } lt(slot, length) { slot := add(slot, 1) } {
+                let at := add(head, mul(slot, POINT_SIZE))
+                if iszero(or(mload(at), mload(add(at, 0x20)))) { break }
+            }
+        }
+    }
+
+    /// @dev Overwrites the point at `index`, which must be inside the array. Used to fill a hole.
+    function setPubkey(bytes memory pubKeys, uint256 index, LibSecp256k1.Point memory signerPubKey) internal pure {
+        assembly ("memory-safe") {
+            let at := add(add(pubKeys, POINTS_HEAD_OFFSET), mul(index, POINT_SIZE))
+            mstore(at, mload(signerPubKey))
+            mstore(add(at, 0x20), mload(add(signerPubKey, 0x20)))
+        }
+    }
+
+    /// @dev Removes `index` in place without moving any other entry: the point becomes a hole (the
+    ///      zero point), then trailing holes are dropped so the array ends on a live point.
+    ///      Callers must pass an `index` inside the array.
+    /// @return newLength The array length after the removal.
+    function clearPubkey(bytes memory pubKeys, uint256 index) internal pure returns (uint256 newLength) {
         assembly ("memory-safe") {
             let lengthSlot := add(pubKeys, ARRAY_LENGTH_OFFSET)
-            let lastIndex := sub(mload(lengthSlot), 1)
+            let head := add(pubKeys, POINTS_HEAD_OFFSET)
 
-            mstore(pubKeys, sub(mload(pubKeys), POINT_SIZE))
-            mstore(lengthSlot, lastIndex)
+            let hole := add(head, mul(index, POINT_SIZE))
+            mstore(hole, 0)
+            mstore(add(hole, 0x20), 0)
 
-            orderChanged := iszero(eq(index, lastIndex))
-            if orderChanged {
-                let pointsHead := add(pubKeys, POINTS_HEAD_OFFSET)
-                let hole := add(pointsHead, mul(index, POINT_SIZE))
-                let tail := add(pointsHead, mul(lastIndex, POINT_SIZE))
-
-                mstore(hole, mload(tail))
-                mstore(add(hole, 0x20), mload(add(tail, 0x20)))
+            newLength := mload(lengthSlot)
+            for {} newLength {} {
+                let last := add(head, mul(sub(newLength, 1), POINT_SIZE))
+                if or(mload(last), mload(add(last, 0x20))) { break }
+                newLength := sub(newLength, 1)
             }
+
+            mstore(lengthSlot, newLength)
+            mstore(pubKeys, add(ARRAY_LENGTH_OFFSET, mul(newLength, POINT_SIZE)))
         }
     }
 

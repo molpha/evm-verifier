@@ -30,10 +30,10 @@ decimal strings or variable-length byte arrays.
 | Field | Type | Description |
 | --- | --- | --- |
 | `sourceId` | `bytes32` | Canonical identifier for the data source. |
-| `registryVersion` | `uint32` | Immutable registry snapshot used for signer selection and public-key lookup. |
-| `signaturesRequired` | `uint8` | Minimum number of selected signers required for this update. |
+| `registryVersion` | `uint32` | Immutable registry snapshot used for public-key lookup. |
+| `signaturesRequired` | `uint8` | Minimum number of signers required for this update. |
 | `value` | `bytes32` | Application-defined value committed by the oracle nodes. |
-| `timestamp` | `uint64` | Gateway-assigned round time in unix **milliseconds**. Signer selection reads only its 1-second window, `timestamp / 1000`; `maxAge` and registry activation compare `timestamp / 1000` with `block.timestamp`, in seconds. |
+| `timestamp` | `uint64` | Gateway-assigned round time in unix **milliseconds**. Off-chain committee selection reads only its 1-second window, `timestamp / 1000`; `maxAge` and registry activation compare `timestamp / 1000` with `block.timestamp`, in seconds. |
 
 `value` is intentionally opaque to the verifier. Consumers that need prices,
 round ids, decimals, status flags, or multi-word payloads should define their own
@@ -44,13 +44,15 @@ canonical encoding and hash it into this `bytes32` value.
 `signersBitmap` identifies the nodes whose keys were included in the aggregate
 signature.
 
-- Registry node indices are zero-based.
+- Key slots are zero-based.
 - Bitmap positions are zero-based.
-- Node index `i` maps to bit `i`.
-- At most 256 active nodes can exist in a registry snapshot, so the bitmap fits
+- Key slot `i` maps to bit `i`.
+- At most 256 slots can exist in a registry snapshot, so the bitmap fits
   in one `uint256`.
-- Bits outside the selected signer group are invalid, even if the aggregate
-  signature would otherwise verify.
+- A bit on a hole (a removed node's empty slot) or past the last slot is invalid
+  (`R_BAD_QUORUM`), even if the aggregate signature would otherwise verify. Any
+  other set of at least `signaturesRequired` live slots is valid: the verifier
+  does not check which nodes the round was assigned to.
 
 Example:
 
@@ -67,39 +69,22 @@ For nodes `0`, `1`, and `7`, the bitmap is:
 0x83
 ```
 
-Node indices are scoped to the registry version. Removing a node can swap the
-tail node into the removed index in later registry versions, so consumers and
-signers must not reuse an index from one registry version with another.
+A node keeps its slot for as long as it is registered: removing a node leaves a
+hole and no other node moves, and a later node takes the lowest hole. A slot is
+still scoped to the registry version, because a hole can be reused by a different
+node in a later version, so consumers and signers must not reuse a slot from one
+registry version with another.
 
-## Selection seed
+## Committee selection (off-chain only)
 
-For each update, the verifier derives a deterministic signer-selection seed:
-
-```text
-selectionSeed = keccak256(
-  keccak256("MOLPHA_SELECTION_V1") ||
-  sourceId ||
-  registryVersion ||
-  timestamp / 1000      // uint64, the 1 s window index
-)
-```
-
-Timestamp precision finer than one second never changes who is selected. Changing the
-1000 ms window is a consensus break and must bump this prefix.
-
-The selected group size is:
-
-```text
-groupSize = min(signaturesRequired + redundancyBuffer, nodeCount)
-```
-
-`redundancyBuffer` is a protocol-admin setting stored on the verifier. The
-selection algorithm then samples `groupSize` node positions without replacement
-from the requested registry snapshot.
-
-Signers must compute the same selection bitmap before signing. A submitted
-signature is accepted only if every set bit in `signersBitmap` is also set in the
-deterministically selected bitmap.
+The verifier does **not** derive or check a committee. Which nodes a round is
+assigned to is a load-balancing decision made off-chain by the gateway and the
+nodes. They derive it from `keccak256(keccak256("MOLPHA_SELECTION_V1") ||
+sourceId || registryVersion || timestamp / 1000)` and a group of
+`min(signaturesRequired + redundancyBuffer, liveNodeCount)` nodes sampled without
+replacement over the **live** nodes, each drawn rank mapped to that node's slot.
+The Solana program uses the same derivation to slash unsolicited signers and to
+count activity; the redundancy buffer lives there, not on this verifier.
 
 ## Signed message
 
@@ -210,7 +195,7 @@ function verify(Attestation calldata attestation, uint64 maxAge)
 ```
 
 The rename and the wrapper are container-level only. Field order, the message preimage, the
-selection seed, and the proof-of-possession digest are all unchanged, so signatures produced by the
+and the proof-of-possession digest are all unchanged, so signatures produced by the
 Cairo, Rust, and node signers keep verifying without modification. Both members are static structs,
 so `Attestation` encodes inline in the calldata head — byte-identical to passing the two members as
 separate parameters.

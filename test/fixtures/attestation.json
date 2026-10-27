@@ -4,7 +4,6 @@
   "version": 1,
   "note": "Shares the 12 keys of fixture.json. messageHash and replayKey are the cross-VM parity anchors.",
   "registeredNodeCount": 12,
-  "redundancyBuffer": 2,
   "registryVersion": 12,
   "keysFrom": "test/fixtures/fixture.json",
   "cases": [

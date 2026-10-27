@@ -22,17 +22,17 @@ This repository contains the on-chain verification layer only. It does not aggre
 
 ## Overview
 
-`Verifier` combines a versioned oracle-node registry with deterministic signer selection:
+`Verifier` combines a versioned oracle-node registry with aggregate Schnorr verification over any quorum of registered nodes:
 
 - Up to 256 active oracle nodes, represented by a single 256-bit signer bitmap.
 - Node registration requires a Schnorr proof-of-possession over the node's compressed secp256k1 public key.
 - Every registry mutation creates an immutable SSTORE2-backed public-key snapshot.
 - Historical registry versions remain verifiable after later node additions or removals.
-- Signer groups are selected deterministically from `sourceId`, `registryVersion`, and the 1-second window of `timestamp` (unix milliseconds, gateway-assigned).
-- The owner can configure a redundancy buffer so each selected group can contain more nodes than the required threshold.
+- A node keeps its key slot (its signer bit) for as long as it is registered: removing a node leaves a hole instead of moving another node into it.
+- Committee selection is not part of verification. Gateways and nodes pick which nodes run a round (load balancing); any `signaturesRequired` registered nodes may sign.
 - Aggregate Schnorr signatures are verified against the plain-sum public key of the submitted signer coalition.
 
-The contract is intentionally narrow. It answers one question: "Did enough selected Molpha nodes sign this exact data update under the stated registry version?" Everything after that is up to the caller.
+The contract is intentionally narrow. It answers one question: "Did enough registered Molpha nodes sign this exact data update under the stated registry version?" Everything after that is up to the caller.
 
 ## Architecture
 
@@ -41,35 +41,17 @@ The contract is intentionally narrow. It answers one question: "Did enough selec
 The registry stores public keys as ABI-encoded `LibSecp256k1.Point[]` blobs written with Solady's `SSTORE2`.
 
 - Registry version `0` is created in the constructor and contains no active nodes.
-- Active node keys use zero-based blob indices: node index `i` maps to signer bitmap bit `i`.
+- Node keys use zero-based key slots: slot `i` maps to signer bitmap bit `i`. A removed node leaves a hole (the zero point `(0, 0)`, which is no key); trailing holes are trimmed, so the last slot is always a live node.
 - Each published version carries an `activatesAt` timestamp and a chained `registryRoot`.
 - Retired versions remain verifiable for `PREVIOUS_GRACE` (60 seconds) after the successor version activates.
-- `addNode` appends a key, writes a new blob, publishes a new registry version, and chains a new `registryRoot`.
-- `removeNode` removes a key, writes a new blob, publishes a new registry version, and chains a new `registryRoot`.
-- If a removed node is not the tail node, the current tail node is swapped into the removed index. Consumers should not assume node indices are stable across registry versions.
+- `addNode` puts the key in the lowest hole, or appends it when there is none, writes a new blob, publishes a new registry version, and chains a new `registryRoot`. `LogNodeAdded` reports the slot.
+- `removeNode` zeroes the key's slot, trims trailing holes, writes a new blob, publishes a new registry version, and chains a new `registryRoot`.
+- No node moves when another is removed. A slot is only reused by a node added later, and a version is immutable, so a bit means the same node for as long as a version verifies.
+- The slot count (`getTotalNodes()`) includes holes; the 256-slot cap is on slots, so a full table accepts a node only if it has a hole.
 
-### Signer selection
+### Committee selection
 
-For each update, the contract derives a selection seed:
-
-```text
-keccak256(
-  keccak256("MOLPHA_SELECTION_V1") ||
-  sourceId ||
-  registryVersion ||
-  timestamp / 1000      // 1 s window index
-)
-```
-
-`NodeGroupBitmapLib` expands that seed with `keccak256(seed || keccak256("MOLPHA_SELECTION_DERIVE") || counter)`, reads eight big-endian `uint32` limbs from each digest, and samples indices without replacement. It rejects limbs `>= floor((2^32 - 1) / nodeCount) * nodeCount` to avoid modulo bias; this exact bound is shared with the Solana verifier, the node client and the gateway. When the requested group is larger than half of the node set, it samples exclusions and returns the complement.
-
-The selected group size is:
-
-```text
-min(signaturesRequired + redundancyBuffer, nodeCount)
-```
-
-The submitted signer bitmap must be a subset of that selected group and must contain at least `signaturesRequired` bits.
+Verification does not look at the committee. Off-chain, the gateway and nodes still derive a committee per round (`MOLPHA_SELECTION_V1`, `docs/message-format.md`) to spread load, and the Solana program uses it for slashing and activity tracking. This contract has no slashing or activity tracking, so it carries none of that code.
 
 ### Signature verification
 
@@ -78,10 +60,9 @@ Molpha uses Schnorr signatures over secp256k1. `LibSchnorr` verifies signatures 
 For aggregate verification, the verifier:
 
 1. Loads the registry snapshot requested by `attestation.payload.registryVersion`.
-2. Derives the deterministic selected signer group.
-3. Checks that the submitted bitmap is a subset of the selected group and contains at least `signaturesRequired` signers.
-4. Sums the public keys of every set bit in the submitted signer bitmap.
-5. Verifies the aggregate Schnorr signature against the signed message digest.
+2. Checks that the submitted bitmap contains at least `signaturesRequired` signers.
+3. Sums the public keys of every set bit in the submitted signer bitmap. A set bit past the last slot or on a hole reads as the zero point and is rejected with `R_BAD_QUORUM`; this is the bitmap's only bound check.
+4. Verifies the aggregate Schnorr signature against the signed message digest.
 
 `verify` is non-reverting: predicate failures and invalid signatures return `(false, code)` using the shared result codes in `VerifyCodes`. See `docs/registry-v2.md` for the full registry-v2 semantics.
 
@@ -90,7 +71,7 @@ For aggregate verification, the verifier:
 Measured with `FOUNDRY_PROFILE=gas forge test -vv --match-contract VerifierGasTest` using the repository Foundry
 settings: Solidity `0.8.31`, Cancun EVM, IR compilation, optimizer enabled with one million runs.
 
-The table below isolates the number of submitted aggregate signers, with redundancy buffer `2`. `Total` includes the
+The table below isolates the number of submitted aggregate signers. `Total` includes the
 measured execution gas, calldata gas, and the `21,000` base transaction gas.
 
 | Active nodes | Signers | Execution | Calldata | Total |
@@ -111,18 +92,18 @@ registry entry and one cold account access for the key blob.
 
 | Path | Purpose |
 | --- | --- |
-| `src/Verifier.sol` | Node registry, registry snapshots, signer selection, and aggregate signature verification |
+| `src/Verifier.sol` | Node registry, registry snapshots, and aggregate signature verification |
 | `src/interfaces/IVerifier.sol` | Public structs, events, errors, and verifier API |
 | `src/libs/LibSchnorr.sol` | secp256k1 Schnorr verification using `ecrecover` |
 | `src/libs/LibSecp256k1.sol` | secp256k1 point arithmetic, compression, decompression, and key utilities |
 | `src/libs/NodeGroupBitmapLib.sol` | Deterministic unbiased signer-group bitmap derivation |
 | `src/libs/PubkeyBlobLib.sol` | Helpers for SSTORE2-encoded public-key registry blobs |
-| `src/libs/VerifierLib.sol` | Packed registry entries, signer selection, and aggregate key math |
+| `src/libs/VerifierLib.sol` | Packed registry entries and aggregate key math |
 | `src/libs/VerifyCodes.sol` | Shared `verify` result codes |
 | `src/libs/KeysCommitmentLib.sol` | Canonical ordered-coordinate commitment used in registry roots |
 | `script/Deploy.s.sol` | Deterministic CREATE2 deployment script |
 | `script/AddNode.s.sol` | Single-node and batch node-registration script |
-| `script/libs/DeployConstants.sol` | Shared deployment salt and initial redundancy buffer |
+| `script/libs/DeployConstants.sol` | Shared deployment salt and protocol admin |
 | `script/libs/PopSignLib.sol` | Admin-script helper for registration proof-of-possession signatures |
 
 ## Verification model
@@ -187,8 +168,7 @@ All concatenations above use Solidity `abi.encodePacked` with the field types sh
 | Function | Description |
 | --- | --- |
 | `addNode(bytes compressedPubKey, SchnorrProof pop)` | Registers a node after validating its compressed public key and proof-of-possession |
-| `removeNode(address node, uint256 index)` | Removes the node at `index` after checking the `(node, index)` witness, and writes a new registry snapshot |
-| `setRedundancyBuffer(uint256 newRedundancyBuffer)` | Publishes a new registry version with the updated redundancy buffer |
+| `removeNode(address node, uint256 index)` | Removes the node in slot `index` after checking the `(node, index)` witness, leaves the slot a hole, and writes a new registry snapshot |
 
 Admin functions revert unless `msg.sender == owner()`.
 
@@ -212,10 +192,10 @@ Admin functions revert unless `msg.sender == owner()`.
 | `retiredAt(uint256 registryVersion)` | Unix timestamp when a version was superseded |
 | `isLatestVersion(uint256 registryVersion)` | Whether a version is the current registry head |
 | `isNode(address node)` | Whether a node is currently active (not retired) |
-| `getTotalNodes()` | Number of active nodes in the latest registry |
+| `getTotalNodes()` | Number of key slots in the latest registry, holes included |
 | `nodeStatus(address)` | Eligibility status: `0` never, `1` active, `2` retired |
 
-Solidity also exposes public getters for `owner`, `redundancyBuffer`, and `nodeStatus`. Registry snapshots are stored in
+Solidity also exposes public getters for `owner` and `nodeStatus`. Registry snapshots are stored in
 a private mapping and read through `getRegistryPointer`.
 
 ## Development
@@ -271,7 +251,7 @@ the normal test suite but exceed Foundry's instrumentation gas ceiling under
 | --- | --- |
 | `test/unit/` | Registry, admin, verification, bitmap, pubkey-blob, and Schnorr unit tests |
 | `test/integration/` | External fixture compatibility tests |
-| `test/gas/` | Gas probes for verifier and selection logic |
+| `test/gas/` | Gas probes for the verifier and registry |
 | `test/shared/VerifierTestBase.sol` | Shared signing and registry helpers |
 | `test/libs/LibSchnorrTestSign.sol` | Test-only Schnorr signing helper |
 | `test/fixtures/fixture.json` | Fixture data used by integration tests |
@@ -290,7 +270,7 @@ The predicted address depends on:
 
 - CREATE2 factory: `0x4e59b44847b379578588920cA78FbF26c0B4956C`
 - Salt: `keccak256("MOLPHA_VERIFIER_CHIVCHYN")`
-- Constructor args: `initialProtocolAdmin = deployer`, `initialRedundancyBuffer = 2`
+- Constructor args: `initialProtocolAdmin` (the pinned `PROTOCOL_ADMIN`)
 - Compiler, optimizer, EVM version, and init code
 
 Override the salt with `DEPLOY_SALT` when you intentionally want a different address.
@@ -456,8 +436,8 @@ Integrating against the raw `IVerifier` instead? Then all of the above is yours 
 - Pass the registry version used during off-chain signing, and respect version lifetimes:
   `timestamp / 1000` must be at or after `activatesAt` (seconds), and non-latest versions expire
   `PREVIOUS_GRACE` seconds after the successor activates.
-- Treat node indices as version-specific — the registry swaps the tail node into a removed slot.
-- Build signer bitmaps with zero-based bit positions: bit `i` is registry index `i`.
+- A node keeps its slot for as long as it is registered; a removed node leaves a hole, and a later node may take it. Treat a slot as version-specific.
+- Build signer bitmaps with zero-based bit positions: bit `i` is key slot `i`. Any quorum of live slots verifies.
 - Handle `false` returns and inspect `code` (`VerifyCodes`) rather than treating all failures alike.
 - Pin deployments, registry versions, and expected chain IDs in production configuration.
 

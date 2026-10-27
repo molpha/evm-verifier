@@ -18,6 +18,11 @@ import {KeysCommitmentLib} from "./libs/KeysCommitmentLib.sol";
 /// @dev Uses SSTORE2 for efficient storage of node public keys, supports up to 256 nodes.
 ///      Every mutation publishes a new registry version; historical versions stay verifiable
 ///      until their successor's activation plus `PREVIOUS_GRACE`. See `docs/registry-v2.md`.
+///
+///      Slots are stable: removing a node zeroes its key slot instead of moving the last key into
+///      it, so every other node keeps the bit it signs with. `addNode` takes the lowest hole, or
+///      the slot after the last. `verify` accepts any quorum of live nodes; committee selection is
+///      not part of verification.
 contract Verifier is IVerifier, Ownable {
     using LibSchnorr for LibSecp256k1.Point;
     using LibSecp256k1 for LibSecp256k1.Point;
@@ -32,13 +37,12 @@ contract Verifier is IVerifier, Ownable {
     uint8 private constant RETIRED = 2;
     uint8 private constant OP_ADD = 1;
     uint8 private constant OP_REMOVE = 2;
-    uint8 private constant OP_BUFFER = 3;
 
     /// @dev Seconds a retired version stays acceptable after its successor activates.
     uint256 private constant PREVIOUS_GRACE = 60;
 
     bytes32 private constant POP_DOMAIN = keccak256("MOLPHA_VERIFIER_V1");
-    bytes32 private constant TRANSITION_DOMAIN = keccak256("MOLPHA_REGISTRY_TRANSITION_V1");
+    bytes32 private constant TRANSITION_DOMAIN = keccak256("MOLPHA_REGISTRY_TRANSITION_V2");
     bytes32 private constant GENESIS_ROOT = keccak256("MOLPHA_REGISTRY_GENESIS_V1");
 
     /// @dev Packed per-version state; see `VerifierLib` for the bit layout.
@@ -49,18 +53,15 @@ contract Verifier is IVerifier, Ownable {
 
     uint256 private registryVersionCount;
 
-    constructor(address initialProtocolAdmin, uint256 initialRedundancyBuffer) {
+    constructor(address initialProtocolAdmin) {
         if (initialProtocolAdmin == address(0)) revert ZeroAdmin();
-        if (initialRedundancyBuffer > MAX_NODES) {
-            revert RedundancyBufferExceedsMax();
-        }
 
         _initializeOwner(initialProtocolAdmin);
 
         LibSecp256k1.Point[] memory empty = new LibSecp256k1.Point[](0);
         address genesisPointer = SSTORE2.write(abi.encode(empty));
         // Genesis: activatesAt = 0.
-        registryEntries[0] = VerifierLib.packEntry(genesisPointer, 0, initialRedundancyBuffer, 0, true);
+        registryEntries[0] = VerifierLib.packEntry(genesisPointer, 0, 0, true);
         registryRoots[0] = GENESIS_ROOT;
     }
 
@@ -131,20 +132,28 @@ contract Verifier is IVerifier, Ownable {
 
         uint256 registryVersion = registryVersionCount;
         uint256 entry = registryEntries[registryVersion];
-        uint256 nodeCount = entry.nodeCount();
-        if (nodeCount >= MAX_NODES) revert MaxNodesReached();
+        uint256 slotCount = entry.nodeCount();
+
+        // A hole is reusable, so a full table only refuses when it has no hole.
+        bytes memory keysBlob = SSTORE2.read(entry.pointerOf());
+        uint256 slot = keysBlob.firstFreeSlot();
+        bool appended = slot == slotCount;
+        if (appended && slotCount >= MAX_NODES) revert MaxNodesReached();
 
         _verifyPop(pubkey, compressedPubKey, pop);
 
-        bytes memory keysBlob = SSTORE2.read(entry.pointerOf());
-        keysBlob.addPubkey(pubkey);
+        if (appended) {
+            keysBlob.addPubkey(pubkey);
+        } else {
+            keysBlob.setPubkey(slot, pubkey);
+        }
         address newPointer = SSTORE2.write(keysBlob);
 
-        _publishRegistryTransition(registryVersion, newPointer, nodeCount + 1, entry.buffer(), keysBlob, OP_ADD);
+        _publishRegistryTransition(registryVersion, newPointer, appended ? slotCount + 1 : slotCount, keysBlob, OP_ADD);
 
         nodeStatus[node] = ACTIVE;
 
-        emit LogNodeAdded(node, nodeCount, newPointer);
+        emit LogNodeAdded(node, slot, newPointer);
     }
 
     /// @inheritdoc IVerifier
@@ -152,33 +161,9 @@ contract Verifier is IVerifier, Ownable {
         _removeNodeAt(node, index);
     }
 
-    /// @inheritdoc IVerifier
-    function setRedundancyBuffer(uint256 newRedundancyBuffer) external override onlyOwner {
-        if (newRedundancyBuffer > MAX_NODES) {
-            revert RedundancyBufferExceedsMax();
-        }
-
-        uint256 registryVersion = registryVersionCount;
-        uint256 entry = registryEntries[registryVersion];
-        address pointer = entry.pointerOf();
-
-        // The buffer feeds signer selection, so it is versioned state rather than a mutable
-        // knob: the key blob carries forward untouched (registry-v2 §5.4).
-        _publishRegistryTransition(
-            registryVersion, pointer, entry.nodeCount(), newRedundancyBuffer, SSTORE2.read(pointer), OP_BUFFER
-        );
-
-        emit LogRedundancyBufferUpdated(newRedundancyBuffer);
-    }
-
     // -------------------------------------------------------------------------
     // Views
     // -------------------------------------------------------------------------
-
-    /// @inheritdoc IVerifier
-    function redundancyBuffer() external view returns (uint256) {
-        return registryEntries[registryVersionCount].buffer();
-    }
 
     /// @inheritdoc IVerifier
     function getRegistryVersion() external view returns (uint256) {
@@ -196,6 +181,7 @@ contract Verifier is IVerifier, Ownable {
     }
 
     /// @inheritdoc IVerifier
+    /// @dev The slot count of the current version, holes included; not the number of live nodes.
     function getTotalNodes() external view override returns (uint256 totalSigners) {
         totalSigners = registryEntries[registryVersionCount].nodeCount();
     }
@@ -243,7 +229,8 @@ contract Verifier is IVerifier, Ownable {
         if (entry == 0) revert InvalidRegistryVersion();
     }
 
-    /// @dev Swap-and-pop removal of blob index `index` from the current version.
+    /// @dev Removes the node at blob slot `index` from the current version, leaving the slot a hole.
+    ///      Every other node keeps its slot; trailing holes are trimmed from the table.
     /// @return newVersion The version published by the removal.
     function _removeNodeAt(address node, uint256 index) private returns (uint256 newVersion) {
         uint256 registryVersion = registryVersionCount;
@@ -255,18 +242,12 @@ contract Verifier is IVerifier, Ownable {
         bytes memory keysBlob = SSTORE2.read(entry.pointerOf());
         if (node != keysBlob.getNode(index).toAddress()) revert IndexWitnessMismatch();
 
-        // Index of the entry that gets swapped into the hole, and the post-removal count.
-        uint256 last;
-        unchecked {
-            last = nodeCount - 1; // `nodeCount != 0` was just checked
-        }
-
         nodeStatus[node] = RETIRED;
 
-        keysBlob.removePubkey(index);
+        uint256 newCount = keysBlob.clearPubkey(index);
         address newPointer = SSTORE2.write(keysBlob);
 
-        newVersion = _publishRegistryTransition(registryVersion, newPointer, last, entry.buffer(), keysBlob, OP_REMOVE);
+        newVersion = _publishRegistryTransition(registryVersion, newPointer, newCount, keysBlob, OP_REMOVE);
 
         emit LogNodeRemoved(node, index, newPointer);
     }
@@ -278,7 +259,6 @@ contract Verifier is IVerifier, Ownable {
         uint256 previousVersion,
         address newPointer,
         uint256 nodeCount,
-        uint256 buffer,
         bytes memory keysBlob,
         uint8 op
     ) private returns (uint256 newVersion) {
@@ -298,7 +278,6 @@ contract Verifier is IVerifier, Ownable {
                     uint32(newVersion),
                     commitment,
                     uint16(nodeCount),
-                    uint16(buffer),
                     uint40(activatesAtTs)
                 )
             );
@@ -306,7 +285,7 @@ contract Verifier is IVerifier, Ownable {
 
             registryRoots[newVersion] = newRoot;
             registryEntries[previousVersion] = registryEntries[previousVersion].withIsLatest(false);
-            registryEntries[newVersion] = VerifierLib.packEntry(newPointer, nodeCount, buffer, activatesAtTs, true);
+            registryEntries[newVersion] = VerifierLib.packEntry(newPointer, nodeCount, activatesAtTs, true);
             registryVersionCount = newVersion;
 
             emit RegistryAdvanced(newVersion, newRoot, op);
@@ -318,12 +297,8 @@ contract Verifier is IVerifier, Ownable {
         SchnorrSignature calldata schnorrData,
         uint256 entry
     ) private view returns (bool success, uint8 code) {
-        if (!dataUpdate.selectionOk(entry, schnorrData.signersBitmap)) {
-            return (false, VerifyCodes.R_BAD_QUORUM);
-        }
-
-        // Aggregate over the full signersBitmap.
-        LibSecp256k1.Point memory aggPubKey = entry.aggregatePubKey(schnorrData.signersBitmap);
+        (LibSecp256k1.Point memory aggPubKey, bool valid) = entry.aggregatePubKey(schnorrData.signersBitmap);
+        if (!valid) return (false, VerifyCodes.R_BAD_QUORUM);
         if (aggPubKey.isZeroPoint()) return (false, VerifyCodes.R_BAD_AGGREGATE);
 
         bytes32 message = dataUpdate.constructMessage(schnorrData.signersBitmap);
