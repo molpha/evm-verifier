@@ -72,6 +72,7 @@ library MolphaLib {
     error NotNewer(uint64 last, uint64 actual);
     error AlreadyConsumed(bytes32 key);
     error MalformedWord(bytes32 value);
+    error NotAReason(bytes32 value);
 
     // ---------------------------------------------------------------------
     // Kind A — `value` is the result itself, one ABI-encoded word
@@ -161,6 +162,38 @@ library MolphaLib {
     ///      replay the first. Both operands are fixed-size, so the packed encoding is unambiguous.
     function replayKey(IVerifier.AttestationPayload calldata p) internal pure returns (bytes32) {
         return keccak256(abi.encodePacked(p.sourceId, p.timestamp));
+    }
+
+    // ---------------------------------------------------------------------
+    // Policy outcomes
+    // ---------------------------------------------------------------------
+
+    /// @notice `I(S) = keccak256("MOLPHA_INCONCLUSIVE_V1" || S)`: the source ID a policy's INCONCLUSIVE result
+    ///         is signed under (node-client docs/policy.md). Store `S`, or precompute `I(S)` once.
+    /// @dev The tag is the 22 raw ASCII bytes followed by the 32 bytes of `S`. A source preimage starts with
+    ///      `{`, so `I(S)` is never a source's own ID; `I` is applied once, never to an `I(S)`.
+    function inconclusiveId(bytes32 sourceId) internal pure returns (bytes32) {
+        return keccak256(abi.encodePacked("MOLPHA_INCONCLUSIVE_V1", sourceId));
+    }
+
+    /// @notice Read a VERIFIED payload as a result of `sourceId`: `(false, 0)` when it is signed under
+    ///         `sourceId` (its value is the source's result), `(true, reason)` when it is signed under
+    ///         `inconclusiveId(sourceId)` (0x01 insufficient sources, 0x02 divergence, 0x03 primary
+    ///         unconfirmed, 0x10 + i the policy's inconclusiveIf entry i). Reverts for any other source.
+    /// @dev An INCONCLUSIVE result is not a FAIL: what it means (wait, expire, refund, escalate) is the
+    ///      consumer's, and so is a resolution window (accept only timestamps in [T, T + d], first wins).
+    function readOutcome(IVerifier.AttestationPayload calldata p, bytes32 sourceId)
+        internal
+        pure
+        returns (bool inconclusive, uint8 reason)
+    {
+        if (p.sourceId == sourceId) return (false, 0);
+        if (p.sourceId != inconclusiveId(sourceId)) revert WrongSource(sourceId, p.sourceId);
+        uint256 v = uint256(p.value);
+        if (v == 0 || v > type(uint8).max) revert NotAReason(p.value);
+        // casting to 'uint8' is safe because v was checked to be at most type(uint8).max above
+        // forge-lint: disable-next-line(unsafe-typecast)
+        return (true, uint8(v));
     }
 
     // ---------------------------------------------------------------------

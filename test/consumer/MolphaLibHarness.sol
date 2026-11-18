@@ -55,6 +55,20 @@ contract MolphaLibHarness {
         return MolphaLib.replayKey(p);
     }
 
+    // ---- policy outcomes ----
+
+    function inconclusiveId(bytes32 sourceId) external pure returns (bytes32) {
+        return MolphaLib.inconclusiveId(sourceId);
+    }
+
+    function readOutcome(IVerifier.AttestationPayload calldata p, bytes32 sourceId)
+        external
+        pure
+        returns (bool inconclusive, uint8 reason)
+    {
+        return MolphaLib.readOutcome(p, sourceId);
+    }
+
     function acceptNewer(IVerifier.AttestationPayload calldata p) external {
         MolphaLib.acceptNewer(latest, p);
     }
